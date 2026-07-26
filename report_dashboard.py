@@ -47,6 +47,60 @@ def _short_cwd(p):
     return "/".join(parts[-2:]) or str(p)
 
 
+def _top_with_models(records, key, limit=6):
+    """Rank entities with total and per-model token amounts."""
+    buckets = {}
+    for r in records:
+        ident = r.get(key)
+        if not ident:
+            continue
+        item = buckets.setdefault(ident, {"total": 0, "models": {}})
+        total = r.get("total", 0) or 0
+        model = r.get("model") or "unknown"
+        item["total"] += total
+        item["models"][model] = item["models"].get(model, 0) + total
+    ranked = sorted(buckets.items(), key=lambda kv: kv[1]["total"], reverse=True)
+    return [(ident, stats["total"], dict(stats["models"]))
+            for ident, stats in ranked[:limit]]
+
+
+def _flow_data(records, summaries):
+    """Aggregate real project→model and model→session token flows."""
+    project_model = {}
+    model_session = {}
+    session_ids = set()
+    for r in records:
+        total = r.get("total", 0) or 0
+        model = r.get("model") or "unknown"
+        cwd = r.get("cwd")
+        sid = r.get("session")
+        if cwd:
+            key = (cwd, model)
+            project_model[key] = project_model.get(key, 0) + total
+        if sid:
+            key = (model, sid)
+            model_session[key] = model_session.get(key, 0) + total
+            session_ids.add(sid)
+    labels = {
+        sid: summaries.get(sid) or readers.session_title(sid) or str(sid)[:8]
+        for sid in session_ids
+    }
+    return {
+        "project_model": [
+            [_short_cwd(cwd), cwd, model, total]
+            for (cwd, model), total in sorted(
+                project_model.items(), key=lambda item: item[1], reverse=True
+            )
+        ],
+        "model_session": [
+            [model, labels[sid], sid, total]
+            for (model, sid), total in sorted(
+                model_session.items(), key=lambda item: item[1], reverse=True
+            )
+        ],
+    }
+
+
 def build_payload(records, since=None, until=None, sources=None):
     recs = aggregate.filter_range(records, since=since, until=until)
     models, pretty = _global_models(recs)
@@ -86,30 +140,33 @@ def build_payload(records, since=None, until=None, sources=None):
                 mh = day_hourly_models.setdefault(r["model"], [0] * 24)
                 mh[h] += r["total"]
         day_top_sessions = []
-        for sid, total in aggregate.top_by(day_recs, "session", 6):
+        for sid, total, model_totals in _top_with_models(day_recs, "session", 6):
             label = summaries.get(sid) or readers.session_title(sid) or str(sid)[:8]
-            day_top_sessions.append([label, total, sid])
+            day_top_sessions.append([label, total, sid, model_totals])
         day_details[day] = {
             "hourly": day_hourly,
             "hourly_models": day_hourly_models,
             "cache_read": sum(r.get("cache_read", 0) or 0 for r in day_recs),
-            "top_cwds": [[_short_cwd(p), t, p] for p, t in aggregate.top_by(day_recs, "cwd", 6)],
+            "top_cwds": [[_short_cwd(p), t, p, model_totals]
+                         for p, t, model_totals in _top_with_models(day_recs, "cwd", 6)],
             "top_sessions": day_top_sessions,
+            "flow": _flow_data(day_recs, summaries),
         }
-    top_cwds = [[_short_cwd(p), t, p] for p, t in aggregate.top_by(recs, "cwd", 6)]
+    top_cwds = [[_short_cwd(p), t, p, model_totals]
+                for p, t, model_totals in _top_with_models(recs, "cwd", 6)]
     top_sessions = []
-    for sid, t in aggregate.top_by(recs, "session", 6):
+    for sid, t, model_totals in _top_with_models(recs, "session", 6):
         label = summaries.get(sid) or readers.session_title(sid) or str(sid)[:8]
-        top_sessions.append([label, t, sid])
-    # top 会话的逐轮 token 序列（会话回放用；取最近 200 轮）
+        top_sessions.append([label, t, sid, model_totals])
+    # 流光图中的任意会话都可点击回放；逐轮序列最多保留最近 200 轮。
     by_sess = {}
     for r in recs:
         sid = r.get("session")
         if sid:
             by_sess.setdefault(sid, []).append(r)
     session_series = {}
-    for _, _, sid in top_sessions:
-        arr = sorted(by_sess.get(sid, []), key=lambda r: r.get("ts") or "")
+    for sid, records_for_session in by_sess.items():
+        arr = sorted(records_for_session, key=lambda r: r.get("ts") or "")
         session_series[sid] = [r["total"] for r in arr][-200:]
     # 徽章用的全局计数
     n_cwds = len({r.get("cwd") for r in recs if r.get("cwd")})
@@ -159,6 +216,7 @@ def build_payload(records, since=None, until=None, sources=None):
         "top_cwds": top_cwds,
         "top_sessions": top_sessions,
         "session_series": session_series,
+        "flow": _flow_data(recs, summaries),
         "n_cwds": n_cwds,
         "n_sessions": n_sessions,
         "max_turns": max_turns,
@@ -247,8 +305,11 @@ h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.1px}
 .seg{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);
   background:var(--surface);border:1px solid var(--border);padding:6px 12px;border-radius:999px}
 .seg .led{width:7px;height:7px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 0 3px var(--accent-soft)}
+.status-pulse{cursor:pointer;transition:border-color .15s,background .15s}.status-pulse:hover{border-color:var(--border-2);background:var(--glass-2)}.status-pulse .led{animation:statusBeat 2.4s ease-in-out infinite}.status-pulse.warming .led{background:#a78bfa}.status-pulse.steady .led{background:#7b8797}.status-pulse.cooling .led{background:#5b8def}@keyframes statusBeat{50%{transform:scale(1.3);box-shadow:0 0 0 5px var(--accent-soft)}}
 
 .head-tools{display:inline-flex;align-items:center;gap:8px}
+.section-dock{position:sticky;top:8px;z-index:44;display:flex;gap:6px;overflow-x:auto;margin:0 0 16px;padding:6px;background:var(--glass);border:1px solid var(--glass-brd);border-radius:12px;box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);scrollbar-width:none}.section-dock::-webkit-scrollbar{display:none}.section-dock button{flex:none;border:0;background:transparent;color:var(--muted);border-radius:8px;padding:6px 12px;font:600 12px/1.2 inherit;cursor:pointer;white-space:nowrap}.section-dock button:hover{color:var(--ink);background:var(--surface-2)}.section-dock button.on{color:var(--accent-2);background:var(--accent-soft)}
+[id^=section-]{scroll-margin-top:112px}
 .themebtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);
   background:var(--surface);color:var(--ink);cursor:pointer;font-size:15px;line-height:1;
   display:grid;place-items:center;transition:border-color .15s,transform .12s}
@@ -257,14 +318,14 @@ h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.1px}
 
 /* 数据天气 + 时光探针：让统计页拥有自己的「气候」与时间轴 */
 .weather{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:16px;padding:18px 22px;overflow:hidden;position:relative}
-.discovery{position:relative;overflow:hidden;padding:20px 22px;background:linear-gradient(115deg,var(--glass),var(--glass-2))}.discovery::after{content:"✦";position:absolute;right:20px;top:3px;font-size:74px;color:var(--accent-soft);transform:rotate(12deg)}.disc-kicker{font-size:9.5px;letter-spacing:.17em;color:var(--accent-2);font-weight:800}.disc-text{font-size:17px;line-height:1.55;font-weight:700;max-width:830px;margin-top:6px}.disc-sub{font-size:11.5px;color:var(--faint);margin-top:5px}.disc-next{position:absolute;right:18px;bottom:15px;z-index:1}
+.discovery{position:relative;overflow:hidden;padding:20px 22px;background:linear-gradient(115deg,var(--glass),var(--glass-2));cursor:pointer}.discovery::after{content:"✦";position:absolute;right:20px;top:3px;font-size:74px;color:var(--accent-soft);transform:rotate(12deg)}.disc-kicker{font-size:9.5px;letter-spacing:.17em;color:var(--accent-2);font-weight:800}.disc-text{font-size:17px;line-height:1.55;font-weight:700;max-width:830px;margin-top:6px}.disc-sub{font-size:11.5px;color:var(--faint);margin-top:5px}.disc-actions{position:absolute;right:18px;bottom:15px;z-index:1;display:flex;align-items:center;gap:7px}.disc-pos{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}.disc-pin.on{color:var(--accent-2);border-color:var(--accent-2);background:var(--accent-soft)}.discovery.pinned{cursor:default}.discovery.pinned .disc-kicker::after{content:" · 已固定";color:var(--muted)}
 .weather::after{content:"";position:absolute;right:-40px;top:-70px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,var(--weather-glow,var(--blob-a)),transparent 67%);pointer-events:none}
 .w-icon{font-size:38px;line-height:1;filter:drop-shadow(0 5px 12px var(--accent-soft));animation:wfloat 4s ease-in-out infinite}
 @keyframes wfloat{50%{transform:translateY(-4px) rotate(2deg)}}
 .w-title{font-size:16px;font-weight:800;letter-spacing:.01em}.w-title small{font-size:10px;color:var(--faint);font-weight:700;letter-spacing:.12em;margin-left:8px}
 .w-copy{font-size:12.5px;color:var(--muted);margin-top:3px;max-width:720px}
 .w-metric{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:11px;z-index:1}.w-metric b{display:block;color:var(--ink);font-size:19px}
-.probe{position:sticky;top:10px;z-index:40;display:none;align-items:center;gap:12px;margin:0 0 16px;padding:10px 14px;border-radius:12px;background:rgba(20,26,36,.88);color:#edf4ff;border:1px solid rgba(122,162,247,.35);box-shadow:0 10px 30px rgba(0,0,0,.2);backdrop-filter:blur(18px)}
+.probe{position:sticky;top:64px;z-index:40;display:none;align-items:center;gap:12px;margin:0 0 16px;padding:10px 14px;border-radius:12px;background:rgba(20,26,36,.88);color:#edf4ff;border:1px solid rgba(122,162,247,.35);box-shadow:0 10px 30px rgba(0,0,0,.2);backdrop-filter:blur(18px)}
 .probe.on{display:flex;animation:rise .2s ease both}.probe-orb{width:9px;height:9px;border-radius:50%;background:#7aa2f7;box-shadow:0 0 0 5px rgba(122,162,247,.13),0 0 18px #7aa2f7}.probe-copy{flex:1;font-size:12.5px}.probe-copy b{font-size:13px}.probe button{border:0;background:rgba(255,255,255,.1);color:#fff;width:27px;height:27px;border-radius:8px;cursor:pointer}
 @media(max-width:640px){.weather{grid-template-columns:auto 1fr}.w-metric{grid-column:1/-1;text-align:left;display:flex;gap:8px;align-items:baseline}.w-metric b{display:inline}.w-icon{font-size:30px}}
 
@@ -412,8 +473,8 @@ h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.1px}
 /* Token 生物：数据驱动的数字生命 */
 .creature-stage{display:flex;align-items:center;justify-content:center;min-height:270px;position:relative;background:radial-gradient(circle at 50% 48%,var(--accent-soft),transparent 50%);border-radius:14px;overflow:hidden}.creature-stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle,rgba(255,255,255,.4) 0 1px,transparent 1.5px);background-size:43px 37px;opacity:.18}.creature{width:260px;height:260px;filter:drop-shadow(0 18px 20px rgba(0,0,0,.22));animation:creatureFloat 5s ease-in-out infinite}.creature-eye{animation:blink 5s infinite;transform-origin:center}@keyframes creatureFloat{50%{transform:translateY(-7px) rotate(1deg)}}@keyframes blink{0%,45%,49%,100%{transform:scaleY(1)}47%{transform:scaleY(.08)}}.creature-info{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.creature-info div{background:var(--glass-2);border:1px solid var(--glass-brd);border-radius:10px;padding:9px;text-align:center;font-size:10px;color:var(--faint)}.creature-info b{display:block;color:var(--ink);font-size:12px;margin-bottom:2px}.creature-name{text-align:center;font-size:17px;font-weight:800;margin-top:12px}.creature-desc{text-align:center;color:var(--muted);font-size:11.5px;margin-top:3px}
 
-/* Token 数据城市：项目为城区，会话为建筑 */
-.city-shell{position:relative;min-height:420px;border-radius:14px;overflow:hidden;background:radial-gradient(ellipse at 50% 115%,rgba(91,141,239,.24),transparent 58%),linear-gradient(180deg,#080c16 0%,#111a2b 68%,#0c1220 100%);border:1px solid rgba(122,162,247,.12)}.city-shell::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(122,162,247,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(122,162,247,.045) 1px,transparent 1px);background-size:30px 30px;transform:perspective(500px) rotateX(58deg) scale(1.5);transform-origin:center bottom;opacity:.7}.city{position:relative;width:100%;height:auto;display:block;z-index:1}.city-building{cursor:pointer;transition:filter .18s,opacity .18s,transform .18s;transform-box:fill-box;transform-origin:center bottom}.city-building:hover{filter:brightness(1.28) drop-shadow(0 0 7px rgba(122,162,247,.55));transform:translateY(-3px)}.city-building.dim{opacity:.2}.city-window{fill:#bbd8ff;filter:drop-shadow(0 0 2px #7aa2f7);pointer-events:none}.city-label{fill:#8fa3c0;font-size:9px;font-weight:700;letter-spacing:.04em}.city-title{fill:#e8f2ff;font-size:12px;font-weight:800}.city-moon{fill:#dce9ff;filter:drop-shadow(0 0 12px rgba(220,233,255,.6))}.city-panel{position:absolute;left:16px;bottom:16px;z-index:3;max-width:330px;background:rgba(8,12,22,.82);color:#dce9ff;border:1px solid rgba(122,162,247,.25);border-radius:12px;padding:11px 13px;backdrop-filter:blur(15px);font-size:11px;box-shadow:0 10px 28px rgba(0,0,0,.28)}.city-panel b{display:block;font-size:13px;color:#fff;margin-bottom:2px}.city-panel span{color:#8fa3c0}.city-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.city-stats span{font-size:10px;color:var(--faint);background:var(--glass-2);border:1px solid var(--glass-brd);border-radius:999px;padding:4px 8px}
+/* Token 流光图：项目→模型→会话的真实流向 */
+.flow-shell{position:relative;min-height:470px;border-radius:14px;overflow-x:auto;overflow-y:hidden;background:radial-gradient(circle at 50% 50%,rgba(91,141,239,.13),transparent 30%),linear-gradient(160deg,rgba(8,13,27,.96),rgba(17,26,48,.96));border:1px solid rgba(122,162,247,.14)}.flow-shell::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle,rgba(226,237,255,.45) 0 .7px,transparent 1px);background-size:31px 29px;opacity:.14;pointer-events:none}.flow-map{position:relative;width:100%;height:auto;display:block;z-index:1;min-width:900px}.flow-col{fill:#8fa3c0;font-size:10px;font-weight:800;letter-spacing:.14em}.flow-link{fill:none;stroke-linecap:round;opacity:.32;transition:opacity .16s,filter .16s}.flow-link.hot{opacity:.92;filter:drop-shadow(0 0 5px currentColor)}.flow-link.dim{opacity:.045}.flow-node{cursor:pointer;transition:opacity .16s,filter .16s,transform .16s;transform-box:fill-box;transform-origin:center}.flow-node:hover,.flow-node:focus,.flow-node.locked{filter:brightness(1.16) drop-shadow(0 0 7px currentColor);transform:scale(1.04);outline:none}.flow-node.dim{opacity:.18;filter:saturate(.25)}.flow-hit{fill:transparent;stroke:transparent;pointer-events:all}.flow-box{stroke:rgba(255,255,255,.7);stroke-width:1}.flow-node text{fill:#e1ecfb;font-size:10px;font-weight:700;pointer-events:none}.flow-node .flow-value{fill:#9badc7;font-size:8.5px;font-weight:600}.flow-panel{position:absolute;left:16px;bottom:16px;z-index:3;max-width:min(420px,calc(100% - 32px));background:rgba(8,12,22,.86);color:#dce9ff;border:1px solid rgba(122,162,247,.25);border-radius:12px;padding:11px 13px;backdrop-filter:blur(15px);font-size:11px;box-shadow:0 10px 28px rgba(0,0,0,.28)}.flow-panel b{display:block;font-size:13px;color:#fff;margin-bottom:2px}.flow-panel span{color:#9badc7}.flow-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.flow-stats span{font-size:10px;color:var(--faint);background:var(--glass-2);border:1px solid var(--glass-brd);border-radius:999px;padding:4px 8px}.flow-link.motion{stroke-dasharray:5 9;animation:flowDash 8s linear infinite}@keyframes flowDash{to{stroke-dashoffset:-70}}
 
 /* 柱图竞赛 */
 .race{display:flex;flex-direction:column;gap:7px;margin-top:10px}
@@ -595,7 +656,8 @@ footer b{color:var(--muted);font-weight:600}
 #rocket{position:fixed;right:24px;bottom:22px;z-index:80;width:44px;height:44px;border-radius:50%;border:1px solid var(--glass-brd);background:var(--glass);backdrop-filter:blur(12px);display:grid;place-items:center;font-size:21px;cursor:pointer;box-shadow:var(--shadow);opacity:0;transform:translateY(18px) scale(.8);pointer-events:none;transition:.25s}#rocket.on{opacity:1;transform:none;pointer-events:auto}#rocket:hover{transform:translateY(-3px) rotate(-8deg)}#rocket.launch{animation:launch .7s ease forwards}@keyframes launch{50%{transform:translateY(-28px) rotate(-12deg) scale(1.15);opacity:1}100%{transform:translateY(-90px) rotate(-18deg) scale(.5);opacity:0}}
 .comet{position:fixed;z-index:109;pointer-events:none;border-radius:50%;will-change:transform,opacity;animation:cometFade .72s ease-out forwards}@keyframes cometFade{to{transform:translate(var(--dx),var(--dy)) scale(.08);opacity:0}}
 @media(prefers-reduced-motion:reduce){#rocket,.comet{display:none!important}}
-@media(prefers-reduced-motion:reduce){.barstack{animation:none}*{transition:none!important}}
+@media(prefers-reduced-motion:reduce){.barstack,.status-pulse .led,.flow-link{animation:none}*{transition:none!important}}
+@media(max-width:640px){body{padding:18px 12px 48px}.section-dock{top:4px}.probe{top:58px}[id^=section-]{scroll-margin-top:106px}.flow-shell{min-height:410px}.flow-map{width:900px;min-width:900px}.flow-node text{font-size:11px}.flow-panel{position:sticky;left:12px;bottom:12px;margin:0 12px 12px;max-width:calc(100vw - 72px)}.disc-actions{position:relative;right:auto;bottom:auto;margin-top:12px;justify-content:flex-end}.discovery{padding-bottom:16px}}
 </style>
 <script>/* 防 FOUC：渲染前先套用手动主题 */
 try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}
@@ -611,6 +673,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
     </div>
   </div>
   <div class=head-tools>
+    <button class="seg status-pulse" id=status-pulse type=button title="用量状态计算中"><span class=led></span><span id=status-text>状态 —</span></button>
     <div class=seg id=source-pill><span class=led></span><span id=source-txt>—</span></div>
     <button class=themebtn id=theme-btn aria-label="切换主题" title="主题：自动"></button>
     <div class=pop style=position:relative>
@@ -623,7 +686,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
         <div class=mrow><label><input type=checkbox data-mod=daily checked>每天趋势</label><span class="switch on" data-sw=daily></span></div>
         <div class=mrow><label><input type=checkbox data-mod=rhythm checked>作息织锦</label><span class="switch on" data-sw=rhythm></span></div>
         <div class=mrow><label><input type=checkbox data-mod=multiples checked>每模型趋势</label><span class="switch on" data-sw=multiples></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=city checked>Token 城市</label><span class="switch on" data-sw=city></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=flow checked>Token 流光图</label><span class="switch on" data-sw=flow></span></div>
         <div class=mrow><label><input type=checkbox data-mod=creature checked>Token 生物</label><span class="switch on" data-sw=creature></span></div>
         <div class=mrow><label><input type=checkbox data-mod=race checked>柱图竞赛</label><span class="switch on" data-sw=race></span></div>
         <div class=mrow><label><input type=checkbox data-mod=fortune checked>今日运势</label><span class="switch on" data-sw=fortune></span></div>
@@ -635,17 +698,21 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
   </div>
 </header>
 
+<nav class=section-dock id=section-dock aria-label="Dashboard 区域导航">
+ <button data-target=section-overview class=on>总览</button><button data-target=section-trend>趋势</button><button data-target=section-rhythm>节奏</button><button data-target=section-flow>流光</button><button data-target=section-achievements>成就</button><button data-target=section-top>Top</button>
+</nav>
+
 <section class="card weather" id=weather-card>
   <div class=w-icon id=w-icon>◌</div>
   <div><div class=w-title><span id=w-title>数据气候计算中</span><small>LOCAL FORECAST</small></div><div class=w-copy id=w-copy>正在读取你的本地 Token 气压、活跃时段与缓存云层。</div></div>
   <div class=w-metric><b id=w-metric>—</b><span id=w-metric-label>相对近况</span></div>
 </section>
 
-<section class="card discovery">
+<section class="card discovery" id=discovery-card tabindex=0 aria-label="数据侦探，点击切换洞察">
  <div class=disc-kicker>YOU MAY NOT HAVE NOTICED · 数据侦探</div>
  <div class=disc-text id=discovery-text>正在寻找藏在数字之间的线索……</div>
  <div class=disc-sub id=discovery-sub>所有发现均由本地数据计算，不调用 AI。</div>
- <button class="ghostbtn disc-next" id=discovery-next title="换一条发现">↻</button>
+ <div class=disc-actions><span class=disc-pos id=discovery-pos>1/1</span><button class="ghostbtn disc-pin" id=discovery-pin title="固定当前洞察" aria-pressed=false>◇ 固定</button><button class="ghostbtn disc-next" id=discovery-next title="换一条发现">↻ 换一条</button></div>
 </section>
 
 <div class=probe id=time-probe>
@@ -654,7 +721,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
   <button id=probe-close title="退出回看（Esc）">×</button>
 </div>
 
-<section class=card>
+<section class=card id=section-overview>
  <div class=kpis>
    <div class="kpi is-primary">
      <div class=v><span class=grad id=k-total></span> <small id=k-total-u></small></div>
@@ -684,7 +751,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  <div class=filters id=filters aria-label="模型筛选"></div>
 </section>
 
-<section class=card>
+<section class=card id=section-trend>
  <div class=row-between>
    <h2 style=margin:0 id=bar-title>每期 token（按模型堆叠）</h2>
    <div style="display:flex;align-items:center;gap:9px"><button class="ghostbtn comparebtn" id=compare-btn title="叠加上一期轮廓">◫ 幻影对比</button><span class=sub id=bar-hint style=margin:0;color:var(--faint)></span></div>
@@ -717,7 +784,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  <div class=block-bars id=daily-bars style=margin-top:22px></div>
 </section>
 
-<section class=card data-module=rhythm>
+<section class=card data-module=rhythm id=section-rhythm>
  <div class=row-between>
    <h2 style=margin:0>作息织锦 · 14 天 × 24 小时</h2>
    <span class=sub style="margin:0;color:var(--faint)">每一个方格，都是一小时留下的算力纹理</span>
@@ -747,10 +814,10 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  </section>
 </div>
 
-<section class=card data-module=city>
- <div class=row-between><h2 style=margin:0>Token 城市 · 你的算力天际线</h2><span class=sub style="margin:0;color:var(--faint)">项目是城区，会话是建筑，Token 决定高度</span></div>
- <div class=city-shell id=city-shell style=margin-top:14px><svg class=city id=city viewBox="0 0 1040 430" preserveAspectRatio="xMidYMid meet"></svg><div class=city-panel id=city-panel><b>Token City</b><span>悬停建筑，查看这座城市的算力居民。</span></div></div>
- <div class=city-stats id=city-stats></div>
+<section class=card data-module=flow id=section-flow>
+ <div class=row-between><h2 style=margin:0>Token 流光图 · 项目 → 模型 → 会话</h2><span class=sub style="margin:0;color:var(--faint)">光带宽度对应真实 Token 流量；点击项目或模型锁定链路，点击会话回放</span></div>
+ <div class=flow-shell style=margin-top:14px><svg class=flow-map id=flow-map viewBox="0 0 1120 470" preserveAspectRatio="xMidYMid meet" role=img aria-label="项目到模型再到会话的 Token 流光图"></svg><div class=flow-panel id=flow-panel aria-live=polite><b>Token 流光图</b><span>悬停或聚焦节点查看真实流向，点击项目或模型可锁定链路。</span></div></div>
+ <div class=flow-stats id=flow-stats></div>
 </section>
 
 <section class=card data-module=creature>
@@ -788,7 +855,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 </section>
 
 <div class=grid2>
- <section class=card data-module=badges>
+ <section class=card data-module=badges id=section-achievements>
    <div class=row-between>
      <h2 style=margin:0>🏆 成就徽章</h2>
      <span class=ach-meta id=ach-meta></span>
@@ -824,12 +891,12 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  </section>
 </div>
 
-<section class=card data-module=top>
+<section class=card data-module=top id=section-top>
  <div class=row-between>
    <h2 style=margin:0>Top 项目 / 会话</h2>
    <span class=sub id=top-hint style=margin:0;color:var(--faint)></span>
  </div>
- <div class=top2 style=margin-top:14px">
+ <div class=top2 style="margin-top:14px">
    <div><h2 style=margin:0>烧 token 的项目（cwd）</h2><div id=top-cwd style=margin-top:8px></div></div>
    <div><h2 style=margin:0>烧 token 的会话</h2><div id=top-sess style=margin-top:8px></div></div>
  </div>
@@ -913,7 +980,7 @@ function filteredHourly(){
 function focusDetail(){
   const fd=focusDays(); if(!fd)return null;
   const d={cache_read:0,top_cwds:{},top_sessions:{}};
-  fd.forEach(day=>{const x=DATA.day_details[day];if(!x)return;d.cache_read+=x.cache_read||0;(x.top_cwds||[]).forEach(it=>d.top_cwds[it[2]||it[0]]=[it[0],(d.top_cwds[it[2]||it[0]]?.[1]||0)+it[1],it[2]]);(x.top_sessions||[]).forEach(it=>d.top_sessions[it[2]||it[0]]=[it[0],(d.top_sessions[it[2]||it[0]]?.[1]||0)+it[1],it[2]]);});
+  fd.forEach(day=>{const x=DATA.day_details[day];if(!x)return;d.cache_read+=x.cache_read||0;(x.top_cwds||[]).forEach(it=>{const k=it[2]||it[0],cur=d.top_cwds[k]||[it[0],0,it[2],{}];cur[1]+=it[1]||0;Object.entries(it[3]||{}).forEach(([m,v])=>cur[3][m]=(cur[3][m]||0)+v);d.top_cwds[k]=cur;});(x.top_sessions||[]).forEach(it=>{const k=it[2]||it[0],cur=d.top_sessions[k]||[it[0],0,it[2],{}];cur[1]+=it[1]||0;Object.entries(it[3]||{}).forEach(([m,v])=>cur[3][m]=(cur[3][m]||0)+v);d.top_sessions[k]=cur;});});
   d.top_cwds=Object.values(d.top_cwds).sort((a,b)=>b[1]-a[1]).slice(0,6);d.top_sessions=Object.values(d.top_sessions).sort((a,b)=>b[1]-a[1]).slice(0,6);return d;
 }
 
@@ -1202,9 +1269,17 @@ function buildDiscoveries(){
   out.push({t:'你的 '+fmt(DATA.n_sessions||0)+' 个会话，正在共同组成一份无法复制的开发者轨迹。',s:'它只存在于这份本地生成的 HTML 中'});
   return out;
 }
-let discoveryIndex=0;
-function renderDiscovery(step=0){const a=buildDiscoveries();discoveryIndex=(discoveryIndex+step+a.length)%a.length;document.getElementById('discovery-text').textContent=a[discoveryIndex].t;document.getElementById('discovery-sub').textContent=a[discoveryIndex].s||'所有发现均由本地数据计算。';}
-document.getElementById('discovery-next').addEventListener('click',()=>renderDiscovery(1));
+let discoveryIndex=0, discoveryPinned=false;
+const DISCOVERY_KEY='tk-discovery';
+function loadDiscovery(){try{const v=JSON.parse(localStorage.getItem(DISCOVERY_KEY)||'{}');discoveryIndex=Math.max(0,Number(v.index)||0);discoveryPinned=!!v.pinned;}catch(e){}}
+function saveDiscovery(){try{localStorage.setItem(DISCOVERY_KEY,JSON.stringify({index:discoveryIndex,pinned:discoveryPinned}));}catch(e){}}
+function renderDiscovery(step=0,force=false){const a=buildDiscoveries();if(step&&(!discoveryPinned||force))discoveryIndex=(discoveryIndex+step+a.length)%a.length;discoveryIndex%=a.length;document.getElementById('discovery-text').textContent=a[discoveryIndex].t;document.getElementById('discovery-sub').textContent=(a[discoveryIndex].s||'所有发现均由本地数据计算。')+(discoveryPinned?' · 当前洞察已固定':'');document.getElementById('discovery-pos').textContent=(discoveryIndex+1)+'/'+a.length;const pin=document.getElementById('discovery-pin'),card=document.getElementById('discovery-card');pin.classList.toggle('on',discoveryPinned);pin.setAttribute('aria-pressed',String(discoveryPinned));pin.textContent=discoveryPinned?'◆ 已固定':'◇ 固定';card.classList.toggle('pinned',discoveryPinned);saveDiscovery();}
+function stepDiscovery(step){if(discoveryPinned){toast('当前洞察已固定，取消固定后可切换');return;}renderDiscovery(step,true);}
+loadDiscovery();
+document.getElementById('discovery-next').addEventListener('click',e=>{e.stopPropagation();stepDiscovery(1);});
+document.getElementById('discovery-pin').addEventListener('click',e=>{e.stopPropagation();discoveryPinned=!discoveryPinned;renderDiscovery();});
+document.getElementById('discovery-card').addEventListener('click',e=>{if(e.target.closest('button'))return;stepDiscovery(1);});
+document.getElementById('discovery-card').addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();stepDiscovery(e.key==='ArrowRight'?1:-1);}else if((e.key==='Enter'||e.key===' ')&&!e.target.closest('button')){e.preventDefault();stepDiscovery(1);}});
 function renderFooter(){
   const a=_ach||getBadgeData(), h=DATA.hourly||[], peak=h.indexOf(Math.max(...h)), lines=[
     'by <b>LingXi</b> · 本页装载了 <b>'+human(DATA.day.reduce((s,d)=>s+d.total,0))+'</b> Token 的痕迹。',
@@ -1260,8 +1335,8 @@ function render(){
   const n=DATA[state.gran].length;
   document.getElementById('bar-hint').textContent = n+' 期 · 点击柱子进入时光探针';
   renderBar(); renderDonut(); renderTable(); renderTop(); renderClock(); renderFunFacts(); renderWeather(); renderProbe(); renderRhythm();
-  renderBlock(); renderDaily(); renderMultiples(); renderCity(); renderCreature(); renderRace();
-  renderBadges(); renderDNA(); renderFortune(); renderDiscovery(); renderFooter(); bindModelLinks();
+  renderBlock(); renderDaily(); renderMultiples(); renderFlow(); renderCreature(); renderRace();
+  renderBadges(); renderDNA(); renderFortune(); renderDiscovery(); renderFooter(); renderStatusPulse(); bindModelLinks();
 }
 
 document.getElementById('tabs').addEventListener('click',e=>{
@@ -1410,8 +1485,8 @@ function renderFunFacts(){
 document.getElementById('fun-shuffle').addEventListener('click',renderFunFacts);
 
 /* ---- 模块开关（附加功能可勾选 + 记忆）---- */
-const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true,rhythm:true,fortune:true,multiples:true,city:true,creature:true,race:true,badges:true,dna:true,top:true};
-function loadMods(){ try{ return Object.assign({}, JSON.parse(localStorage.getItem(MODS_KEY)||'{}')); }catch(e){ return {}; } }
+const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true,rhythm:true,fortune:true,multiples:true,flow:true,creature:true,race:true,badges:true,dna:true,top:true};
+function loadMods(){ try{ const m=Object.assign({},JSON.parse(localStorage.getItem(MODS_KEY)||'{}'));let legacy;if(Object.prototype.hasOwnProperty.call(m,'orbit'))legacy=m.orbit;else if(Object.prototype.hasOwnProperty.call(m,'city'))legacy=m.city;if(!Object.prototype.hasOwnProperty.call(m,'flow')&&legacy!==undefined)m.flow=legacy;delete m.orbit;delete m.city;localStorage.setItem(MODS_KEY,JSON.stringify(m));return m; }catch(e){ return {}; } }
 function applyMods(){
   const m=Object.assign({},MOD_DEFAULT,loadMods());
   document.querySelectorAll('[data-module]').forEach(el=>{ el.style.display = m[el.dataset.module]===false ? 'none' : ''; });
@@ -1496,23 +1571,37 @@ function bindModelLinks(){
   document.querySelectorAll('[data-model]').forEach(el=>{el.addEventListener('mouseenter',()=>modelHover(el.dataset.model,true));el.addEventListener('mouseleave',()=>modelHover(el.dataset.model,false));});
 }
 
-function renderCity(){
-  const svg=document.getElementById('city'), projects=DATA.top_cwds||[], sessions=DATA.top_sessions||[], all=[...projects.map((x,i)=>({type:'project',name:x[0],total:x[1],id:x[2],i})),...sessions.map((x,i)=>({type:'session',name:x[0],total:x[1],id:x[2],i}))];
-  if(!all.length){svg.innerHTML='<text x="520" y="215" text-anchor="middle" class="city-title">城市尚未开工</text>';return;}
-  const max=Math.max(...all.map(x=>x.total),1), cols=6, baseY=360, colors=['#5b8def','#14b8a6','#f59e0b','#a78bfa','#f472b6','#38bdf8'];
-  let p=['<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#172a4a"/><stop offset="1" stop-color="#0e1729"/></linearGradient></defs><circle class="city-moon" cx="892" cy="66" r="24"/><circle cx="884" cy="58" r="21" fill="#10192a"/>'];
-  for(let i=0;i<42;i++){const x=(i*137+37)%1030,y=(i*71+23)%180+15,r=i%7===0?1.6:.8;p.push('<circle cx="'+x+'" cy="'+y+'" r="'+r+'" fill="#bfd7ff" opacity="'+(.25+(i%5)*.1)+'"/>');}
-  p.push('<path d="M0 365 L1040 365" stroke="rgba(122,162,247,.3)"/><text class="city-title" x="36" y="42">TOKEN CITY · '+esc(DATA.generated.slice(0,10))+'</text>');
-  all.forEach((b,i)=>{
-    const row=Math.floor(i/cols),col=i%cols,x=70+col*158+(row%2)*42,w=b.type==='project'?75:58,h=42+Math.sqrt(b.total/max)*(b.type==='project'?220:165),y=baseY-row*22-h,depth=b.type==='project'?18:13,c=colors[i%colors.length];
-    p.push('<g class="city-building" data-city="'+i+'"><polygon points="'+x+','+y+' '+(x+w)+','+y+' '+(x+w+depth)+','+(y-depth)+' '+(x+depth)+','+(y-depth)+'" fill="'+c+'" opacity=".82"/><rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="url(#sky)" stroke="'+c+'" stroke-opacity=".7"/><polygon points="'+(x+w)+','+y+' '+(x+w+depth)+','+(y-depth)+' '+(x+w+depth)+','+(y+h-depth)+' '+(x+w)+','+(y+h)+'" fill="'+c+'" opacity=".24"/>');
-    const floors=Math.max(2,Math.floor(h/18)),wc=b.type==='project'?4:3;for(let f=0;f<floors;f++)for(let j=0;j<wc;j++){if((f*7+j*3+i)%4===0)continue;const wx=x+8+j*((w-15)/wc),wy=y+10+f*17;p.push('<rect class="city-window" x="'+wx.toFixed(1)+'" y="'+wy.toFixed(1)+'" width="5" height="6" opacity="'+(.35+((f+j+i)%4)*.16)+'"/>');}
-    p.push('<title>'+esc(b.name)+' · '+fmt(b.total)+' Token</title></g>');
-    if(b.type==='project')p.push('<text class="city-label" x="'+(x+w/2)+'" y="'+(baseY-row*22+15)+'" text-anchor="middle">'+esc(b.name.slice(0,13))+'</text>');
-  });
-  svg.innerHTML=p.join('');document.getElementById('city-stats').innerHTML='<span>🏙 '+projects.length+' 个核心城区</span><span>🏢 '+sessions.length+' 座会话高楼</span><span>✨ '+all.length+' 个可探索地标</span><span>🌙 夜景由本地数据点亮</span>';
-  svg.querySelectorAll('[data-city]').forEach(g=>{const b=all[+g.dataset.city];g.addEventListener('mouseenter',()=>{svg.querySelectorAll('[data-city]').forEach(x=>x.classList.toggle('dim',x!==g));document.getElementById('city-panel').innerHTML='<b>'+(b.type==='project'?'城区 · ':'建筑 · ')+esc(b.name)+'</b><span>'+fmt(b.total)+' Token · 城市高度 '+Math.round(Math.sqrt(b.total/max)*100)+'%</span>';});g.addEventListener('mouseleave',()=>{svg.querySelectorAll('[data-city]').forEach(x=>x.classList.remove('dim'));document.getElementById('city-panel').innerHTML='<b>Token City</b><span>悬停建筑，查看这座城市的算力居民。</span>';});if(b.type==='session')g.addEventListener('click',()=>openReplay(b.id,b.name));});
+function currentFlow(){
+  if(!state.focusPeriod)return DATA.flow||{project_model:[],model_session:[]};
+  const fd=focusDays(),pm={},ms={};
+  (fd||[]).forEach(day=>{const f=DATA.day_details[day]?.flow;if(!f)return;(f.project_model||[]).forEach(x=>{const k=x[1]+'::'+x[2],v=pm[k]||[x[0],x[1],x[2],0];v[3]+=x[3]||0;pm[k]=v;});(f.model_session||[]).forEach(x=>{const k=x[0]+'::'+x[2],v=ms[k]||[x[0],x[1],x[2],0];v[3]+=x[3]||0;ms[k]=v;});});
+  return {project_model:Object.values(pm),model_session:Object.values(ms)};
 }
+let flowLocked=null;
+function renderFlow(){
+  const svg=document.getElementById('flow-map'),raw=currentFlow(),selectedTotal=selectedRows().reduce((a,r)=>a+r.total,0);
+  const pm=(raw.project_model||[]).filter(x=>state.models.has(x[2])&&x[3]>0),ms=(raw.model_session||[]).filter(x=>state.models.has(x[0])&&x[3]>0);
+  const sumBy=(arr,key,val)=>{const o={};arr.forEach(x=>o[x[key]]=(o[x[key]]||0)+(x[val]||0));return o;};
+  const pmModels=sumBy(pm,2,3),msModels=sumBy(ms,0,3),allModels=new Set([...Object.keys(pmModels),...Object.keys(msModels)]),mt={};allModels.forEach(m=>mt[m]=Math.max(pmModels[m]||0,msModels[m]||0));
+  const modelIds=Object.keys(mt).filter(m=>state.models.has(m)).sort((a,b)=>(mt[b]||0)-(mt[a]||0)).slice(0,7),modelSet=new Set(modelIds),modelPM=pm.filter(x=>modelSet.has(x[2])),modelMS=ms.filter(x=>modelSet.has(x[0])),pt=sumBy(modelPM,1,3),st=sumBy(modelMS,2,3);
+  const projectIds=Object.keys(pt).sort((a,b)=>pt[b]-pt[a]).slice(0,7),sessionIds=Object.keys(st).sort((a,b)=>st[b]-st[a]).slice(0,8),projectSet=new Set(projectIds),sessionSet=new Set(sessionIds),linksPM=modelPM.filter(x=>projectSet.has(x[1])),linksMS=modelMS.filter(x=>sessionSet.has(x[2]));
+  if(!linksPM.length&&!linksMS.length){svg.innerHTML='<text x="560" y="220" text-anchor="middle" class="flow-col">暂无所选模型的流向数据</text>';document.getElementById('flow-stats').innerHTML='<span>0 条流光链路</span>';showFlowPanel(null);return;}
+  const W=1120,H=470,xpos={project:130,model:560,session:990},layout=(ids,totals,type)=>{const gap=(H-90)/Math.max(1,ids.length),out={};ids.forEach((id,i)=>out[id]={x:xpos[type],y:55+gap*(i+.5),total:totals[id]||0});return out;},P=layout(projectIds,pt,'project'),M=layout(modelIds,mt,'model'),S=layout(sessionIds,st,'session'),maxLink=Math.max(1,...linksPM.map(x=>x[3]),...linksMS.map(x=>x[3]));
+  const sessionLabels={};ms.forEach(x=>sessionLabels[x[2]]=x[1]);const projectLabels={};pm.forEach(x=>projectLabels[x[1]]=x[0]);
+  let p=['<defs>'];modelIds.forEach((m,i)=>{const c=DATA.colors[m]||'#7aa2f7';p.push('<linearGradient id="flow-g-'+i+'" x1="0" x2="1"><stop stop-color="'+c+'" stop-opacity=".25"/><stop offset=".5" stop-color="'+c+'"/><stop offset="1" stop-color="'+c+'" stop-opacity=".35"/></linearGradient>');});p.push('</defs><text class="flow-col" x="55" y="28">PROJECT</text><text class="flow-col" x="520" y="28">MODEL</text><text class="flow-col" x="942" y="28">SESSION</text>');
+  const path=(a,b)=>'M '+a.x+' '+a.y+' C '+(a.x+150)+' '+a.y+' '+(b.x-150)+' '+b.y+' '+b.x+' '+b.y;
+  linksPM.forEach(x=>{const mi=modelIds.indexOf(x[2]),w=2+Math.sqrt(x[3]/maxLink)*17;p.push('<path class="flow-link motion" data-flow-from="project:'+esc(x[1])+'" data-flow-model="'+esc(x[2])+'" d="'+path(P[x[1]],M[x[2]])+'" stroke="url(#flow-g-'+mi+')" stroke-width="'+w.toFixed(1)+'"><title>'+esc(x[0])+' → '+esc(pretty(x[2]))+' · '+fmt(x[3])+' Token</title></path>');});
+  linksMS.forEach(x=>{const mi=modelIds.indexOf(x[0]),w=2+Math.sqrt(x[3]/maxLink)*17;p.push('<path class="flow-link motion" data-flow-model="'+esc(x[0])+'" data-flow-to="session:'+esc(x[2])+'" d="'+path(M[x[0]],S[x[2]])+'" stroke="url(#flow-g-'+mi+')" stroke-width="'+w.toFixed(1)+'"><title>'+esc(pretty(x[0]))+' → '+esc(x[1])+' · '+fmt(x[3])+' Token</title></path>');});
+  const node=(type,id,pos,label,total,color)=>{const share=Math.min(100,selectedTotal?total/selectedTotal*100:0),boxX=pos.x-80,boxY=pos.y-20,canLock=type!=='session';return '<g class="flow-node '+type+'" data-flow-type="'+type+'" data-flow-id="'+esc(id)+'" data-flow-name="'+esc(label)+'" data-flow-total="'+total+'" data-flow-share="'+share.toFixed(2)+'" tabindex="0" role="button" aria-label="'+(type==='project'?'项目 ':type==='model'?'模型 ':'会话 ')+esc(label)+'，'+fmt(total)+' Token，占比 '+share.toFixed(1)+'%"><rect class="flow-hit" x="'+(boxX-6)+'" y="'+(boxY-4)+'" width="172" height="48" rx="12"/><rect class="flow-box" x="'+boxX+'" y="'+boxY+'" width="160" height="40" rx="10" fill="'+color+'" fill-opacity=".22"/><text x="'+pos.x+'" y="'+(pos.y-2)+'" text-anchor="middle">'+esc(label.length>20?label.slice(0,19)+'…':label)+'</text><text class="flow-value" x="'+pos.x+'" y="'+(pos.y+13)+'" text-anchor="middle">'+human(total)+' tk</text><title>'+(canLock?'点击锁定链路':'点击回放会话')+'</title></g>';};
+  projectIds.forEach((id,i)=>p.push(node('project',id,P[id],projectLabels[id]||id,pt[id],['#5b8def','#14b8a6','#a78bfa','#38bdf8'][i%4])));modelIds.forEach(m=>p.push(node('model',m,M[m],pretty(m),mt[m],DATA.colors[m]||'#7aa2f7')));sessionIds.forEach((id,i)=>p.push(node('session',id,S[id],sessionLabels[id]||id,st[id],['#f472b6','#f59e0b','#a78bfa','#38bdf8'][i%4])));
+  svg.innerHTML=p.join('');document.getElementById('flow-stats').innerHTML='<span>'+projectIds.length+' 个项目</span><span>'+modelIds.length+' 个模型</span><span>'+sessionIds.length+' 个会话</span><span>'+(linksPM.length+linksMS.length)+' 条真实流向</span>';
+  const nodes=[...svg.querySelectorAll('.flow-node')],links=[...svg.querySelectorAll('.flow-link')],keyFor=n=>n.dataset.flowType+':'+n.dataset.flowId,dataFor=n=>({type:n.dataset.flowType,id:n.dataset.flowId,name:n.dataset.flowName,total:Number(n.dataset.flowTotal),share:Number(n.dataset.flowShare)});
+  const illuminate=n=>{const key=keyFor(n),type=n.dataset.flowType,id=n.dataset.flowId,models=new Set();if(type==='model')models.add(id);if(type==='project')links.filter(l=>l.dataset.flowFrom===key).forEach(l=>models.add(l.dataset.flowModel));if(type==='session')links.filter(l=>l.dataset.flowTo===key).forEach(l=>models.add(l.dataset.flowModel));links.forEach(l=>{const hot=type==='model'?l.dataset.flowModel===id:type==='project'?(l.dataset.flowFrom===key||models.has(l.dataset.flowModel)):type==='session'?(l.dataset.flowTo===key||models.has(l.dataset.flowModel)):false;l.classList.toggle('hot',hot);l.classList.toggle('dim',!hot);});const active=new Set([key]);links.filter(l=>l.classList.contains('hot')).forEach(l=>{if(l.dataset.flowFrom)active.add(l.dataset.flowFrom);if(l.dataset.flowTo)active.add(l.dataset.flowTo);if(l.dataset.flowModel)active.add('model:'+l.dataset.flowModel);});nodes.forEach(x=>x.classList.toggle('dim',!active.has(keyFor(x))));};
+  const clear=()=>{links.forEach(l=>l.classList.remove('hot','dim'));nodes.forEach(n=>n.classList.remove('dim'));};
+  nodes.forEach(n=>{n.addEventListener('mouseenter',()=>{illuminate(n);showFlowPanel(dataFor(n));});n.addEventListener('focus',()=>{illuminate(n);showFlowPanel(dataFor(n));});n.addEventListener('mouseleave',()=>{if(!flowLocked){clear();showFlowPanel(null);}});n.addEventListener('blur',()=>{if(!flowLocked){clear();showFlowPanel(null);}});const activate=()=>{const d=dataFor(n);if(d.type==='session'){openReplay(d.id,d.name);return;}const k=keyFor(n);flowLocked=flowLocked===k?null:k;nodes.forEach(x=>x.classList.toggle('locked',keyFor(x)===flowLocked));if(flowLocked){illuminate(n);showFlowPanel(d,true);}else{clear();showFlowPanel(null);}};n.addEventListener('click',activate);n.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});});
+  if(flowLocked){const locked=nodes.find(n=>keyFor(n)===flowLocked);if(locked){locked.classList.add('locked');illuminate(locked);showFlowPanel(dataFor(locked),true);}else flowLocked=null;}else showFlowPanel(null);
+}
+function showFlowPanel(d,locked=false){const panel=document.getElementById('flow-panel');if(!d){panel.innerHTML='<b>Token 流光图</b><span>悬停或聚焦节点查看项目 → 模型 → 会话的真实 Token 流向。</span>';return;}const type=d.type==='project'?'项目':d.type==='model'?'模型':'会话';panel.innerHTML='<b>'+type+' · '+esc(d.name)+'</b><span>'+fmt(d.total)+' Token · 占当前筛选总量 '+d.share.toFixed(1)+'%'+(locked?' · 已锁定，再点取消':d.type==='session'?' · 点击回放':' · 点击锁定链路')+'</span>';}
 
 function renderCreature(){
   const svg=document.getElementById('creature'),days=DATA.day||[],total=days.reduce((a,d)=>a+d.total,0),h=DATA.hourly||[],ht=h.reduce((a,b)=>a+b,0),night=(h.slice(0,6).reduce((a,b)=>a+b,0)+h.slice(22).reduce((a,b)=>a+b,0))/(ht||1);
@@ -1588,12 +1677,30 @@ function secretCommand(q){
     'rm -rf':()=>toast('操作已拦截。你的 '+fmt((_ach||getBadgeData()).got)+' 枚成就松了一口气。',4200),
     'matrix':()=>{document.body.style.filter='hue-rotate(75deg) saturate(1.5)';toast('Wake up, developer…');setTimeout(()=>document.body.style.filter='',2600);},
     'midnight':()=>{const h=DATA.hourly||[];toast('深夜共留下 '+human(h.slice(0,6).reduce((a,b)=>a+b,0)+h.slice(22).reduce((a,b)=>a+b,0))+' Token。',4200);},
-    'receipt':()=>openShare('receipt'),'passport':()=>openShare('passport'),'city':()=>document.querySelector('[data-module=city]').scrollIntoView({behavior:'smooth'}),'creature':()=>document.querySelector('[data-module=creature]').scrollIntoView({behavior:'smooth'})
+    'receipt':()=>openShare('receipt'),'passport':()=>openShare('passport'),'flow':()=>scrollToSection('section-flow'),'orbit':()=>scrollToSection('section-flow'),'city':()=>scrollToSection('section-flow'),'creature':()=>document.querySelector('[data-module=creature]').scrollIntoView({behavior:'smooth'})
   };if(secrets[q]){closePalette();setTimeout(secrets[q],80);return true;}return false;
 }
 
+function scrollToSection(id){const el=document.getElementById(id);if(!el)return;el.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
+const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-rhythm','节奏'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
+function initSectionDock(){
+  const dock=document.getElementById('section-dock');dock.addEventListener('click',e=>{const b=e.target.closest('button[data-target]');if(b)scrollToSection(b.dataset.target);});
+  const mark=id=>dock.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.target===id));
+  if('IntersectionObserver'in window){const obs=new IntersectionObserver(entries=>{const hit=entries.filter(x=>x.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(hit)mark(hit.target.id);},{rootMargin:'-18% 0px -65% 0px',threshold:[0,.15,.4]});SECTION_LINKS.forEach(([id])=>{const el=document.getElementById(id);if(el)obs.observe(el);});}
+}
+initSectionDock();
+document.getElementById('status-pulse').addEventListener('click',()=>scrollToSection('section-trend'));
+function usageStatus(rows){if(rows.length<2)return {label:'—',cls:'',last:rows.length?rows[rows.length-1].total:0,avg:null,delta:null,detail:'至少需要两期数据才能计算状态'};const last=rows[rows.length-1].total,prior=rows.slice(Math.max(0,rows.length-5),-1),avg=prior.reduce((a,r)=>a+r.total,0)/Math.max(1,prior.length);if(avg===0){if(last>0)return {label:'升温',cls:'warming',last,avg,delta:null,detail:'此前均值为 0，本期出现新活动'};return {label:'平稳',cls:'steady',last,avg,delta:0,detail:'本期与此前均值均为 0'};}const delta=last/avg-1,label=delta>.12?'升温':delta<-.12?'降温':'平稳',cls=delta>.12?'warming':delta<-.12?'cooling':'steady';return {label,cls,last,avg,delta,detail:'变化 '+(delta>=0?'+':'')+(delta*100).toFixed(1)+'%'};}
+function renderStatusPulse(){const el=document.getElementById('status-pulse'),text=document.getElementById('status-text'),s=usageStatus(selectedRows(true));el.classList.remove('warming','steady','cooling');if(s.cls)el.classList.add(s.cls);text.textContent='状态 '+s.label;el.title=s.avg===null?s.detail+' · 点击查看趋势':'最后一期 '+fmt(s.last)+' Token；此前均值 '+fmt(s.avg)+'；'+s.detail+' · 点击查看趋势';}
+
 /* ---- 命令面板 Cmd+K ---- */
 function cmdActions(){ return [
+  {ic:'◎',t:'跳转 · 总览',k:'',run:()=>scrollToSection('section-overview')},
+  {ic:'↗',t:'跳转 · 趋势',k:'',run:()=>scrollToSection('section-trend')},
+  {ic:'◫',t:'跳转 · 节奏',k:'',run:()=>scrollToSection('section-rhythm')},
+  {ic:'≋',t:'跳转 · Token 流光图',k:'',run:()=>scrollToSection('section-flow')},
+  {ic:'◇',t:'跳转 · 成就',k:'',run:()=>scrollToSection('section-achievements')},
+  {ic:'№',t:'跳转 · Top',k:'',run:()=>scrollToSection('section-top')},
   {ic:'📅',t:'按日',k:'1',run:()=>setGran('day')},
   {ic:'📆',t:'按周',k:'2',run:()=>setGran('week')},
   {ic:'🗓️',t:'按月',k:'3',run:()=>setGran('month')},

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>页面未找到｜tokens 文档</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='17' fill='%230b1020'/%3E%3Cpath d='M17 19h30v8H36v22h-8V27H17z' fill='%2372a7ff'/%3E%3C/svg%3E">
+  <style>
+    :root{--bg:#070a11;--surface:#111827;--text:#e8eefc;--muted:#9ba9c4;--line:rgba(139,165,214,.25);color-scheme:dark}
+    @media(prefers-color-scheme:light){:root:not([data-theme=dark]){--bg:#f5f8ff;--surface:#fff;--text:#172033;--muted:#53617a;--line:rgba(51,75,118,.2);color-scheme:light}}
+    :root[data-theme=light]{--bg:#f5f8ff;--surface:#fff;--text:#172033;--muted:#53617a;--line:rgba(51,75,118,.2);color-scheme:light}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(800px 460px at 50% 0,rgba(80,120,240,.2),transparent 65%),var(--bg);font:15px/1.7 system-ui,-apple-system,"Segoe UI","PingFang SC",sans-serif}.bar{min-height:66px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 max(18px,calc((100% - 1040px)/2));gap:12px}.brand{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:800}.mark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#377cf1,#7457e8);font:800 13px monospace}.theme{margin-left:auto;width:38px;height:38px;border:1px solid var(--line);border-radius:10px;color:var(--text);background:var(--surface);cursor:pointer}.main{min-height:calc(100vh - 130px);display:grid;place-items:center;padding:48px 20px;text-align:center}.code{font:900 clamp(84px,22vw,220px)/.8 monospace;color:transparent;-webkit-text-stroke:1px var(--line);text-shadow:0 0 60px rgba(80,120,240,.25)}h1{margin:30px 0 12px;font-size:clamp(30px,5vw,52px);letter-spacing:-.04em}p{color:var(--muted);font-size:18px}.actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:26px}.button{min-height:43px;padding:0 17px;border:1px solid var(--line);border-radius:11px;display:inline-flex;align-items:center;color:var(--text);background:var(--surface);text-decoration:none;font-weight:700}.button.primary{color:#fff;border-color:transparent;background:linear-gradient(115deg,#2f73dd,#6d54db)}footer{padding:20px;text-align:center;color:var(--muted);font-size:12px}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+  <script>try{var t=localStorage.getItem('tokens-docs-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+</head>
+<body>
+  <header class="bar"><a class="brand" id="home-brand" href="./" aria-label="返回 tokens 文档首页"><span class="mark">Tk</span><span>tokens 文档</span></a><button class="theme" id="theme" type="button" aria-label="切换亮暗主题">◐</button></header>
+  <main class="main"><div><div class="code">404</div><h1>坐标不在数据宇宙中</h1><p>链接可能已移动，或者地址输入有误。</p><div class="actions"><a class="button primary" id="home-button" href="./">返回文档首页</a><a class="button" id="faq-button" href="faq.html">查看 FAQ</a></div></div></main>
+  <footer>自包含错误页 · 不加载远程资源 · 可通过 file:// 直接打开</footer>
+  <script>
+  (function(){
+    var local=location.protocol==='file:';
+    var path=location.pathname||'/';
+    var segments=path.split('/').filter(Boolean);
+    var repoBase='/';
+    if(!local&&location.hostname.endsWith('github.io')&&segments.length){repoBase='/'+segments[0]+'/';}
+    else if(!local){repoBase=path.replace(/\/[^/]*$/,'/');}
+    var base=local?'./':repoBase;
+    document.getElementById('home-brand').href=base;
+    document.getElementById('home-button').href=base;
+    document.getElementById('faq-button').href=base+'faq.html';
+    document.getElementById('theme').addEventListener('click',function(){
+      var dark=document.documentElement.getAttribute('data-theme')==='dark';
+      var next=dark?'light':'dark';document.documentElement.setAttribute('data-theme',next);
+      try{localStorage.setItem('tokens-docs-theme',next)}catch(e){}
+    });
+  })();
+  </script>
+</body>
+</html>
