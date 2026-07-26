@@ -47,6 +47,13 @@ class DashboardTests(unittest.TestCase):
             },
         ]
 
+    def test_dashboard_assets_are_split_and_loaded(self):
+        self.assertIn("dashboard_assets", report_dashboard._ASSET_DIR)
+        self.assertIn("__STYLE__", (ROOT / "dashboard_assets" / "template.html").read_text(encoding="utf-8"))
+        self.assertIn("__SCRIPT__", (ROOT / "dashboard_assets" / "template.html").read_text(encoding="utf-8"))
+        self.assertGreater((ROOT / "dashboard_assets" / "dashboard.css").stat().st_size, 10000)
+        self.assertGreater((ROOT / "dashboard_assets" / "dashboard.js").stat().st_size, 50000)
+
     def test_compact_wire_round_trips_payload(self):
         payload = {
             "models": ["model-a", "model-b"],

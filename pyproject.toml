@@ -39,3 +39,11 @@ py-modules = [
     "dashboard_wire",
     "cli",
 ]
+include-package-data = true
+
+[tool.setuptools.data-files]
+"lib/dashboard_assets" = [
+    "dashboard_assets/template.html",
+    "dashboard_assets/dashboard.css",
+    "dashboard_assets/dashboard.js",
+]
