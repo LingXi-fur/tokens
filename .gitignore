@@ -1,0 +1,24 @@
+# 输出与缓存
+out/
+__pycache__/
+*.pyc
+*.pyo
+
+# 打包产物
+build/
+dist/
+*.egg-info/
+*.egg
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/

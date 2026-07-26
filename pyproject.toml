@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tokens"
+version = "0.1.0"
+description = "Local token-usage stats for Claude Code / Gemini / Codex — daily, weekly, monthly, by model."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "a123" }]
+keywords = ["claude", "claude-code", "tokens", "usage", "analytics", "dashboard"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/a123/tokens"
+
+# flat 布局：7 个顶层模块。后续重构为 tokens/ 包（见 README roadmap）。
+[project.scripts]
+tokens = "cli:main"
+
+[tool.setuptools]
+py-modules = [
+    "config",
+    "readers",
+    "aggregate",
+    "report_term",
+    "report_html",
+    "report_dashboard",
+    "cli",
+]

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# 一键跑统计。用法：./run [day|week|month|all] [额外参数...]
+# 例：./run month --html --open
+set -e
+cd "$(dirname "$0")"
+python3 cli.py "${@:-day}"
