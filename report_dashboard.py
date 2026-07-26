@@ -17,6 +17,7 @@ import readers
 import aggregate
 import report_term
 import dashboard_payload
+import dashboard_wire
 
 # 协调分类色：同明度/饱和，主色锁定品牌蓝，其余仅在多模型时出现。
 PALETTE = ["#5b8def", "#14b8a6", "#f59e0b", "#a78bfa",
@@ -855,7 +856,23 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 </div>
 
 <script>
-const DATA = __DATA__;
+const WIRE = __DATA__;
+function decodeWire(wire){
+  if(!wire||wire.v!==1)throw new Error('Unsupported dashboard data version');
+  const table=wire.s||[],mark='§';
+  const decode=value=>{
+    if(typeof value==='string'){
+      if(!value.startsWith(mark))return value;
+      if(value.startsWith(mark+mark))return value.slice(1);
+      return table[parseInt(value.slice(1),36)];
+    }
+    if(Array.isArray(value))return value.map(decode);
+    if(value&&typeof value==='object'){const out={};Object.entries(value).forEach(([key,item])=>out[decode(key)]=decode(item));return out;}
+    return value;
+  };
+  return decode(wire.d);
+}
+const DATA = decodeWire(WIRE);
 const state = { gran: 'month', models: new Set(DATA.models), focusPeriod:null, compare:false, numberMode:0 };
 let lastTotal = 0;
 const LABEL = {day:'日期', week:'周(始)', month:'月份'};
@@ -2150,7 +2167,8 @@ def _embed_json(payload):
 
 def write_dashboard(records, since=None, until=None, sources=None):
     payload = build_payload(records, since=since, until=until, sources=sources)
-    html_doc = _TEMPLATE.replace("__DATA__", _embed_json(payload))
+    wire = dashboard_wire.encode_payload(payload)
+    html_doc = _TEMPLATE.replace("__DATA__", _embed_json(wire))
     os.makedirs(config.OUT_DIR, exist_ok=True)
     path = os.path.join(config.OUT_DIR, "dashboard.html")
     with open(path, "w", encoding="utf-8") as fh:

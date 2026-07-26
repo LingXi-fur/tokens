@@ -36,5 +36,6 @@ py-modules = [
     "report_html",
     "report_dashboard",
     "dashboard_payload",
+    "dashboard_wire",
     "cli",
 ]

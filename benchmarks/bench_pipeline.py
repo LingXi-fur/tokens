@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import config
+import dashboard_wire
 import readers
 import report_dashboard
 
@@ -58,11 +59,17 @@ def measure_payload(records, suppress_titles=True):
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    wire = json.dumps(
+        dashboard_wire.encode_payload(payload),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
     return {
         "records": len(records),
         "seconds": round(elapsed, 6),
         "peak_bytes": peak,
         "payload_bytes": len(encoded),
+        "wire_bytes": len(wire),
         "days": len(payload.get("day_details", {})),
         "sessions": len(payload.get("session_series", {})),
     }
@@ -85,6 +92,11 @@ def measure_real(use_cache):
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    wire = json.dumps(
+        dashboard_wire.encode_payload(payload),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
     return {
         "cached": use_cache,
         "records": len(records),
@@ -92,6 +104,7 @@ def measure_real(use_cache):
         "build_seconds": round(build_seconds, 6),
         "peak_bytes": peak,
         "payload_bytes": len(encoded),
+        "wire_bytes": len(wire),
     }
 
 

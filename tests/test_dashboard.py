@@ -1,3 +1,4 @@
+import json
 import re
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ import sys
 sys.path.insert(0, str(ROOT))
 
 import dashboard_payload
+import dashboard_wire
 import report_dashboard
 
 
@@ -45,6 +47,25 @@ class DashboardTests(unittest.TestCase):
             },
         ]
 
+    def test_compact_wire_round_trips_payload(self):
+        payload = {
+            "models": ["model-a", "model-b"],
+            "day_details": {
+                "2026-07-01": {
+                    "model": "model-a",
+                    "session": "session-a",
+                    "repeated": ["model-a", "session-a", "model-a"],
+                },
+            },
+            "literal": "§already-prefixed",
+        }
+        wire = dashboard_wire.encode_payload(payload)
+        self.assertEqual(1, wire["v"])
+        self.assertEqual(payload, dashboard_wire.decode_payload(wire))
+        compact = json.dumps(wire, ensure_ascii=False, separators=(",", ":"))
+        plain = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        self.assertLess(len(compact), len(plain) + 80)
+
     @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
     @mock.patch("dashboard_payload.readers.session_title", return_value="")
     @mock.patch("dashboard_payload.readers.load_session_summaries", return_value={})
@@ -64,6 +85,7 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertEqual(direct, facade)
 
+    def test_template_replaces_legacy_city_and_orbit_with_flow(self):
         template = report_dashboard._TEMPLATE
         for legacy in (
             "Token 城市", "Token City", "renderCity", "city-shell",
@@ -178,7 +200,8 @@ class DashboardTests(unittest.TestCase):
                 ))
             html = path.read_text(encoding="utf-8")
         self.assertNotIn("__DATA__", html)
-        self.assertIn("const DATA = {", html)
+        self.assertIn("const WIRE = {", html)
+        self.assertIn("const DATA = decodeWire(WIRE)", html)
         ids = re.findall(r"\bid\s*=\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s>]+))", html)
         flat_ids = [next(part for part in match if part) for match in ids]
         for key_id in (
