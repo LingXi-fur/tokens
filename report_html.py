@@ -86,7 +86,7 @@ def _svg_bar_chart(rows, mode, width=820, height=300):
         frac = i / 4
         y = pad_t + plot_h * (1 - frac)
         val = int(vmax * frac)
-        parts.append(f'<line class="grid" x1="{pad_l}" y1="{y:.1f}" x2="{width-pad_r}" y2="{y:.1f}" />')
+        parts.append(f'<line class="grid-line" x1="{pad_l}" y1="{y:.1f}" x2="{width-pad_r}" y2="{y:.1f}" />')
         if i > 0:
             parts.append(f'<text x="{pad_l-9}" y="{y+3.5:.1f}" text-anchor="end" class="tick">{_vf(val)}</text>')
     parts.append(f'<line class="axis" x1="{pad_l}" y1="{pad_t+plot_h:.1f}" x2="{width-pad_r}" y2="{pad_t+plot_h:.1f}" />')
@@ -178,7 +178,7 @@ h1{font-size:23px;margin:0;font-weight:700;letter-spacing:.1px}
 .kpi .l{color:var(--dim);font-size:11.5px;margin-top:6px}
 .chart,.pie{width:100%;height:auto;display:block}
 .pie{max-width:230px;margin:0 auto}
-.grid-l{stroke:var(--line)}.axis{stroke:var(--line-2)}
+.grid-line{stroke:var(--line)}.axis{stroke:var(--line-2)}
 .bar{fill:var(--accent-2)}
 .tick{fill:var(--faint);font-size:10px}
 .xlabel{fill:var(--dim);font-size:10.5px}

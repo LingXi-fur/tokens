@@ -135,21 +135,35 @@ def claude_parse(path):
     return out
 
 
-def session_file(session_id):
-    """sessionId → ~/.claude/projects/**/<sessionId>.jsonl（找不到返回 None）。"""
-    if not session_id or not os.path.isdir(config.CLAUDE_PROJECTS):
+def build_session_index():
+    """一次扫描 Claude 日志目录，返回 session id → 文件路径。"""
+    if not os.path.isdir(config.CLAUDE_PROJECTS):
+        return {}
+    return {
+        os.path.splitext(os.path.basename(path))[0]: path
+        for path in claude_files()
+    }
+
+
+def session_file(session_id, session_index=None):
+    """sessionId → Claude JSONL 路径（找不到返回 None）。"""
+    if not session_id:
+        return None
+    if session_index is not None:
+        return session_index.get(str(session_id))
+    if not os.path.isdir(config.CLAUDE_PROJECTS):
         return None
     hits = glob.glob(os.path.join(config.CLAUDE_PROJECTS, "**", str(session_id) + ".jsonl"), recursive=True)
     return hits[0] if hits else None
 
 
-def session_title(session_id, max_len=60):
+def session_title(session_id, max_len=60, session_index=None):
     """从会话首条有效用户提问提取标题（离线、隐私安全）。
 
     Claude 日志里 sessionId 即文件名；取第一条非空、非命令/系统包络的用户文本。
     没有则返回空串，由调用方回退到短 id。
     """
-    path = session_file(session_id)
+    path = session_file(session_id, session_index=session_index)
     if not path:
         return ""
     try:
@@ -344,7 +358,7 @@ def _save_cache(cache):
     fd, tmp = tempfile.mkstemp(prefix=".cache-", dir=config.OUT_DIR)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(cache, fh)
+            json.dump(cache, fh, separators=(",", ":"))
         os.chmod(tmp, 0o600)
         os.replace(tmp, config.CACHE_FILE)
     finally:
