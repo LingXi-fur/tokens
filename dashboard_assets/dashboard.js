@@ -462,10 +462,10 @@ window.addEventListener('popstate',()=>{restoringView=true;restoreViewFromURL();
 
 document.getElementById('compare-btn').addEventListener('click',()=>{ state.compare=!state.compare; renderBar();renderViewCapsule();syncViewURL(); });
 
-const LAZY_RENDERERS={flow:renderFlow,creature:renderCreature,race:renderRace,badges:renderBadges,dna:renderDNA};
+const LAZY_RENDERERS={reuse:renderReuseRiver,fingerprint:renderFingerprint,flow:renderFlow,creature:renderCreature,race:renderRace,badges:renderBadges,dna:renderDNA};
 const lazyState={};
 function renderLazy(name,force=false){const card=document.querySelector('[data-lazy="'+name+'"]');if(!card||card.style.display==='none')return;if(!force&&!lazyState[name]?.visible){card.classList.add('lazy-pending');lazyState[name]=Object.assign({},lazyState[name],{dirty:true});return;}card.classList.remove('lazy-pending');LAZY_RENDERERS[name]();lazyState[name]=Object.assign({},lazyState[name],{dirty:false,rendered:true});}
-function markLazyDirty(){['flow','dna'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible)renderLazy(name,true);});}
+function markLazyDirty(){['reuse','fingerprint','flow','dna'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible)renderLazy(name,true);});}
 function markStaticLazyDirty(){['creature','race','badges'].forEach(name=>{if(!lazyState[name]?.rendered)lazyState[name]=Object.assign({},lazyState[name],{dirty:true});});}
 function initLazyRendering(){
   document.querySelectorAll('[data-lazy]').forEach(card=>{const name=card.dataset.lazy;lazyState[name]={visible:false,dirty:true,rendered:false};card.classList.add('lazy-pending');});
@@ -635,7 +635,7 @@ function renderFunFacts(){
 document.getElementById('fun-shuffle').addEventListener('click',renderFunFacts);
 
 /* ---- 模块开关（附加功能可勾选 + 记忆）---- */
-const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true,rhythm:true,fortune:true,multiples:true,flow:true,creature:true,race:true,badges:true,dna:true,top:true};
+const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true,rhythm:true,fortune:true,multiples:true,reuse:true,fingerprint:true,flow:true,creature:true,race:true,badges:true,dna:true,top:true};
 function loadMods(){ try{ const m=Object.assign({},JSON.parse(localStorage.getItem(MODS_KEY)||'{}'));let legacy;if(Object.prototype.hasOwnProperty.call(m,'orbit'))legacy=m.orbit;else if(Object.prototype.hasOwnProperty.call(m,'city'))legacy=m.city;if(!Object.prototype.hasOwnProperty.call(m,'flow')&&legacy!==undefined)m.flow=legacy;delete m.orbit;delete m.city;localStorage.setItem(MODS_KEY,JSON.stringify(m));return m; }catch(e){ return {}; } }
 function applyMods(){
   const m=Object.assign({},MOD_DEFAULT,loadMods());
@@ -730,6 +730,37 @@ function currentFlow(){
   return {project_model:Object.values(pm),model_session:Object.values(ms)};
 }
 let flowLocked=null;
+function selectedReuseRows(){
+  const rows=(DATA.reuse||{})[state.gran]||[];
+  return rows.map(([period,byModel])=>{const parts=[0,0,0,0,0];Object.entries(byModel||{}).forEach(([m,v])=>{if(state.models.has(m))v.forEach((n,i)=>parts[i]+=n||0);});return [period,...parts];});
+}
+function renderReuseRiver(){
+  const rows=selectedReuseRows(),svg=document.getElementById('reuse-chart'),panel=document.getElementById('reuse-panel'),selectedTotal=rows.reduce((a,r)=>a+r.slice(1).reduce((x,y)=>x+(y||0),0),0);
+  if(!rows.length||!selectedTotal){svg.innerHTML='<text x="540" y="150" text-anchor="middle" class="reuse-label">当前模型筛选下暂无 Token 构成</text>';document.getElementById('reuse-summary').textContent='0 Token';panel.textContent='选择至少一个有数据的模型后生成复用之河。';return;}
+  let data=state.focusPeriod?rows.filter(r=>r[0]===state.focusPeriod):rows;if(data.length===1)data=[data[0],data[0]];
+  const W=1080,H=300,pad=34,plotW=W-pad*2,plotH=H-60,series=[1,2,3,4,5],colors=['#5b8def','#f472b6','#14b8a6','#a78bfa','#94a3b8'],labels=['Fresh Input','Output','Cache Read','Cache Write','Other'];
+  const totals=data.map(r=>series.reduce((a,i)=>a+(r[i]||0),0)),max=Math.max(1,...totals),step=plotW/Math.max(1,data.length-1);let lower=Array(data.length).fill(0),parts=['<defs>'];colors.forEach((c,i)=>parts.push('<linearGradient id="reuse-g-'+i+'" x1="0" y1="0" x2="0" y2="1"><stop stop-color="'+c+'" stop-opacity=".72"/><stop offset="1" stop-color="'+c+'" stop-opacity=".16"/></linearGradient>'));parts.push('</defs>');
+  for(let g=0;g<=3;g++){const y=24+plotH*g/3;parts.push('<line class="reuse-grid" x1="'+pad+'" y1="'+y+'" x2="'+(W-pad)+'" y2="'+y+'"/>');}
+  series.forEach((idx,si)=>{const upper=data.map((r,i)=>lower[i]+(r[idx]||0)),top=upper.map((v,i)=>(pad+i*step).toFixed(1)+','+(24+plotH-v/max*plotH).toFixed(1)),bottom=lower.map((v,i)=>(pad+i*step).toFixed(1)+','+(24+plotH-v/max*plotH).toFixed(1)).reverse(),d='M'+top.join(' L')+' L'+bottom.join(' L')+' Z';parts.push('<path class="reuse-area" d="'+d+'" fill="url(#reuse-g-'+si+')" opacity=".86"><title>'+labels[si]+'</title></path>');lower=upper;});
+  const original=state.focusPeriod?rows.filter(r=>r[0]===state.focusPeriod):rows,hitW=plotW/Math.max(1,original.length);original.forEach((r,i)=>parts.push('<rect class="reuse-hit" data-i="'+i+'" tabindex="'+(i===original.length-1?'0':'-1')+'" role="button" aria-label="'+esc(fmtLabel(r[0],state.gran))+' Token 构成" x="'+(pad+i*hitW).toFixed(1)+'" y="20" width="'+Math.max(.5,hitW).toFixed(1)+'" height="'+(plotH+12)+'"/>'));
+  parts.push('<line class="reuse-cursor" id="reuse-cursor" x1="-1" y1="20" x2="-1" y2="'+(24+plotH)+'"/>');svg.innerHTML=parts.join('');
+  const totalAll=original.reduce((a,r)=>a+series.reduce((s,i)=>s+(r[i]||0),0),0),cacheAll=original.reduce((a,r)=>a+(r[3]||0),0);document.getElementById('reuse-summary').textContent='缓存复用 '+pct(cacheAll,totalAll);
+  const hits=[...svg.querySelectorAll('.reuse-hit')],pointStep=plotW/Math.max(1,original.length-1),inspect=i=>{const r=original[i];if(!r)return;hits.forEach((h,j)=>h.setAttribute('tabindex',j===i?'0':'-1'));const x=original.length===1?pad+plotW/2:pad+i*pointStep,c=document.getElementById('reuse-cursor');c.setAttribute('x1',x);c.setAttribute('x2',x);panel.textContent=fmtLabel(r[0],state.gran)+' · Fresh '+human(r[1])+' · Output '+human(r[2])+' · Read '+human(r[3])+' · Write '+human(r[4])+' · Other '+human(r[5]);};
+  hits.forEach((hit,i)=>{hit.addEventListener('pointerenter',()=>inspect(i));hit.addEventListener('click',()=>inspect(i));hit.addEventListener('focus',()=>inspect(i));hit.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const next=Math.max(0,Math.min(hits.length-1,i+(e.key==='ArrowRight'?1:-1)));inspect(next);hits[next].focus();}});});if(original.length)inspect(original.length-1);
+}
+
+function fingerprintModelHours(){const total=Array(24).fill(0),byModel={},days=focusDays();Object.entries(DATA.day_details||{}).forEach(([day,detail])=>{if(days&&!days.has(day))return;Object.entries(detail.hourly_models||{}).forEach(([m,hours])=>{if(!state.models.has(m))return;const dst=byModel[m]||(byModel[m]=Array(24).fill(0));hours.forEach((v,i)=>{dst[i]+=v||0;total[i]+=v||0;});});});return {total,byModel};}
+function renderFingerprint(){
+  const svg=document.getElementById('fingerprint'),panel=document.getElementById('fingerprint-panel'),fp=fingerprintModelHours(),hours=fp.total,total=hours.reduce((a,b)=>a+b,0),max=Math.max(1,...hours),models=Object.keys(fp.byModel),cx=210,cy=210,inner=66,outer=168,parts=['<circle class="fp-ring" cx="210" cy="210" r="168"/><circle class="fp-ring" cx="210" cy="210" r="118"/>'];let peak=0;
+  if(!total){svg.innerHTML='<circle class="fp-ring" cx="210" cy="210" r="168"/><circle class="fp-core" cx="210" cy="210" r="55"/><text class="fp-core-title" x="210" y="207" text-anchor="middle">—</text><text class="fp-core-sub" x="210" y="225" text-anchor="middle">NO PULSE</text>';document.getElementById('fingerprint-meta').innerHTML='<div><b>0 tk</b>当前指纹总量</div><div><b>0/24</b>活跃小时</div><div><b>0%</b>夜间脉冲</div><div><b>0</b>模型色谱</div>';panel.textContent='当前模型筛选下没有可生成的脉冲。';return;}
+  const dominant=Array.from({length:24},(_,h)=>hours[h]>0?models.slice().sort((x,y)=>(fp.byModel[y][h]||0)-(fp.byModel[x][h]||0))[0]:null);
+  for(let h=0;h<24;h++){if(hours[h]>hours[peak])peak=h;const a=h/24*Math.PI*2-Math.PI/2,len=(hours[h]/max)*(outer-inner),x1=cx+Math.cos(a)*inner,y1=cy+Math.sin(a)*inner,x2=cx+Math.cos(a)*(inner+len),y2=cy+Math.sin(a)*(inner+len),dom=dominant[h],color=dom?DATA.colors[dom]:'#5b8def';parts.push('<line class="fp-spoke" data-hour="'+h+'" tabindex="'+(h===peak?'0':'-1')+'" role="button" aria-label="'+String(h).padStart(2,'0')+'点，'+fmt(hours[h])+' Token'+(dom?'，主力 '+esc(pretty(dom)):'')+'" x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+color+'" stroke-width="'+(5+hours[h]/max*12).toFixed(1)+'" opacity="'+(.25+hours[h]/max*.75).toFixed(2)+'"><title>'+String(h).padStart(2,'0')+':00 · '+fmt(hours[h])+' Token'+(dom?' · '+esc(pretty(dom)):'')+'</title></line>');if(h%3===0){const tx=cx+Math.cos(a)*187,ty=cy+Math.sin(a)*187+3;parts.push('<text class="fp-hour" x="'+tx.toFixed(1)+'" y="'+ty.toFixed(1)+'" text-anchor="middle">'+String(h).padStart(2,'0')+'</text>');}}
+  parts.push('<circle class="fp-core" cx="210" cy="210" r="55"/><text class="fp-core-title" x="210" y="207" text-anchor="middle">'+String(peak).padStart(2,'0')+':00</text><text class="fp-core-sub" x="210" y="225" text-anchor="middle">PEAK PULSE</text>');svg.innerHTML=parts.join('');
+  const spokes=[...svg.querySelectorAll('.fp-spoke')],inspect=h=>{spokes.forEach((s,i)=>s.setAttribute('tabindex',i===h?'0':'-1'));panel.textContent=String(h).padStart(2,'0')+':00 · '+fmt(hours[h])+' Token'+(dominant[h]?' · 主力 '+pretty(dominant[h]):'');};spokes.forEach((spoke,h)=>{spoke.addEventListener('focus',()=>inspect(h));spoke.addEventListener('click',()=>inspect(h));spoke.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const next=(h+(e.key==='ArrowRight'?1:-1)+24)%24;inspect(next);spokes[next].focus();}});});inspect(peak);
+  const active=hours.filter(Boolean).length,night=(hours.slice(0,6).reduce((a,b)=>a+b,0)+hours.slice(22).reduce((a,b)=>a+b,0))/(total||1);document.getElementById('fingerprint-meta').innerHTML='<div><b>'+human(total)+' tk</b>当前指纹总量</div><div><b>'+active+'/24</b>活跃小时</div><div><b>'+Math.round(night*100)+'%</b>夜间脉冲</div><div><b>'+models.length+'</b>模型色谱</div>';
+}
+document.getElementById('fingerprint-save').addEventListener('click',()=>{lazyState.fingerprint=Object.assign({},lazyState.fingerprint,{visible:true});renderLazy('fingerprint',true);const svg=document.getElementById('fingerprint').cloneNode(true);svg.setAttribute('xmlns','http://www.w3.org/2000/svg');svg.setAttribute('width','420');svg.setAttribute('height','420');const style=document.createElementNS('http://www.w3.org/2000/svg','style');style.textContent='.fp-ring{fill:none;stroke:#334155}.fp-hour{fill:#94a3b8;font:8px sans-serif}.fp-core{fill:#111827;stroke:#475569}.fp-core-title{fill:#f8fafc;font:800 16px sans-serif}.fp-core-sub{fill:#94a3b8;font:8px sans-serif;letter-spacing:.12em}';svg.insertBefore(style,svg.firstChild);const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');bg.setAttribute('width','420');bg.setAttribute('height','420');bg.setAttribute('fill','#0b1120');svg.insertBefore(bg,style.nextSibling);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['<?xml version="1.0"?>\n'+svg.outerHTML],{type:'image/svg+xml'}));a.download='token-pulse-fingerprint.svg';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Token 脉冲指纹已保存');});
+
 function renderFlow(){
   const svg=document.getElementById('flow-map'),raw=currentFlow(),selectedTotal=selectedRows().reduce((a,r)=>a+r.total,0);
   const pm=(raw.project_model||[]).filter(x=>state.models.has(x[2])&&x[3]>0),ms=(raw.model_session||[]).filter(x=>state.models.has(x[0])&&x[3]>0);
@@ -839,7 +870,7 @@ function secretCommand(q){
 }
 
 function scrollToSection(id){const el=document.getElementById(id);if(!el)return;const lazy=el.dataset.lazy;if(lazy){lazyState[lazy]=Object.assign({},lazyState[lazy],{visible:true});renderLazy(lazy,true);}el.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
-const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-rhythm','节奏'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
+const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-rhythm','节奏'],['section-reuse','复用'],['section-fingerprint','指纹'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
 function initSectionDock(){
   const dock=document.getElementById('section-dock');dock.addEventListener('click',e=>{const b=e.target.closest('button[data-target]');if(b)scrollToSection(b.dataset.target);});
   const mark=id=>dock.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.target===id));
@@ -855,6 +886,8 @@ function cmdActions(){ return [
   {ic:'◎',t:'跳转 · 总览',k:'',run:()=>scrollToSection('section-overview')},
   {ic:'↗',t:'跳转 · 趋势',k:'',run:()=>scrollToSection('section-trend')},
   {ic:'◫',t:'跳转 · 节奏',k:'',run:()=>scrollToSection('section-rhythm')},
+  {ic:'≈',t:'跳转 · Context Reuse River',k:'',run:()=>scrollToSection('section-reuse')},
+  {ic:'◉',t:'跳转 · Token 脉冲指纹',k:'',run:()=>scrollToSection('section-fingerprint')},
   {ic:'≋',t:'跳转 · Token 流光图',k:'',run:()=>scrollToSection('section-flow')},
   {ic:'◇',t:'跳转 · 成就',k:'',run:()=>scrollToSection('section-achievements')},
   {ic:'№',t:'跳转 · Top',k:'',run:()=>scrollToSection('section-top')},

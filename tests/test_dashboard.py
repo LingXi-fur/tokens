@@ -119,10 +119,14 @@ class DashboardTests(unittest.TestCase):
         for key in (
             "generated", "source", "range", "models", "colors", "hourly",
             "day_details", "top_cwds", "top_sessions", "session_series",
-            "flow", "day", "week", "month", "achievement_stats",
+            "flow", "reuse", "day", "week", "month", "achievement_stats",
         ):
             self.assertIn(key, payload)
         self.assertEqual(["claude"], payload["source"])
+        reuse = payload["reuse"]["day"]
+        self.assertEqual(300, sum(sum(parts) for _, models in reuse for parts in models.values()))
+        self.assertIn("model-a", reuse[0][1])
+        self.assertIn("model-b", reuse[1][1])
         self.assertEqual(300, sum(row["total"] for row in payload["day"]))
         self.assertEqual(2, len(payload["top_cwds"]))
         self.assertEqual(2, len(payload["top_sessions"]))
@@ -213,7 +217,7 @@ class DashboardTests(unittest.TestCase):
         flat_ids = [next(part for part in match if part) for match in ids]
         for key_id in (
             "section-dock", "section-overview", "section-trend", "section-rhythm",
-            "section-flow", "section-achievements", "section-top", "flow-map",
+            "section-flow", "section-reuse", "section-fingerprint", "section-achievements", "section-top", "flow-map",
             "flow-panel", "flow-stats", "flow-save", "status-pulse", "view-capsule",
             "view-pop", "view-copy", "view-reset", "help-modal", "help-close",
             "discovery-card", "discovery-pos", "discovery-pin",
@@ -279,6 +283,19 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("active=e.target.closest('.card')", template)
         self.assertIn("document.addEventListener('visibilitychange'", template)
         self.assertIn("clearInterval(_stripT)", template)
+        self.assertIn("data-lazy=reuse", template)
+        self.assertIn("data-lazy=fingerprint", template)
+        self.assertIn("function selectedReuseRows()", template)
+        self.assertIn("function renderReuseRiver()", template)
+        self.assertIn("function fingerprintModelHours()", template)
+        self.assertIn("function renderFingerprint()", template)
+        self.assertIn("NO PULSE", template)
+        self.assertIn("role=\"button\" aria-label=\"'+String(h)", template)
+        self.assertIn("style.textContent='.fp-ring", template)
+        self.assertIn("Context Reuse River", template)
+        self.assertIn("Token 脉冲指纹", template)
+        self.assertIn("reuse:true", template)
+        self.assertIn("fingerprint:true", template)
         self.assertIn("clearFocus(true)", template)
 
 

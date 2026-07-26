@@ -39,14 +39,58 @@ def _flow_add(buckets, left, right, total):
         buckets[key] = buckets.get(key, 0) + total
 
 
-def _period_add(buckets, period, model, total):
+def _period_add(buckets, period, model, total, input_value=0, output_value=0,
+                cache_read=0, cache_write=0, source="unknown"):
     item = buckets.get(period)
     if item is None:
-        item = {"total": 0, "calls": 0, "models": {}}
+        item = {
+            "total": 0,
+            "calls": 0,
+            "models": {},
+            "reuse_models": {},
+        }
         buckets[period] = item
     item["total"] += total
     item["calls"] += 1
     item["models"][model] = item["models"].get(model, 0) + total
+    parts = item["reuse_models"].setdefault(model, [0, 0, 0, 0, 0])
+    # Values are mutually exclusive for visualization and always sum to total.
+    if source == "claude":
+        parts[0] += input_value
+        parts[1] += output_value
+        parts[2] += cache_read
+        parts[3] += cache_write
+        parts[4] += max(0, total - input_value - output_value - cache_read - cache_write)
+    elif source == "gemini":
+        # Gemini CLI versions disagree on whether cached tokens are already in input/total.
+        # Preserve output first, then reserve cache and fit fresh input into the remainder.
+        shown_output = min(output_value, total)
+        remaining = total - shown_output
+        cached = min(cache_read, remaining)
+        remaining -= cached
+        fresh_input = min(max(0, input_value - cache_read), remaining)
+        remaining -= fresh_input
+        parts[0] += fresh_input
+        parts[1] += shown_output
+        parts[2] += cached
+        parts[4] += remaining
+    elif source == "codex":
+        # Codex input includes cached input; fit every component to total defensively.
+        cached = min(cache_read, total)
+        remaining = total - cached
+        fresh_input = min(max(0, input_value - cache_read), remaining)
+        remaining -= fresh_input
+        shown_output = min(output_value, remaining)
+        remaining -= shown_output
+        parts[0] += fresh_input
+        parts[1] += shown_output
+        parts[2] += cached
+        parts[4] += remaining
+    else:
+        parts[0] += min(total, input_value)
+        parts[1] += min(max(0, total - parts[0]), output_value)
+        parts[4] += max(0, total - input_value - output_value)
+
 
 
 def _pack_periods(buckets):
@@ -60,6 +104,13 @@ def _pack_periods(buckets):
             "models": models,
         })
     return packed
+
+
+def _reuse_periods(buckets):
+    return [
+        [period, stats["reuse_models"]]
+        for period, stats in sorted(buckets.items())
+    ]
 
 
 def _new_day():
@@ -165,9 +216,9 @@ def build_payload(records, since=None, until=None, sources=None):
         parsed_day = date.fromisoformat(day)
         week = aggregate.week_start(parsed_day).isoformat()
         month = aggregate.month_start(parsed_day).isoformat()
-        _period_add(day_periods, day, model, total)
-        _period_add(week_periods, week, model, total)
-        _period_add(month_periods, month, model, total)
+        _period_add(day_periods, day, model, total, input_value, output_value, cache_value, cache_write, source)
+        _period_add(week_periods, week, model, total, input_value, output_value, cache_value, cache_write, source)
+        _period_add(month_periods, month, model, total, input_value, output_value, cache_value, cache_write, source)
 
         detail = day_acc.get(day)
         if detail is None:
@@ -302,6 +353,11 @@ def build_payload(records, since=None, until=None, sources=None):
         "n_sessions": len(session_counts),
         "max_turns": max(session_counts.values(), default=0),
         "achievement_stats": achievement_stats,
+        "reuse": {
+            "day": _reuse_periods(day_periods),
+            "week": _reuse_periods(week_periods),
+            "month": _reuse_periods(month_periods),
+        },
         "day": _pack_periods(day_periods),
         "week": _pack_periods(week_periods),
         "month": _pack_periods(month_periods),

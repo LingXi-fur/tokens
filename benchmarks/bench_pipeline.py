@@ -49,7 +49,7 @@ def synthetic_records(count, days=365, models=6, sessions=500, projects=100):
 
 def measure_payload(records, suppress_titles=True):
     title_patch = mock.patch(
-        "report_dashboard.readers.session_title", return_value=""
+        "dashboard_payload.readers.session_title", return_value=""
     ) if suppress_titles else nullcontext()
     with title_patch:
         tracemalloc.start()
