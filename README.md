@@ -1,157 +1,340 @@
+<div align="center">
+  <img src="docs/favicon.svg" width="76" height="76" alt="tokens logo">
+
 # tokens
 
-本地 CLI 工具：统计 **Claude Code / Gemini / Codex** 的 token 用量，按 **日 / 周 / 月** 聚合，拆分到模型，输出终端表格、静态 HTML 报告、交互式 dashboard。
+**把 Claude Code、Gemini CLI 与 Codex 的本地 Token 日志，变成一份可阅读、可探索、可离线保存的数据仪表盘。**
 
-纯 Python stdlib，**零运行依赖**，下载即用。
+[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Runtime](https://img.shields.io/badge/runtime-stdlib--only-14b8a6)](#设计原则)
+[![Dashboard](https://img.shields.io/badge/dashboard-single%20HTML-5b8def)](#交互式-dashboard)
+[![Privacy](https://img.shields.io/badge/privacy-local--first-a78bfa)](#隐私与安全)
+[![License](https://img.shields.io/badge/license-MIT-f59e0b)](LICENSE)
 
-> 默认只统计 Claude（经 [claude-code-router](https://github.com/musistudio/claude-code-router) 走 GLM-5.2 / DeepSeek 等真实后端）。Gemini / Codex 日志也支持，用 `--source` 开启。
+[快速开始](#60-秒快速开始) · [Dashboard](#交互式-dashboard) · [CLI 参考](#cli-参考) · [隐私](#隐私与安全) · [中文文档](docs/index.html)
 
-## 文档
+</div>
 
-完整中文文档位于 [`docs/`](docs/index.html)，包含快速开始、CLI 参考、Dashboard、数据与隐私、架构和 FAQ。
+![tokens Dashboard 合成数据预览](docs/assets/readme-preview.svg)
 
-- GitHub Pages：在仓库 Pages 启用 **GitHub Actions** 后，由 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) 自动发布 `docs/`。
-- 直接预览：双击 `docs/index.html`。
-- 本地 HTTP 预览：
+> [!NOTE]
+> 上图使用**合成数据**，不包含本机路径、真实会话标识或自然语言摘要。真实 `out/dashboard.html` 可能包含这些本地元数据，请勿未经检查公开分享。
 
-```bash
-python3 -m http.server 8000 --directory docs
-# 打开 http://localhost:8000/
-```
+## 为什么是 tokens？
 
-文档站零构建、无 CDN、无第三方运行时依赖；支持响应式布局、自动/亮色/暗色主题、`Cmd/Ctrl+K` 全站搜索、移动导航、代码复制和阅读进度。首页与 Dashboard 文档中的演示均为合成数据。
+AI 编程工具会留下大量本地使用记录，但不同 CLI 的日志结构、Token 口径和时间格式并不一致。`tokens` 用一条很短的本地数据管线完成：
 
-## 安装
+- **统一读取** Claude Code、Gemini CLI、Codex 日志；
+- **按本地时区归一**为日 / 周 / 月统计；
+- **拆分模型、来源、小时、项目和会话**；
+- 输出终端表格、单期静态 HTML 和完整交互式 Dashboard；
+- 全程在本机运行，Dashboard 无 CDN、无远程脚本、无网络请求。
 
-**方式一：直接跑（零安装）**
+运行时只依赖 Python 标准库。克隆后即可使用，不需要 Node.js、数据库或前端构建工具。
 
-```bash
-git clone <this-repo> && cd tokens
-python3 cli.py month          # 或 ./run month
-```
+## 60 秒快速开始
 
-**方式二：pipx / pip 安装为全局命令**
-
-```bash
-pipx install .                # 装后得到全局命令 `tokens`
-tokens month
-```
-
-需 Python ≥ 3.9。
-
-## 用法
+### 直接运行
 
 ```bash
-# 终端报告
-python3 cli.py                # 今天（默认）
-python3 cli.py week           # 本周 + 最近 8 周
-python3 cli.py month          # 本月 + 最近 6 个月
-python3 cli.py all            # 全部历史，按日
+git clone https://github.com/LingXi-fur/tokens.git
+cd tokens
 
-# 交互式 dashboard（推荐）
+# 今天的终端报告
+python3 cli.py
+
+# 推荐：生成并打开交互式 Dashboard
 python3 cli.py dashboard --open
-
-# 静态 HTML 报告（单期）
-python3 cli.py month --html --open
-
-# 过滤
-python3 cli.py --since 2026-07-01 --until 2026-07-25
-python3 cli.py week --source gemini --source codex     # 换/加来源
-python3 cli.py day --no-cache                          # 强制重读日志
 ```
 
-参数：
+### 安装为全局命令
 
-| 参数 | 说明 |
-|---|---|
-| `--days N` | day 模式回看天数（默认 14） |
-| `--weeks N` | week 模式回看周数（默认 8） |
-| `--months N` | month 模式回看月数（默认 6） |
-| `--since YYYY-MM-DD` | 起始日期，覆盖模式默认起点 |
-| `--until YYYY-MM-DD` | 结束日期，默认今天 |
-| `--html` | 生成单期静态 HTML 报告 |
-| `--dashboard` | 生成交互式 dashboard（等价于 `dashboard` 位置模式） |
-| `--open` | 生成后自动打开；当前使用 macOS `open` |
-| `--no-cache` | 忽略缓存，强制重读日志 |
-| `--source` | 限定来源，可多次：`claude` / `gemini` / `codex` |
+```bash
+pipx install .
+tokens dashboard --open
+```
 
-## Dashboard
+要求：
 
-`python3 cli.py dashboard --open` 生成单个自包含 HTML（`out/dashboard.html`），双击即开、离线可用：
+- Python **3.9+**；
+- 自动打开目前使用 macOS `open`；Linux 可生成后手动打开 `out/dashboard.html`；
+- 至少存在一种受支持 CLI 的本地日志。
 
-### 核心统计
+## 三种输出
 
-- 日 / 周 / 月一键切换，柱状图、KPI、环形图、明细和扩展模块联动
-- 模型筛选：点击开关、双击单看、Alt 点击全选/清空、右键反选
-- KPI：总 token、缓存命中与省量、调用次数、命中模型数、主力模型、环比、月末预测
-- 按模型堆叠柱状图、均值线、峰值标识、上一期“幻影”轮廓与变化百分比
-- 点击柱子进入“时光探针”，按单日/单周/单月重算局部视图
-- 模型占比、每模型迷你趋势、明细表、Top 项目 / 会话联动
+| 输出 | 命令 | 适合场景 | 特点 |
+|---|---|---|---|
+| 终端报告 | `python3 cli.py week` | 快速查看、脚本工作流 | ANSI 表格，按模型拆分 |
+| 静态 HTML | `python3 cli.py month --html --open` | 单期归档、轻量分享 | Python 预渲染 SVG，页面结构稳定 |
+| 交互式 Dashboard | `python3 cli.py dashboard --open` | 深入探索、长期自用 | 日/周/月联动，单文件离线应用 |
+
+生成结果位于 `out/`；该目录默认被 Git 忽略。
+
+## 交互式 Dashboard
+
+`python3 cli.py dashboard --open` 会生成 `out/dashboard.html`。数据、CSS 与 JavaScript 全部内嵌，双击即可离线打开。
+
+### 统计与筛选
+
+- 日 / 周 / 月三种粒度联动；
+- 按模型堆叠柱状图、均值线、峰值标记与上一期幻影轮廓；
+- 总 Token、缓存命中、调用次数、模型数、主力模型与月末预测；
+- 模型筛选支持点击、双击独看、`Alt` 点击全选/清空、右键反选；
+- 点击柱子进入“时光探针”，对单日、单周或单月重算局部视图；
+- 当前视图胶囊显示粒度、模型筛选、时光探针与幻影对比状态；
+- 当前 UI 状态可复制为链接，URL 只记录粒度、模型名、日期焦点、对比和主题，不记录 cwd、session 或 Token 明细。
 
 ### 时间与行为视图
 
-- 数据气候、数据侦探、近 5 小时计费窗口、近 14 天迷你趋势
-- 24 小时作息时钟、14 天 × 24 小时作息织锦与小时 tooltip
-- 会话逐轮 token 回放、柱图竞赛、趣味换算与今日运势
+- 数据气候与数据侦探：基于本地规则生成洞察，不调用 AI；
+- 近 5 小时计费窗口与近 14 天趋势；
+- 24 小时作息时钟；
+- 14 天 × 24 小时作息织锦，可直接点击小时格回看当天；
+- 使用状态脉冲：升温 / 平稳 / 降温采用中性表达，不把 Token 增长解释为好坏。
 
-### 数据宇宙模块
+### 数据宇宙
 
-- Token 流光图：按真实聚合展示项目 → 模型 → 会话的 Token 流向，可锁定链路并回放会话
-- Token 生物：由总量、模型、项目、缓存与作息塑形，可导出 SVG
-- Token 星云：按小时 / 模型 / 缓存生成数据深空，可导出 SVG
-- 大型成就图鉴：分级、隐藏、搜索、筛选、分类折叠
-- 模块开关并通过 localStorage 记忆显示偏好
+- **Token 流光图**：展示真实聚合的“项目 → 模型 → 会话”流向；光带宽度对应 Token 量；项目和模型可锁定链路，会话可进入逐轮回放；当前视图可导出 SVG；
+- **Token 生物**：总量、模型、项目、缓存和作息共同塑形，可导出 SVG；
+- **Token 星云**：小时分布形成旋臂，模型形成星团，缓存点亮星核；
+- **成就图鉴**：分级、隐藏、搜索、筛选和分类折叠；
+- 柱图竞赛、今日运势、趣味换算、Token 护照与 Token 收据。
 
-### 操作与导出
+### 快捷键与隐藏操作
 
-- 自动 / 亮色 / 暗色三态主题
-- `Cmd/Ctrl+K` 命令面板；`1/2/3` 切粒度，`T` 切主题，`E` 导出 CSV
-- 导出当前筛选的 CSV 或 Markdown
-- 生成 Token 护照、Token 收据分享卡
-- 数据、CSS 与 JavaScript 全部内嵌，无 CDN、无网络请求
+按 `?` 可在 Dashboard 内打开完整帮助。
+
+| 操作 | 快捷键 / 手势 |
+|---|---|
+| 切换日 / 周 / 月 | `1` / `2` / `3` |
+| 打开命令面板 | `Cmd/Ctrl + K` |
+| 切换自动 / 亮色 / 暗色主题 | `T` |
+| 导出当前筛选 CSV | `E` |
+| 退出时光探针或关闭弹层 | `Esc` |
+| 打开快捷键帮助 | `?` |
+| 切换数据侦探洞察 | `←` / `→` |
+| 流光节点锁定 / 会话回放 | `Enter` / `Space` |
+| 模型独看 | 双击模型 chip |
+| 全选 / 清空模型 | `Alt` + 点击模型 chip |
+| 反选单个模型 | 右键模型 chip |
+| 总量显示格式切换 / 复制精确值 | 单击 / 双击总量 |
+
+## CLI 参考
+
+```text
+usage: cli.py [-h] [--since SINCE] [--until UNTIL]
+              [--days DAYS] [--weeks WEEKS] [--months MONTHS]
+              [--source {claude,gemini,codex}]
+              [--html] [--dashboard] [--open] [--no-cache]
+              [{day,week,month,all,dashboard}]
+```
+
+### 位置模式
+
+| 模式 | 默认窗口 | 输出粒度 |
+|---|---:|---|
+| `day` | 最近 14 天 | 日 |
+| `week` | 最近 8 周 | 周一为周首 |
+| `month` | 最近 6 个月 | 月 |
+| `all` | 全部历史 | 日 |
+| `dashboard` | 全部数据或显式日期范围 | 页面内日 / 周 / 月切换 |
+
+### 参数
+
+| 参数 | 说明 |
+|---|---|
+| `--since YYYY-MM-DD` | 起始日期；覆盖模式默认起点 |
+| `--until YYYY-MM-DD` | 结束日期；普通报告默认今天 |
+| `--days N` | `day` 模式回看天数，默认 14 |
+| `--weeks N` | `week` 模式回看周数，默认 8 |
+| `--months N` | `month` 模式回看月数，默认 6 |
+| `--source SOURCE` | 限定来源，可重复使用；不传时读取 `config.DEFAULT_SOURCES` |
+| `--html` | 为普通报告生成单期静态 HTML |
+| `--dashboard` | 生成交互式 Dashboard，等价于位置模式 `dashboard` |
+| `--open` | 生成 HTML 后调用 macOS `open` |
+| `--no-cache` | 忽略文件缓存并强制重读日志 |
+
+### 常用组合
+
+```bash
+# 本周 + 最近 8 周
+python3 cli.py week
+
+# 自定义日期范围
+python3 cli.py all --since 2026-07-01 --until 2026-07-31
+
+# 合并多个来源
+python3 cli.py dashboard \
+  --source claude \
+  --source gemini \
+  --source codex \
+  --open
+
+# 强制重新解析日志
+python3 cli.py day --no-cache
+```
+
+## 数据来源与统计口径
+
+| 来源 | 默认日志位置 | `total` 口径 | 项目 / 会话能力 |
+|---|---|---|---|
+| Claude Code | `~/.claude/projects/**/*.jsonl` | input + output + cache read + cache write | 包含 cwd 与 session；支持项目 Top、会话回放和完整流光关系 |
+| Gemini CLI | `~/.gemini/tmp/<hash>/chats/session-*.json` | 日志的 `tokens.total`；回退为 input + output + cached + thoughts + tool | 当前解析器保留 session，但通常没有 cwd |
+| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | `total_tokens`；input 已包含 cached input，不重复相加 | 当前解析器通常没有 cwd 和 session |
+
+> [!IMPORTANT]
+> 不同 CLI 的 Token 统计口径并不完全相同。项目忠实保留各来源报告值，以便趋势和来源内比较；跨来源比较时应理解上述差异。
+
+### 统一 record
+
+读取器会把不同日志归一为：
+
+```python
+{
+    "source": "claude | gemini | codex",
+    "ts": "原始 ISO 时间戳",
+    "date": "本地日期 YYYY-MM-DD",
+    "model": "模型名",
+    "input": 0,
+    "output": 0,
+    "cache_read": 0,
+    "cache_write": 0,
+    "total": 0,
+    "session": "可选会话标识",
+    "cwd": "可选工作目录",
+}
+```
+
+所有日期按 `config.TZ` 转换；当前默认是 `Asia/Shanghai`，可在 `config.py` 修改。
+
+## 工作原理
+
+```mermaid
+flowchart LR
+    A[Claude / Gemini / Codex<br>本地 JSON 与 JSONL] --> B[readers.py<br>安全扫描与统一 record]
+    B --> C[out/cache.json<br>mtime + size 文件缓存]
+    B --> D[aggregate.py<br>日期筛选与日/周/月聚合]
+    D --> E[report_term.py<br>终端表格]
+    D --> F[report_html.py<br>静态 HTML]
+    B --> G[report_dashboard.py<br>扩展 payload + 单文件应用]
+```
+
+### 缓存与输入防护
+
+`readers.py` 对本地输入做了几项保护：
+
+- 缓存键由文件 `mtime_ns + size` 组成；
+- 缓存结构带版本号，解析口径改变时自动失效；
+- 拒绝软链接、FIFO、设备文件和超大文件；
+- 单文件默认上限 64 MiB，JSONL 单行默认上限 4 MiB；
+- 单个损坏文件不会终止整次统计；
+- 缓存通过随机临时文件写入，并设置为 `0600` 后原子替换。
 
 ## 隐私与安全
 
-工具只读本地文件，**不会上传任何数据**。日志按文件 `mtime + size` 缓存到 `out/cache.json`，未变化时可快速复用。
+`tokens` 不上传日志，生成的 Dashboard 也不发起网络请求。但“本地生成”不代表“已经匿名”。
 
-但“本地生成 / 离线可用”不等于“已经匿名”：
+### `out/dashboard.html` 可能包含
 
-- `out/dashboard.html` 可能包含完整项目工作目录（cwd）、会话标识、逐轮 token 序列。
-- Top 会话标题可能来自 `out/session_summaries.json`，或从会话首条内容提取，因此可能出现自然语言摘要。
-- 生成文件一旦复制、上传或发送，其中的内嵌数据也会一起离开本机。
+- 完整 cwd / 项目路径；
+- session 标识；
+- 每个会话的逐轮 Token 序列；
+- 来自 `out/session_summaries.json` 的摘要；
+- 或从 Claude 会话第一条有效用户文本提取的标题。
 
-**不要未经检查公开分享真实 Dashboard。** 分享前请搜索并移除用户名、主目录、项目/客户/仓库名、会话标识和摘要文本；更安全的做法是分享终端汇总截图、脱敏截图或合成数据演示。详见 [`docs/data-and-privacy.html`](docs/data-and-privacy.html)。
+### 分享前检查清单
 
-## 数据来源
+- [ ] 搜索 `/Users/`、`/home/` 和本机用户名；
+- [ ] 检查客户名、仓库名、项目路径和分支语义；
+- [ ] 检查会话标题、摘要和 session 标识；
+- [ ] 优先分享脱敏截图、合成数据演示或终端汇总；
+- [ ] 不要直接把真实 Dashboard 上传到公开 Issue、Pages、网盘或聊天群。
 
-| CLI | 本地日志路径 |
-|---|---|
-| Claude Code | `~/.claude/projects/**/*.jsonl` |
-| Gemini CLI | `~/.gemini/tmp/<hash>/chats/session-*.json` |
-| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
+详见 [数据与隐私文档](docs/data-and-privacy.html)。
 
-## 文件
+## 设计原则
 
-| 文件 | 作用 |
-|---|---|
-| `config.py` | 路径、时区、默认来源、模型别名 |
-| `readers.py` | 读三源日志 → 统一 record；文件级缓存 |
-| `aggregate.py` | 日/周/月聚合 + 按模型/来源拆分 |
-| `report_term.py` | 终端 ANSI 表格 |
-| `report_html.py` | 单期静态 HTML 报告（SVG 图） |
-| `report_dashboard.py` | 交互式自包含 dashboard |
-| `cli.py` | 入口 |
-| `docs/` | 零构建中文静态文档站 |
-| `tests/test_docs.py` | 文档完整性、链接与隐私泄漏检查 |
+- **stdlib-only runtime**：运行数据管线不引入第三方 Python 包；
+- **offline-first**：Dashboard 是自包含文件，没有 CDN 和远程运行时资源；
+- **generated, not hand-edited**：始终修改 `report_dashboard.py`，再生成 `out/dashboard.html`；
+- **progressive detail**：核心统计优先，数据宇宙与彩蛋可通过模块开关隐藏；
+- **accessible interactions**：主要 SVG 节点可键盘操作，支持焦点状态与 `prefers-reduced-motion`；
+- **privacy is explicit**：项目不会把“聚合”误称为“匿名”。
+
+## 项目结构
+
+```text
+tokens/
+├── cli.py                    # 参数解析与模式路由
+├── config.py                 # 路径、时区、默认来源、模型别名
+├── readers.py                # 三类日志解析、安全扫描、缓存
+├── aggregate.py              # 日 / 周 / 月与模型 / 来源聚合
+├── report_term.py            # 终端 ANSI 报告
+├── report_html.py            # 单期静态 HTML
+├── report_dashboard.py       # 自包含交互式 Dashboard
+├── pyproject.toml            # 包元数据与全局 tokens 命令
+├── docs/                     # 零构建中文文档站
+├── tests/
+│   ├── test_dashboard.py     # payload、模板、交互结构测试
+│   └── test_docs.py          # 链接、资源、无障碍与隐私检查
+└── .github/workflows/pages.yml
+```
+
+## 开发与验证
+
+```bash
+# 全部测试
+python3 -m unittest discover -s tests
+
+# Python 语法检查
+python3 -m py_compile report_dashboard.py report_html.py
+
+# 重新生成 Dashboard
+python3 cli.py dashboard
+
+# 本地预览文档站
+python3 -m http.server 8000 --directory docs
+# 打开 http://localhost:8000/
+
+# 检查补丁空白问题
+git diff --check
+```
+
+项目测试使用 `unittest`，不要求 pytest。Dashboard 测试使用合成 records，不读取真实本地会话内容。
+
+## 中文文档与 GitHub Pages
+
+完整文档位于 [`docs/`](docs/index.html)：
+
+- [快速开始](docs/getting-started.html)
+- [CLI 参考](docs/cli.html)
+- [Dashboard](docs/dashboard.html)
+- [数据与隐私](docs/data-and-privacy.html)
+- [架构](docs/architecture.html)
+- [FAQ](docs/faq.html)
+
+文档站同样零构建、无 CDN，支持响应式布局、自动 / 亮色 / 暗色主题、`Cmd/Ctrl+K` 搜索、移动导航、代码复制和阅读进度。
+
+仓库包含 [Pages workflow](.github/workflows/pages.yml)。在 GitHub 仓库设置中将 Pages Source 设为 **GitHub Actions** 后，推送 `docs/**` 或相关测试会先执行测试，再发布文档。
+
+## 已知限制
+
+- `--open` 当前只实现 macOS `open`；
+- Dashboard 是生成时快照，不会自动监听日志变化；
+- Gemini / Codex 日志缺少 cwd 或 session 时，项目 / 会话类视图会自然减少；
+- 跨来源 Token 口径不是完全同构；
+- 当前是扁平顶层模块布局，尚未迁移到 `src/tokens/` 包；
+- 暂不内置模型价格表，因此没有成本估算。
 
 ## Roadmap
 
-- [ ] `$` 成本估算（按模型单价表）
-- [ ] `tokens serve` 本地 live dashboard（自动刷新）
-- [ ] 包结构重构：flat → `tokens/` 包，统一 `python -m tokens`
-- [ ] 按 cwd / 项目维度拆分用量
-- [ ] Windows 兼容（`open` → `os.startfile`）
+- [ ] 模型价格表与可配置成本估算；
+- [ ] `tokens serve` 本地自动刷新；
+- [ ] Windows `os.startfile` 与 Linux opener 兼容；
+- [ ] 进一步细化项目维度趋势和对比；
+- [ ] 扁平模块迁移到正式包结构；
+- [ ] 可选的脱敏导出模式。
 
 ## License
 
-MIT
+[MIT](LICENSE)

@@ -162,10 +162,30 @@ class DashboardTests(unittest.TestCase):
         for key_id in (
             "section-dock", "section-overview", "section-trend", "section-rhythm",
             "section-flow", "section-achievements", "section-top", "flow-map",
-            "flow-panel", "flow-stats", "status-pulse", "discovery-card",
-            "discovery-pos", "discovery-pin",
+            "flow-panel", "flow-stats", "flow-save", "status-pulse", "view-capsule",
+            "view-pop", "view-copy", "view-reset", "help-modal", "help-close",
+            "discovery-card", "discovery-pos", "discovery-pin",
         ):
             self.assertEqual(1, flat_ids.count(key_id), key_id)
+
+    def test_view_links_help_and_flow_export_are_self_contained(self):
+        template = report_dashboard._TEMPLATE
+        self.assertIn("function viewParams()", template)
+        self.assertIn("function restoreViewFromURL()", template)
+        self.assertIn("window.addEventListener('popstate'", template)
+        self.assertIn("navigator.clipboard&&window.isSecureContext", template)
+        self.assertIn("document.execCommand('copy')", template)
+        self.assertIn("p.set('gran',state.gran)", template)
+        self.assertIn("p.set('models'", template)
+        self.assertIn("p.set('focus'", template)
+        self.assertNotIn("p.set('cwd'", template)
+        self.assertNotIn("p.set('session'", template)
+        self.assertIn("else if(e.key==='?') openHelp()", template)
+        self.assertIn("查看快捷键与隐藏操作", template)
+        self.assertIn("function saveFlowSVG()", template)
+        self.assertIn("svg.setAttribute('xmlns','http://www.w3.org/2000/svg')", template)
+        self.assertIn("bg.setAttribute('fill','#0b1120')", template)
+        self.assertIn(".help-grid{grid-template-columns:1fr}", template)
 
 
 if __name__ == "__main__":

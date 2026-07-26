@@ -20,6 +20,7 @@ REQUIRED_PAGES = {
 REQUIRED_ASSETS = {
     "assets/site.css",
     "assets/site.js",
+    "assets/readme-preview.svg",
     "favicon.svg",
     "robots.txt",
 }
@@ -203,6 +204,15 @@ class DocsTests(unittest.TestCase):
             workflow.index("actions/upload-pages-artifact"),
             "测试应在上传 Pages artifact 之前运行",
         )
+
+    def test_readme_preview_is_synthetic_and_referenced(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        preview = (DOCS / "assets" / "readme-preview.svg").read_text(encoding="utf-8")
+        self.assertIn("docs/assets/readme-preview.svg", readme)
+        self.assertIn("SYNTHETIC DATA", preview)
+        self.assertNotIn("/Users/", preview)
+        self.assertNotIn("/home/", preview)
+        self.assertNotRegex(preview, UUID_RE)
 
     def test_docs_do_not_load_third_party_runtime_assets(self):
         remote = []
