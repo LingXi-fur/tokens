@@ -58,9 +58,10 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("显示模块", template)
         self.assertRegex(template, r"data-mod=flow\b")
 
+    @mock.patch("report_dashboard.readers.build_session_index", return_value={})
     @mock.patch("report_dashboard.readers.session_title", return_value="")
     @mock.patch("report_dashboard.readers.load_session_summaries", return_value={})
-    def test_build_payload_has_flow_and_basic_fields(self, _summaries, _title):
+    def test_build_payload_has_flow_and_basic_fields(self, _summaries, _title, _index):
         payload = report_dashboard.build_payload(
             self.synthetic_records(),
             since="2026-07-01",
@@ -96,9 +97,10 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertIn("flow", payload["day_details"]["2026-07-01"])
 
+    @mock.patch("report_dashboard.readers.build_session_index", return_value={})
     @mock.patch("report_dashboard.readers.session_title", return_value="")
     @mock.patch("report_dashboard.readers.load_session_summaries", return_value={})
-    def test_session_series_covers_every_flow_session(self, _summaries, _title):
+    def test_session_series_covers_every_flow_session(self, _summaries, _title, _index):
         records = []
         for i in range(9):
             records.append({
@@ -143,9 +145,10 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("'orbit':()=>scrollToSection('section-flow')", template)
         self.assertIn("'city':()=>scrollToSection('section-flow')", template)
 
+    @mock.patch("report_dashboard.readers.build_session_index", return_value={})
     @mock.patch("report_dashboard.readers.session_title", return_value="")
     @mock.patch("report_dashboard.readers.load_session_summaries", return_value={})
-    def test_generated_html_embeds_data_and_has_unique_key_ids(self, _summaries, _title):
+    def test_generated_html_embeds_data_and_has_unique_key_ids(self, _summaries, _title, _index):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.object(report_dashboard.config, "OUT_DIR", tmp):
                 path = Path(report_dashboard.write_dashboard(

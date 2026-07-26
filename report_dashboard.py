@@ -64,7 +64,7 @@ def _top_with_models(records, key, limit=6):
             for ident, stats in ranked[:limit]]
 
 
-def _flow_data(records, summaries):
+def _flow_data(records, summaries, title_for_session=None):
     """Aggregate real project→model and model→session token flows."""
     project_model = {}
     model_session = {}
@@ -81,8 +81,10 @@ def _flow_data(records, summaries):
             key = (model, sid)
             model_session[key] = model_session.get(key, 0) + total
             session_ids.add(sid)
+    if title_for_session is None:
+        title_for_session = readers.session_title
     labels = {
-        sid: summaries.get(sid) or readers.session_title(sid) or str(sid)[:8]
+        sid: summaries.get(sid) or title_for_session(sid) or str(sid)[:8]
         for sid in session_ids
     }
     return {
@@ -124,6 +126,16 @@ def build_payload(records, since=None, until=None, sources=None):
         t = gen - timedelta(hours=i)
         buckets.append({"h": t.hour, "total": dh.get((t.date().isoformat(), t.hour), 0)})
     summaries = readers.load_session_summaries()
+    session_index = readers.build_session_index()
+    title_cache = {}
+
+    def title_for_session(sid):
+        if sid not in title_cache:
+            title_cache[sid] = readers.session_title(
+                sid,
+                session_index=session_index,
+            )
+        return title_cache[sid]
     # 每日细节：供「时光探针」聚焦后重算作息、缓存与 Top 榜。
     # 只嵌入聚合值，不暴露会话正文；仍保持单文件、纯离线。
     by_day_records = {}
@@ -141,7 +153,7 @@ def build_payload(records, since=None, until=None, sources=None):
                 mh[h] += r["total"]
         day_top_sessions = []
         for sid, total, model_totals in _top_with_models(day_recs, "session", 6):
-            label = summaries.get(sid) or readers.session_title(sid) or str(sid)[:8]
+            label = summaries.get(sid) or title_for_session(sid) or str(sid)[:8]
             day_top_sessions.append([label, total, sid, model_totals])
         day_details[day] = {
             "hourly": day_hourly,
@@ -150,13 +162,13 @@ def build_payload(records, since=None, until=None, sources=None):
             "top_cwds": [[_short_cwd(p), t, p, model_totals]
                          for p, t, model_totals in _top_with_models(day_recs, "cwd", 6)],
             "top_sessions": day_top_sessions,
-            "flow": _flow_data(day_recs, summaries),
+            "flow": _flow_data(day_recs, summaries, title_for_session),
         }
     top_cwds = [[_short_cwd(p), t, p, model_totals]
                 for p, t, model_totals in _top_with_models(recs, "cwd", 6)]
     top_sessions = []
     for sid, t, model_totals in _top_with_models(recs, "session", 6):
-        label = summaries.get(sid) or readers.session_title(sid) or str(sid)[:8]
+        label = summaries.get(sid) or title_for_session(sid) or str(sid)[:8]
         top_sessions.append([label, t, sid, model_totals])
     # 流光图中的任意会话都可点击回放；逐轮序列最多保留最近 200 轮。
     by_sess = {}
@@ -216,7 +228,7 @@ def build_payload(records, since=None, until=None, sources=None):
         "top_cwds": top_cwds,
         "top_sessions": top_sessions,
         "session_series": session_series,
-        "flow": _flow_data(recs, summaries),
+        "flow": _flow_data(recs, summaries, title_for_session),
         "n_cwds": n_cwds,
         "n_sessions": n_sessions,
         "max_turns": max_turns,
