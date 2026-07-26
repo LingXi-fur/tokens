@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 import sys
 sys.path.insert(0, str(ROOT))
 
+import dashboard_payload
 import report_dashboard
 
 
@@ -44,7 +45,25 @@ class DashboardTests(unittest.TestCase):
             },
         ]
 
-    def test_template_replaces_legacy_city_and_orbit_with_flow(self):
+    @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("dashboard_payload.readers.load_session_summaries", return_value={})
+    def test_single_pass_payload_matches_facade(self, _summaries, _title, _index):
+        records = self.synthetic_records()
+        direct = dashboard_payload.build_payload(
+            records,
+            since="2026-07-01",
+            until="2026-07-02",
+            sources=["claude"],
+        )
+        facade = report_dashboard.build_payload(
+            records,
+            since="2026-07-01",
+            until="2026-07-02",
+            sources=["claude"],
+        )
+        self.assertEqual(direct, facade)
+
         template = report_dashboard._TEMPLATE
         for legacy in (
             "Token 城市", "Token City", "renderCity", "city-shell",
@@ -58,9 +77,9 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("显示模块", template)
         self.assertRegex(template, r"data-mod=flow\b")
 
-    @mock.patch("report_dashboard.readers.build_session_index", return_value={})
-    @mock.patch("report_dashboard.readers.session_title", return_value="")
-    @mock.patch("report_dashboard.readers.load_session_summaries", return_value={})
+    @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("dashboard_payload.readers.load_session_summaries", return_value={})
     def test_build_payload_has_flow_and_basic_fields(self, _summaries, _title, _index):
         payload = report_dashboard.build_payload(
             self.synthetic_records(),
@@ -97,9 +116,9 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertIn("flow", payload["day_details"]["2026-07-01"])
 
-    @mock.patch("report_dashboard.readers.build_session_index", return_value={})
-    @mock.patch("report_dashboard.readers.session_title", return_value="")
-    @mock.patch("report_dashboard.readers.load_session_summaries", return_value={})
+    @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("dashboard_payload.readers.load_session_summaries", return_value={})
     def test_session_series_covers_every_flow_session(self, _summaries, _title, _index):
         records = []
         for i in range(9):
@@ -145,9 +164,9 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("'orbit':()=>scrollToSection('section-flow')", template)
         self.assertIn("'city':()=>scrollToSection('section-flow')", template)
 
-    @mock.patch("report_dashboard.readers.build_session_index", return_value={})
-    @mock.patch("report_dashboard.readers.session_title", return_value="")
-    @mock.patch("report_dashboard.readers.load_session_summaries", return_value={})
+    @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("dashboard_payload.readers.load_session_summaries", return_value={})
     def test_generated_html_embeds_data_and_has_unique_key_ids(self, _summaries, _title, _index):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.object(report_dashboard.config, "OUT_DIR", tmp):

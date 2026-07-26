@@ -16,6 +16,7 @@ import config
 import readers
 import aggregate
 import report_term
+import dashboard_payload
 
 # 协调分类色：同明度/饱和，主色锁定品牌蓝，其余仅在多模型时出现。
 PALETTE = ["#5b8def", "#14b8a6", "#f59e0b", "#a78bfa",
@@ -104,139 +105,12 @@ def _flow_data(records, summaries, title_for_session=None):
 
 
 def build_payload(records, since=None, until=None, sources=None):
-    recs = aggregate.filter_range(records, since=since, until=until)
-    models, pretty = _global_models(recs)
-    colors = {m: PALETTE[i % len(PALETTE)] for i, m in enumerate(models)}
-    cache_read = sum(r.get("cache_read", 0) or 0 for r in recs)
-    # 24 小时活动分布（本地时区），用于径向作息时钟
-    hourly = [0] * 24
-    for r in recs:
-        h = readers.local_hour(r.get("ts"))
-        if h is not None:
-            hourly[h] += r["total"]
-    # 近 5 小时（6 个小时桶，生成时刻往前）——「计费窗口」快照
-    gen = datetime.now(config.TZ)
-    dh = {}
-    for r in recs:
-        dt = readers.parse_local_dt(r.get("ts"))
-        if dt:
-            dh[(dt.date().isoformat(), dt.hour)] = dh.get((dt.date().isoformat(), dt.hour), 0) + r["total"]
-    buckets = []
-    for i in range(5, -1, -1):
-        t = gen - timedelta(hours=i)
-        buckets.append({"h": t.hour, "total": dh.get((t.date().isoformat(), t.hour), 0)})
-    summaries = readers.load_session_summaries()
-    session_index = readers.build_session_index()
-    title_cache = {}
-
-    def title_for_session(sid):
-        if sid not in title_cache:
-            title_cache[sid] = readers.session_title(
-                sid,
-                session_index=session_index,
-            )
-        return title_cache[sid]
-    # 每日细节：供「时光探针」聚焦后重算作息、缓存与 Top 榜。
-    # 只嵌入聚合值，不暴露会话正文；仍保持单文件、纯离线。
-    by_day_records = {}
-    for r in recs:
-        by_day_records.setdefault(r["date"], []).append(r)
-    day_details = {}
-    for day, day_recs in by_day_records.items():
-        day_hourly = [0] * 24
-        day_hourly_models = {}
-        for r in day_recs:
-            h = readers.local_hour(r.get("ts"))
-            if h is not None:
-                day_hourly[h] += r["total"]
-                mh = day_hourly_models.setdefault(r["model"], [0] * 24)
-                mh[h] += r["total"]
-        day_top_sessions = []
-        for sid, total, model_totals in _top_with_models(day_recs, "session", 6):
-            label = summaries.get(sid) or title_for_session(sid) or str(sid)[:8]
-            day_top_sessions.append([label, total, sid, model_totals])
-        day_details[day] = {
-            "hourly": day_hourly,
-            "hourly_models": day_hourly_models,
-            "cache_read": sum(r.get("cache_read", 0) or 0 for r in day_recs),
-            "top_cwds": [[_short_cwd(p), t, p, model_totals]
-                         for p, t, model_totals in _top_with_models(day_recs, "cwd", 6)],
-            "top_sessions": day_top_sessions,
-            "flow": _flow_data(day_recs, summaries, title_for_session),
-        }
-    top_cwds = [[_short_cwd(p), t, p, model_totals]
-                for p, t, model_totals in _top_with_models(recs, "cwd", 6)]
-    top_sessions = []
-    for sid, t, model_totals in _top_with_models(recs, "session", 6):
-        label = summaries.get(sid) or title_for_session(sid) or str(sid)[:8]
-        top_sessions.append([label, t, sid, model_totals])
-    # 流光图中的任意会话都可点击回放；逐轮序列最多保留最近 200 轮。
-    by_sess = {}
-    for r in recs:
-        sid = r.get("session")
-        if sid:
-            by_sess.setdefault(sid, []).append(r)
-    session_series = {}
-    for sid, records_for_session in by_sess.items():
-        arr = sorted(records_for_session, key=lambda r: r.get("ts") or "")
-        session_series[sid] = [r["total"] for r in arr][-200:]
-    # 徽章用的全局计数
-    n_cwds = len({r.get("cwd") for r in recs if r.get("cwd")})
-    n_sessions = len({sid for sid in by_sess})
-    max_turns = max((len(v) for v in by_sess.values()), default=0)
-    # 成就图鉴用的细粒度数字聚合；不嵌入会话正文。
-    session_totals = {sid: sum(r["total"] for r in rs) for sid, rs in by_sess.items()}
-    cwd_totals = {}
-    source_totals = {}
-    model_stats = {}
-    for r in recs:
-        cwd = r.get("cwd")
-        source = r.get("source") or "unknown"
-        model = r.get("model") or "unknown"
-        if cwd:
-            cwd_totals[cwd] = cwd_totals.get(cwd, 0) + r["total"]
-        source_totals[source] = source_totals.get(source, 0) + r["total"]
-        ms = model_stats.setdefault(model, {"input": 0, "output": 0, "cache_read": 0,
-                                            "cache_write": 0, "calls": 0})
-        ms["input"] += r.get("input", 0) or 0
-        ms["output"] += r.get("output", 0) or 0
-        ms["cache_read"] += r.get("cache_read", 0) or 0
-        ms["cache_write"] += r.get("cache_write", 0) or 0
-        ms["calls"] += 1
-    achievement_stats = {
-        "input": sum(r.get("input", 0) or 0 for r in recs),
-        "output": sum(r.get("output", 0) or 0 for r in recs),
-        "cache_write": sum(r.get("cache_write", 0) or 0 for r in recs),
-        "session_totals": sorted(session_totals.values(), reverse=True),
-        "cwd_totals": sorted(cwd_totals.values(), reverse=True),
-        "source_totals": source_totals,
-        "model_stats": model_stats,
-        "first_day": min((r["date"] for r in recs), default=None),
-        "last_day": max((r["date"] for r in recs), default=None),
-    }
-    return {
-        "generated": datetime.now(config.TZ).strftime("%Y-%m-%d %H:%M"),
-        "source": sources or [],
-        "range": {"since": since, "until": until},
-        "models": models,
-        "pretty": pretty,
-        "colors": colors,
-        "cache_read": cache_read,
-        "hourly": hourly,
-        "day_details": day_details,
-        "block": {"total": sum(b["total"] for b in buckets), "buckets": buckets},
-        "top_cwds": top_cwds,
-        "top_sessions": top_sessions,
-        "session_series": session_series,
-        "flow": _flow_data(recs, summaries, title_for_session),
-        "n_cwds": n_cwds,
-        "n_sessions": n_sessions,
-        "max_turns": max_turns,
-        "achievement_stats": achievement_stats,
-        "day": _pack(aggregate.by_day(recs)),
-        "week": _pack(aggregate.by_week(recs)),
-        "month": _pack(aggregate.by_month(recs)),
-    }
+    return dashboard_payload.build_payload(
+        records,
+        since=since,
+        until=until,
+        sources=sources,
+    )
 
 
 _TEMPLATE = r"""<!doctype html>
