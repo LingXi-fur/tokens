@@ -261,6 +261,17 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("function renderDataViews()", template)
         self.assertIn("function memoDerived(key,build)", template)
         self.assertIn("document.body.dataset.modelDelegated", template)
+        self.assertIn("function motionDisabled()", template)
+        self.assertIn("const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches", template)
+        self.assertIn("motionResizeT=setTimeout", template)
+        self.assertIn("id=motion-select", template)
+        self.assertIn("function defaultMotion()", template)
+        self.assertIn("id=comet-canvas", template)
+        self.assertIn("particles=Array.from({length:28}", template)
+        self.assertNotIn("d.className='comet'", template)
+        self.assertIn("active=e.target.closest('.card')", template)
+        self.assertIn("document.addEventListener('visibilitychange'", template)
+        self.assertIn("clearInterval(_stripT)", template)
         self.assertIn("clearFocus(true)", template)
 
 
