@@ -217,6 +217,8 @@ h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.1px}
 .probe.on{display:flex;animation:rise .2s ease both}.probe-orb{width:9px;height:9px;border-radius:50%;background:#7aa2f7;box-shadow:0 0 0 5px rgba(122,162,247,.13),0 0 18px #7aa2f7}.probe-copy{flex:1;font-size:12.5px}.probe-copy b{font-size:13px}.probe button{border:0;background:rgba(255,255,255,.1);color:#fff;width:27px;height:27px;border-radius:8px;cursor:pointer}
 @media(max-width:640px){.weather{grid-template-columns:auto 1fr}.w-metric{grid-column:1/-1;text-align:left;display:flex;gap:8px;align-items:baseline}.w-metric b{display:inline}.w-icon{font-size:30px}}
 
+.lazy-pending{min-height:180px;position:relative}.lazy-pending::after{content:"进入视野后加载";position:absolute;inset:0;display:grid;place-items:center;color:var(--faint);font-size:11px;letter-spacing:.08em;background:linear-gradient(135deg,transparent,var(--accent-soft),transparent);border-radius:14px}
+
 /* card */
 .card{background:var(--glass);backdrop-filter:blur(18px) saturate(1.25);-webkit-backdrop-filter:blur(18px) saturate(1.25);
   border:1px solid var(--glass-brd);border-radius:var(--r-card);padding:22px;margin-bottom:16px;
@@ -707,13 +709,13 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  </section>
 </div>
 
-<section class=card data-module=flow id=section-flow>
+<section class=card data-module=flow data-lazy=flow id=section-flow>
  <div class=row-between><h2 style=margin:0>Token 流光图 · 项目 → 模型 → 会话</h2><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class=sub style="margin:0;color:var(--faint)">光带宽度对应真实 Token 流量；点击项目或模型锁定链路，点击会话回放</span><button class=ghostbtn id=flow-save type=button title="保存当前流光图为 SVG">保存 SVG</button></div></div>
  <div class=flow-shell style=margin-top:14px><svg class=flow-map id=flow-map viewBox="0 0 1120 470" preserveAspectRatio="xMidYMid meet" role=img aria-label="项目到模型再到会话的 Token 流光图"></svg><div class=flow-panel id=flow-panel aria-live=polite><b>Token 流光图</b><span>悬停或聚焦节点查看真实流向，点击项目或模型可锁定链路。</span></div></div>
  <div class=flow-stats id=flow-stats></div>
 </section>
 
-<section class=card data-module=creature>
+<section class=card data-module=creature data-lazy=creature>
  <div class=row-between><h2 style=margin:0>Token 生物 · 你的数字生命</h2><button class=ghostbtn id=creature-save>保存 SVG</button></div>
  <div class=creature-stage id=creature-stage><svg class=creature id=creature viewBox="0 0 260 260"></svg></div>
  <div class=creature-name id=creature-name></div><div class=creature-desc id=creature-desc></div>
@@ -725,7 +727,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
    <h2>每模型趋势 · 日</h2>
    <div class=mp-grid id=multiples></div>
  </section>
- <section class=card data-module=race>
+ <section class=card data-module=race data-lazy=race>
    <div class=row-between>
      <h2 style=margin:0>柱图竞赛 · 累计 token</h2>
      <span class=sub id=race-day style=margin:0;color:var(--faint)></span>
@@ -748,7 +750,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 </section>
 
 <div class=grid2>
- <section class=card data-module=badges id=section-achievements>
+ <section class=card data-module=badges data-lazy=badges id=section-achievements>
    <div class=row-between>
      <h2 style=margin:0>🏆 成就徽章</h2>
      <span class=ach-meta id=ach-meta></span>
@@ -773,7 +775,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
    </div>
    <div class=ach-tiers id=ach-tiers></div>
  </section>
- <section class=card data-module=dna>
+ <section class=card data-module=dna data-lazy=dna>
    <h2>Token 星云 · 你的数据深空</h2>
    <div class=dna-wrap>
      <div class=nebula-stage><svg class=dna id=dna viewBox="0 0 300 300"></svg></div>
@@ -875,6 +877,10 @@ function decodeWire(wire){
 const DATA = decodeWire(WIRE);
 const state = { gran: 'month', models: new Set(DATA.models), focusPeriod:null, compare:false, numberMode:0 };
 let lastTotal = 0;
+let stateRevision=0,derivedRevision=-1,derivedCache={};
+function invalidateDerived(){stateRevision++;derivedCache={};derivedRevision=stateRevision;}
+function memoDerived(key,build){if(derivedRevision!==stateRevision){derivedCache={};derivedRevision=stateRevision;}if(!Object.prototype.hasOwnProperty.call(derivedCache,key))derivedCache[key]=build();return derivedCache[key];}
+function stateKey(){return state.gran+'|'+[...state.models].sort().join(',')+'|'+(state.focusPeriod||'');}
 const LABEL = {day:'日期', week:'周(始)', month:'月份'};
 
 const fmt = n => Number(n||0).toLocaleString('en-US');
@@ -916,12 +922,15 @@ function fmtLabel(period, gran){
   return period;
 }
 function selectedRows(all=false){
-  let src=DATA[state.gran];
-  if(state.focusPeriod&&!all) src=src.filter(r=>r.period===state.focusPeriod);
-  return src.map(r=>{
-    const models={}; let total=0;
-    state.models.forEach(m=>{ const v=r.models[m]||0; if(v){ models[m]=v; total+=v; } });
-    return {period:r.period, calls:r.calls, models, total};
+  const key='rows|'+stateKey()+'|'+(all?'all':'focus');
+  return memoDerived(key,()=>{
+    let src=DATA[state.gran];
+    if(state.focusPeriod&&!all) src=src.filter(r=>r.period===state.focusPeriod);
+    return src.map(r=>{
+      const models={}; let total=0;
+      state.models.forEach(m=>{ const v=r.models[m]||0; if(v){ models[m]=v; total+=v; } });
+      return {period:r.period, calls:r.calls, models, total};
+    });
   });
 }
 
@@ -1113,7 +1122,7 @@ function renderTable(){
 }
 
 let previousModels=null;
-function setModels(next,label){previousModels=new Set(state.models);state.models=new Set(next);renderFilters();render();if(label)toast(label);}
+function setModels(next,label){previousModels=new Set(state.models);state.models=new Set(next);invalidateDerived();renderFilters();renderDataViews();if(label)toast(label);}
 function renderFilterLedger(){
   const rows=DATA[state.gran]||[],all=rows.reduce((a,r)=>a+(r.total||0),0),selected=rows.reduce((a,r)=>a+Object.entries(r.models||{}).reduce((s,[m,v])=>s+(state.models.has(m)?v:0),0),0);
   document.getElementById('filter-summary').innerHTML='已选 <b>'+state.models.size+'/'+DATA.models.length+'</b> 个模型 · 覆盖 <b>'+pct(selected,all)+'</b> Token';document.getElementById('filter-undo').disabled=!previousModels;
@@ -1137,7 +1146,7 @@ function renderFilters(){
 }
 document.getElementById('filter-all').addEventListener('click',()=>setModels(DATA.models,'已选择全部模型'));
 document.getElementById('filter-none').addEventListener('click',()=>setModels([],'已清空模型筛选'));
-document.getElementById('filter-undo').addEventListener('click',()=>{if(!previousModels)return;state.models=new Set(previousModels);previousModels=null;renderFilters();render();toast('已撤销上一次模型筛选');});
+document.getElementById('filter-undo').addEventListener('click',()=>{if(!previousModels)return;state.models=new Set(previousModels);previousModels=null;invalidateDerived();renderFilters();renderDataViews();toast('已撤销上一次模型筛选');});
 
 function lbRows(items,sessionRows=false){
   if(!items || !items.length) return '<div class="hint">无数据</div>';
@@ -1226,16 +1235,16 @@ document.getElementById('discovery-pin').addEventListener('click',e=>{e.stopProp
 document.getElementById('discovery-card').addEventListener('click',e=>{if(e.target.closest('button'))return;stepDiscovery(1);});
 document.getElementById('discovery-card').addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();stepDiscovery(e.key==='ArrowRight'?1:-1);}else if((e.key==='Enter'||e.key===' ')&&!e.target.closest('button')){e.preventDefault();stepDiscovery(1);}});
 function renderFooter(){
-  const a=_ach||getBadgeData(), h=DATA.hourly||[], peak=h.indexOf(Math.max(...h)), lines=[
+  const h=DATA.hourly||[], peak=h.indexOf(Math.max(...h)), lines=[
     'by <b>LingXi</b> · 本页装载了 <b>'+human(DATA.day.reduce((s,d)=>s+d.total,0))+'</b> Token 的痕迹。',
     '你的缓存替你记住了 <b>'+human(DATA.cache_read||0)+'</b> Token。',
-    '<b>'+fmt(a.all.length-a.got)+'</b> 枚成就仍在数据深处沉睡。',
     '算力最常在 <b>'+String(Math.max(0,peak)).padStart(2,'0')+':00</b> 亮起。',
     '纯本地生成 · 没有任何数据离开这台电脑。'
-  ];document.getElementById('dynamic-footer').innerHTML=lines[(new Date().getDate()+DATA.day.length)%lines.length];
+  ];if(_ach)lines.splice(2,0,'<b>'+fmt(_ach.all.length-_ach.got)+'</b> 枚成就仍在数据深处沉睡。');document.getElementById('dynamic-footer').innerHTML=lines[(new Date().getDate()+DATA.day.length)%lines.length];
 }
 
 function shareStats(){
+  if(!lazyState.creature?.rendered){lazyState.creature=Object.assign({},lazyState.creature,{visible:true});renderLazy('creature',true);}
   const days=DATA.day||[],total=days.reduce((a,d)=>a+d.total,0),calls=days.reduce((a,d)=>a+d.calls,0),h=DATA.hourly||[],peak=h.indexOf(Math.max(...h)),mt={};days.forEach(d=>Object.entries(d.models||{}).forEach(([m,v])=>mt[m]=(mt[m]||0)+v));const dom=Object.entries(mt).sort((a,b)=>b[1]-a[1])[0];
   return {total,calls,peak,dom:dom?pretty(dom[0]):'—',cache:total?(DATA.cache_read||0)/total:0,ach:_ach||getBadgeData(),creature:document.getElementById('creature-name').textContent||'Token 生物'};
 }
@@ -1269,8 +1278,8 @@ function renderProbe(){
   document.getElementById('probe-copy').innerHTML='<b>正在回看 '+esc(fmtLabel(state.focusPeriod,state.gran))+'</b> · '+human(row?row.total:0)+' tk'+(dom?' · 主力 '+esc(pretty(dom[0])):'')+' · Esc 返回全景';
   el.classList.add('on');
 }
-function toggleFocus(period,restoreBar=false){ state.focusPeriod=state.focusPeriod===period?null:period; render();if(restoreBar){const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===period);if(el){barCursor=Number(el.dataset.index||0);el.focus();}} }
-function clearFocus(restoreBar=false){ if(!state.focusPeriod)return;const period=state.focusPeriod;state.focusPeriod=null;render();if(restoreBar){const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===period);if(el){barCursor=Number(el.dataset.index||0);el.focus();}} }
+function toggleFocus(period,restoreBar=false){ state.focusPeriod=state.focusPeriod===period?null:period;invalidateDerived(); renderDataViews();if(restoreBar){const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===period);if(el){barCursor=Number(el.dataset.index||0);el.focus();}} }
+function clearFocus(restoreBar=false){ if(!state.focusPeriod)return;const period=state.focusPeriod;state.focusPeriod=null;invalidateDerived();renderDataViews();if(restoreBar){const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===period);if(el){barCursor=Number(el.dataset.index||0);el.focus();}} }
 
 document.getElementById('probe-close').addEventListener('click',clearFocus);
 
@@ -1303,24 +1312,32 @@ function renderViewCapsule(){
   document.getElementById('view-summary').innerHTML='<b>'+d.gran+'</b> · '+d.modelCount+' / '+DATA.models.length+' 个模型<br><b>'+(state.focusPeriod?'时光探针':'时间范围')+'</b> · '+esc(d.focus)+'<br><b>幻影对比</b> · '+d.compare;
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x.dataset.gran===state.gran));document.getElementById('compare-btn').classList.toggle('on',state.compare);
 }
-function resetView(){state.gran='month';state.models=new Set(DATA.models);state.focusPeriod=null;state.compare=false;previousModels=null;renderFilters();render();toast('已恢复月度全景');}
+function resetView(){state.gran='month';state.models=new Set(DATA.models);state.focusPeriod=null;state.compare=false;previousModels=null;invalidateDerived();renderFilters();renderDataViews();toast('已恢复月度全景');}
 async function copyText(text){try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return true;}}catch(e){}const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}ta.remove();return ok;}
 function copyViewLink(){copyText(viewURL()).then(ok=>toast(ok?'当前视图链接已复制':'复制失败，请从地址栏复制'));}
 document.getElementById('view-capsule').addEventListener('click',e=>{e.stopPropagation();const pop=document.getElementById('view-pop'),open=!pop.classList.contains('open');pop.classList.toggle('open',open);e.currentTarget.setAttribute('aria-expanded',String(open));});
 document.getElementById('view-copy').addEventListener('click',copyViewLink);document.getElementById('view-reset').addEventListener('click',resetView);document.addEventListener('click',e=>{if(!e.target.closest('.view-wrap')){document.getElementById('view-pop').classList.remove('open');document.getElementById('view-capsule').setAttribute('aria-expanded','false');}});
-window.addEventListener('popstate',()=>{restoringView=true;restoreViewFromURL();renderFilters();render();restoringView=false;});
+window.addEventListener('popstate',()=>{restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderDataViews();restoringView=false;});
 
 document.getElementById('compare-btn').addEventListener('click',()=>{ state.compare=!state.compare; renderBar();renderViewCapsule();syncViewURL(); });
 
-function render(){
-  renderKPI();
-  const n=DATA[state.gran].length;
-  document.getElementById('bar-hint').textContent = n+' 期 · 点击柱子进入时光探针';
-  renderBar(); renderDonut(); renderTable(); renderTop(); renderClock(); renderFunFacts(); renderWeather(); renderProbe(); renderRhythm();
-  renderBlock(); renderDaily(); renderMultiples(); renderFlow(); renderCreature(); renderRace();
-  renderBadges(); renderDNA(); renderFortune(); renderDiscovery(); renderFooter(); renderStatusPulse(); renderViewCapsule(); bindModelLinks();
-  syncViewURL();
+const LAZY_RENDERERS={flow:renderFlow,creature:renderCreature,race:renderRace,badges:renderBadges,dna:renderDNA};
+const lazyState={};
+function renderLazy(name,force=false){const card=document.querySelector('[data-lazy="'+name+'"]');if(!card||card.style.display==='none')return;if(!force&&!lazyState[name]?.visible){card.classList.add('lazy-pending');lazyState[name]=Object.assign({},lazyState[name],{dirty:true});return;}card.classList.remove('lazy-pending');LAZY_RENDERERS[name]();lazyState[name]=Object.assign({},lazyState[name],{dirty:false,rendered:true});}
+function markLazyDirty(){['flow','dna'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible)renderLazy(name,true);});}
+function markStaticLazyDirty(){['creature','race','badges'].forEach(name=>{if(!lazyState[name]?.rendered)lazyState[name]=Object.assign({},lazyState[name],{dirty:true});});}
+function initLazyRendering(){
+  document.querySelectorAll('[data-lazy]').forEach(card=>{const name=card.dataset.lazy;lazyState[name]={visible:false,dirty:true,rendered:false};card.classList.add('lazy-pending');});
+  if(!('IntersectionObserver'in window)){Object.keys(LAZY_RENDERERS).forEach(name=>{lazyState[name].visible=true;renderLazy(name,true);});return;}
+  const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{const name=entry.target.dataset.lazy;lazyState[name]=Object.assign({},lazyState[name],{visible:entry.isIntersecting});if(entry.isIntersecting&&(lazyState[name].dirty||!lazyState[name].rendered))renderLazy(name,true);}),{rootMargin:'500px 0px'});
+  document.querySelectorAll('[data-lazy]').forEach(card=>observer.observe(card));
 }
+function renderCoreViews(){renderKPI();const n=DATA[state.gran].length;document.getElementById('bar-hint').textContent=n+' 期 · 点击柱子进入时光探针';renderBar();renderDonut();renderTable();renderTop();renderStatusPulse();renderViewCapsule();}
+function renderTimeViews(){renderClock();renderWeather();renderProbe();renderRhythm();renderBlock();renderDaily();}
+function renderModelViews(){renderMultiples();markLazyDirty();markStaticLazyDirty();}
+function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderFunFacts();renderFortune();renderDiscovery();renderFooter();bindModelLinks();syncViewURL();}
+function render(){renderDataViews();}
+
 
 document.getElementById('tabs').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return;
@@ -1328,8 +1345,8 @@ document.getElementById('tabs').addEventListener('click',e=>{
 });
 function setGran(g){
   if(!['day','week','month'].includes(g))return;
-  state.gran=g; state.focusPeriod=null;
-  render();
+  state.gran=g; state.focusPeriod=null;invalidateDerived();
+  renderDataViews();
 }
 
 document.getElementById('meta').textContent =
@@ -1475,7 +1492,7 @@ const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true
 function loadMods(){ try{ const m=Object.assign({},JSON.parse(localStorage.getItem(MODS_KEY)||'{}'));let legacy;if(Object.prototype.hasOwnProperty.call(m,'orbit'))legacy=m.orbit;else if(Object.prototype.hasOwnProperty.call(m,'city'))legacy=m.city;if(!Object.prototype.hasOwnProperty.call(m,'flow')&&legacy!==undefined)m.flow=legacy;delete m.orbit;delete m.city;localStorage.setItem(MODS_KEY,JSON.stringify(m));return m; }catch(e){ return {}; } }
 function applyMods(){
   const m=Object.assign({},MOD_DEFAULT,loadMods());
-  document.querySelectorAll('[data-module]').forEach(el=>{ el.style.display = m[el.dataset.module]===false ? 'none' : ''; });
+  document.querySelectorAll('[data-module]').forEach(el=>{const hidden=m[el.dataset.module]===false;el.style.display=hidden?'none':'';if(!hidden&&el.dataset.lazy&&typeof lazyState!=='undefined'){const name=el.dataset.lazy;lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible||!('IntersectionObserver'in window))renderLazy(name,true);}});
   document.querySelectorAll('[data-sw]').forEach(sw=>{
     const on=m[sw.dataset.sw]!==false; sw.classList.toggle('on',on);
     const cb=document.querySelector('input[data-mod="'+sw.dataset.sw+'"]'); if(cb) cb.checked=on;
@@ -1554,7 +1571,9 @@ function modelHover(model,on){
   document.querySelectorAll('[data-model]').forEach(el=>{const same=el.dataset.model===model;el.classList.toggle('model-hot',on&&same);el.classList.toggle('model-dim',on&&!same);});
 }
 function bindModelLinks(){
-  document.querySelectorAll('[data-model]').forEach(el=>{el.addEventListener('mouseenter',()=>modelHover(el.dataset.model,true));el.addEventListener('mouseleave',()=>modelHover(el.dataset.model,false));});
+  if(document.body.dataset.modelDelegated)return;document.body.dataset.modelDelegated='1';
+  document.addEventListener('pointerover',e=>{const el=e.target.closest('[data-model]');if(el)modelHover(el.dataset.model,true);});
+  document.addEventListener('pointerout',e=>{const el=e.target.closest('[data-model]');if(el&&!el.contains(e.relatedTarget))modelHover(el.dataset.model,false);});
 }
 
 function currentFlow(){
@@ -1672,7 +1691,7 @@ function secretCommand(q){
   };if(secrets[q]){closePalette();setTimeout(secrets[q],80);return true;}return false;
 }
 
-function scrollToSection(id){const el=document.getElementById(id);if(!el)return;el.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
+function scrollToSection(id){const el=document.getElementById(id);if(!el)return;const lazy=el.dataset.lazy;if(lazy){lazyState[lazy]=Object.assign({},lazyState[lazy],{visible:true});renderLazy(lazy,true);}el.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
 const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-rhythm','节奏'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
 function initSectionDock(){
   const dock=document.getElementById('section-dock');dock.addEventListener('click',e=>{const b=e.target.closest('button[data-target]');if(b)scrollToSection(b.dataset.target);});
@@ -2150,7 +2169,8 @@ function renderFortune(){
 
 /* URL 可恢复当前视图；旧版 #day/#week/#month 仍兼容 */
 applyMods();
-restoringView=true;restoreViewFromURL();renderFilters();render();restoringView=false;syncViewURL();
+initLazyRendering();
+restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();render();restoringView=false;syncViewURL();
 </script>
 </body></html>
 """

@@ -246,7 +246,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("document.getElementById('race-scrub').addEventListener('input'", template)
         self.assertIn('class="bar-focus"', template)
         self.assertIn(".bar-hit{fill:transparent;pointer-events:all}", template)
-        self.assertIn("previousModels=null;renderFilters();render();toast('已恢复月度全景')", template)
+        self.assertIn("previousModels=null;invalidateDerived();renderFilters();renderDataViews();toast('已恢复月度全景')", template)
         self.assertIn("modal.setAttribute('aria-hidden','false')", template)
         self.assertIn("role=dialog aria-modal=true aria-labelledby=replay-title", template)
         self.assertIn("scrub.max=String(s.length-1)", template)
@@ -254,6 +254,13 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("box.querySelectorAll('.bar-hit').forEach", template)
         self.assertIn("toggleFocus(el.dataset.period,true)", template)
         self.assertIn("document.getElementById('replay-modal').addEventListener('keydown',trapReplayFocus)", template)
+        self.assertIn("data-lazy=flow", template)
+        self.assertIn("data-lazy=badges", template)
+        self.assertIn("function initLazyRendering()", template)
+        self.assertIn("rootMargin:'500px 0px'", template)
+        self.assertIn("function renderDataViews()", template)
+        self.assertIn("function memoDerived(key,build)", template)
+        self.assertIn("document.body.dataset.modelDelegated", template)
         self.assertIn("clearFocus(true)", template)
 
 
