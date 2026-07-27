@@ -75,7 +75,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  <div class=kpis>
    <div class="kpi is-primary">
      <div class=v><span class=grad id=k-total></span> <small id=k-total-u></small></div>
-     <div class=l>总 token<span class=delta id=k-delta></span><span class=fc id=k-forecast></span></div>
+     <div class=l>总 token <button class=k-copy id=k-total-copy type=button aria-label="复制总 Token 精确值" title="复制精确值">⧉</button><span class=delta id=k-delta></span><span class=fc id=k-forecast></span></div>
      <svg class=spark id=spark aria-hidden=true></svg>
    </div>
    <div class=kpi>
@@ -119,6 +119,11 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  <div class=prov-meters id=prov-meters></div>
  <div class=prov-sources id=prov-sources></div>
  <div class=prov-capabilities id=prov-capabilities></div>
+</section>
+
+<section class=card id=section-moments>
+ <div class=row-between><div><h2 style=margin:0>Data Moments · 数据时刻</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">从当前模型筛选中挑出值得回看的日期，不增加另一张图</p></div><span class=sub id=moments-meta style="margin:0;color:var(--faint)"></span></div>
+ <div class=moments id=moments></div>
 </section>
 
 <section class=card data-module=project data-lazy=project id=section-project>

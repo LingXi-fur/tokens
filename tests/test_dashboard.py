@@ -703,6 +703,54 @@ DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw 
 '''
         result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
+    def test_data_moments_copy_and_contextual_empty_contracts(self):
+        template = report_dashboard._TEMPLATE
+        for marker in (
+            "Data Moments · 数据时刻", "id=moments", "function emptyStateReason(kind)",
+            "function contextEmptyHTML(kind)", "function copyExactValue(label,value)",
+            "id=k-total-copy", "function selectedDailyRows()", "function continuousCalendar(rows,end,count)",
+            "function activeStreakDays(rows,end)", "function trailingQuietDays(rows,end)",
+            "function latestMilestone(rows)", "function latestModelRelay(rows)",
+            "function projectFirstSeen(projectId)", "function renderDataMoments()",
+            "function focusMomentDay(day)", "copyExactValue('项目 Token',total)",
+        ):
+            self.assertIn(marker, template)
+        self.assertNotIn("navigator.clipboard.writeText(String(lastTotal))", template)
+        self.assertIn("data-empty-action", template)
+        self.assertIn("handleEmptyAction", template)
+
+    def test_data_moment_helpers_respect_calendar_gaps_and_events(self):
+        script = (ROOT / "dashboard_assets" / "dashboard.js").read_text(encoding="utf-8")
+        def extract_function(name):
+            start = script.index(f"function {name}(")
+            brace = script.index("{", start)
+            depth = 0
+            for index in range(brace, len(script)):
+                if script[index] == "{": depth += 1
+                elif script[index] == "}":
+                    depth -= 1
+                    if depth == 0: return script[start:index + 1]
+            self.fail(name)
+        helpers = "\n".join(extract_function(name) for name in (
+            "localISO", "continuousCalendar", "activeStreakDays", "trailingQuietDays",
+            "latestMilestone", "dominantModel", "latestModelRelay",
+        ))
+        node_script = r'''
+const state={models:new Set(['a','b'])};const DATA={models:['a','b']};
+''' + helpers + r'''
+const rows=[
+ {period:'2026-07-01',total:600,models:{a:600}},
+ {period:'2026-07-02',total:500,models:{a:200,b:300}},
+ {period:'2026-07-04',total:10,models:{b:10}}
+];
+if(activeStreakDays(rows,'2026-07-04')!==1)throw new Error('gap must break streak');
+if(trailingQuietDays(rows,'2026-07-06')!==2)throw new Error('quiet tail');
+const milestone=latestMilestone(rows);if(!milestone||milestone.day!=='2026-07-02'||milestone.value!==1000)throw new Error('milestone');
+const relay=latestModelRelay(rows);if(!relay||relay.day!=='2026-07-02'||relay.from!=='a'||relay.to!=='b')throw new Error('relay');
+state.models.clear();if(trailingQuietDays(rows,'2026-07-06')!==null)throw new Error('empty filter');
+'''
+        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        self.assertEqual(0, result.returncode, result.stderr)
 
 
 if __name__ == "__main__":
