@@ -220,6 +220,21 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
     cache_write_total = 0
     first_day = None
     last_day = None
+    provenance = {
+        "records": 0,
+        "total": 0,
+        "valid_ts": 0,
+        "with_cwd": 0,
+        "with_session": 0,
+        "with_replay": 0,
+        "with_input": 0,
+        "with_output": 0,
+        "with_cache_read": 0,
+        "with_cache_write": 0,
+        "first_day": None,
+        "last_day": None,
+        "sources": {},
+    }
     record_counter = 0
 
     for record in records:
@@ -232,8 +247,10 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         total = record.get("total", 0) or 0
         model = record.get("model") or "unknown"
         source = record.get("source") or "unknown"
-        cwd = record.get("cwd")
-        sid = record.get("session")
+        raw_cwd = record.get("cwd")
+        raw_sid = record.get("session")
+        cwd = raw_cwd
+        sid = raw_sid
         if aliases:
             cwd = aliases.get("project", cwd)
             sid = aliases.get("session", sid)
@@ -241,6 +258,40 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         input_value = record.get("input", 0) or 0
         output_value = record.get("output", 0) or 0
         cache_write = record.get("cache_write", 0) or 0
+
+        local_dt = readers.parse_local_dt(record.get("ts"))
+        source_provenance = provenance["sources"].setdefault(source, {
+            "records": 0,
+            "total": 0,
+            "valid_ts": 0,
+            "with_cwd": 0,
+            "with_session": 0,
+            "with_input": 0,
+            "with_output": 0,
+            "with_cache_read": 0,
+            "with_cache_write": 0,
+        })
+        provenance["records"] += 1
+        provenance["total"] += total
+        provenance["first_day"] = day if provenance["first_day"] is None or day < provenance["first_day"] else provenance["first_day"]
+        provenance["last_day"] = day if provenance["last_day"] is None or day > provenance["last_day"] else provenance["last_day"]
+        source_provenance["records"] += 1
+        source_provenance["total"] += total
+        coverage = (
+            ("valid_ts", local_dt is not None),
+            ("with_cwd", bool(raw_cwd)),
+            ("with_session", bool(raw_sid)),
+            ("with_input", "input" in record and record.get("input") is not None),
+            ("with_output", "output" in record and record.get("output") is not None),
+            ("with_cache_read", "cache_read" in record and record.get("cache_read") is not None),
+            ("with_cache_write", "cache_write" in record and record.get("cache_write") is not None),
+        )
+        for key, present in coverage:
+            if present:
+                provenance[key] += 1
+                source_provenance[key] += 1
+        if raw_sid:
+            provenance["with_replay"] += 1
 
         model_totals[model] = model_totals.get(model, 0) + total
         cache_read += cache_value
@@ -268,7 +319,6 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         _flow_add(detail["project_model"], cwd, model, total)
         _flow_add(detail["model_session"], model, sid, total)
 
-        local_dt = readers.parse_local_dt(record.get("ts"))
         if local_dt is not None:
             hour = local_dt.hour
             hourly[hour] += total
@@ -401,6 +451,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "n_cwds": len(global_cwds),
         "n_sessions": len(session_counts),
         "max_turns": max(session_counts.values(), default=0),
+        "provenance": provenance,
         "achievement_stats": achievement_stats,
         "reuse": {
             "day": _reuse_periods(day_periods),

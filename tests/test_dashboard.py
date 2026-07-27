@@ -171,7 +171,7 @@ class DashboardTests(unittest.TestCase):
         for key in (
             "source", "range", "models", "pretty", "colors", "cache_read",
             "hourly", "block", "n_cwds", "n_sessions", "max_turns",
-            "achievement_stats", "reuse", "day", "week", "month",
+            "achievement_stats", "provenance", "reuse", "day", "week", "month",
         ):
             self.assertEqual(raw[key], anonymized[key], key)
         self.assertFalse(raw["anonymized"])
@@ -223,7 +223,7 @@ class DashboardTests(unittest.TestCase):
         for key in (
             "generated", "source", "range", "models", "colors", "hourly",
             "day_details", "top_cwds", "top_sessions", "session_series",
-            "flow", "reuse", "day", "week", "month", "achievement_stats",
+            "flow", "reuse", "day", "week", "month", "provenance", "achievement_stats",
         ):
             self.assertIn(key, payload)
         self.assertEqual(["claude"], payload["source"])
@@ -641,6 +641,68 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
         self.assertIn("if(document.documentElement.dataset.motion==='full')_stripT=setInterval", template)
         self.assertIn("window.addEventListener('tk-motion-change'", template)
         self.assertIn("*,*::before,*::after{animation:none!important;transition:none!important}", template)
+        self.assertIn("function provenanceHealth()", template)
+        self.assertIn("function freshnessInfo()", template)
+        self.assertIn("function capabilityInfo()", template)
+        self.assertIn("function renderProvenance()", template)
+        self.assertIn("function provenanceSummary()", template)
+        self.assertIn("data-module=provenance", template)
+        self.assertIn("id=section-provenance", template)
+        self.assertIn("id=freshness-beacon", template)
+        self.assertIn("provenance:true", template)
+        self.assertIn("跳转 · 数据可信度实验室", template)
+        self.assertIn("说明：不包含 cwd、session 或逐轮 Token 明细。", template)
+
+    def test_provenance_counts_range_and_matches_anonymized_payload(self):
+        records = self.synthetic_records() + [{
+            "source": "codex", "ts": "not-a-time", "date": "2026-07-03",
+            "model": "model-c", "input": 30, "output": 10,
+            "cache_read": 5, "cache_write": 0, "total": 40,
+        }]
+        raw = report_dashboard.build_payload(records, since="2026-07-01", until="2026-07-03")
+        anonymized = report_dashboard.build_payload(
+            records, since="2026-07-01", until="2026-07-03", anonymize=True,
+        )
+        provenance = raw["provenance"]
+        self.assertEqual(3, provenance["records"])
+        self.assertEqual(340, provenance["total"])
+        self.assertEqual(2, provenance["valid_ts"])
+        self.assertEqual(2, provenance["with_cwd"])
+        self.assertEqual(2, provenance["with_session"])
+        self.assertEqual("2026-07-01", provenance["first_day"])
+        self.assertEqual("2026-07-03", provenance["last_day"])
+        self.assertEqual(1, provenance["sources"]["codex"]["records"])
+        self.assertEqual(provenance, anonymized["provenance"])
+        serialized = json.dumps(provenance, ensure_ascii=False)
+        self.assertNotIn("/tmp/project-a", serialized)
+        self.assertNotIn("session-a", serialized)
+
+    def test_provenance_helpers_cover_health_freshness_and_capabilities(self):
+        script = (ROOT / "dashboard_assets" / "dashboard.js").read_text(encoding="utf-8")
+        def extract_function(name):
+            start = script.index(f"function {name}(")
+            brace = script.index("{", start)
+            depth = 0
+            for index in range(brace, len(script)):
+                if script[index] == "{": depth += 1
+                elif script[index] == "}":
+                    depth -= 1
+                    if depth == 0: return script[start:index + 1]
+            self.fail(name)
+        helpers = "\n".join(extract_function(name) for name in (
+            "coverageRatio", "freshnessInfo", "provenanceHealth", "capabilityInfo",
+        ))
+        node_script = r'''
+const DATA={generated:'2026-07-27 12:00',range:{since:null,until:null},provenance:{records:100,total:1000,valid_ts:100,with_cwd:80,with_session:90,with_replay:90,with_input:100,with_output:100,last_day:'2026-07-27',sources:{claude:{records:100,total:1000}}}};
+''' + helpers + r'''
+if(freshnessInfo().key!=='fresh')throw new Error('freshness');
+if(provenanceHealth().key!=='full')throw new Error('health');
+if(capabilityInfo().find(x=>x.key==='project').status!=='partial')throw new Error('project capability');
+DATA.range.until='2026-07-20';if(freshnessInfo().key!=='range')throw new Error('range freshness');
+DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw new Error('empty health');
+'''
+        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        self.assertEqual(0, result.returncode, result.stderr)
 
 
 if __name__ == "__main__":

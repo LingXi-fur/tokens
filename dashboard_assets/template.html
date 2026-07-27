@@ -17,6 +17,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
     </div>
   </div>
   <div class=head-tools>
+    <button class="seg freshness-beacon" id=freshness-beacon type=button title="查看数据可信度"><span class=led></span><span id=freshness-text>数据体检 —</span></button>
     <button class="seg status-pulse" id=status-pulse type=button title="用量状态计算中"><span class=led></span><span id=status-text>状态 —</span></button>
     <div class=seg id=source-pill><span class=led></span><span id=source-txt>—</span></div>
     <button class=themebtn id=theme-btn aria-label="切换主题" title="主题：自动"></button>
@@ -31,6 +32,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
         <div class=mrow><label><input type=checkbox data-mod=daily checked>每天趋势</label><span class="switch on" aria-hidden=true data-sw=daily></span></div>
         <div class=mrow><label><input type=checkbox data-mod=rhythm checked>作息织锦</label><span class="switch on" aria-hidden=true data-sw=rhythm></span></div>
         <div class=mrow><label><input type=checkbox data-mod=multiples checked>每模型趋势</label><span class="switch on" aria-hidden=true data-sw=multiples></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=provenance checked>数据可信度</label><span class="switch on" aria-hidden=true data-sw=provenance></span></div>
         <div class=mrow><label><input type=checkbox data-mod=project checked>项目透镜</label><span class="switch on" aria-hidden=true data-sw=project></span></div>
         <div class=mrow><label><input type=checkbox data-mod=reuse checked>复用之河</label><span class="switch on" aria-hidden=true data-sw=reuse></span></div>
         <div class=mrow><label><input type=checkbox data-mod=flow checked>Token 流光图</label><span class="switch on" aria-hidden=true data-sw=flow></span></div>
@@ -46,7 +48,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 </header>
 
 <nav class=section-dock id=section-dock aria-label="Dashboard 区域导航">
- <div class=section-links><button data-target=section-overview class=on>总览</button><button data-target=section-trend>趋势</button><button data-target=section-project>项目</button><button data-target=section-rhythm>节奏</button><button data-target=section-reuse>复用</button><button data-target=section-flow>流光</button><button data-target=section-achievements>成就</button><button data-target=section-top>Top</button></div>
+ <div class=section-links><button data-target=section-overview class=on>总览</button><button data-target=section-trend>趋势</button><button data-target=section-provenance>体检</button><button data-target=section-project>项目</button><button data-target=section-rhythm>节奏</button><button data-target=section-reuse>复用</button><button data-target=section-flow>流光</button><button data-target=section-achievements>成就</button><button data-target=section-top>Top</button></div>
  <div class=view-wrap><button class=view-capsule id=view-capsule type=button aria-controls=view-pop aria-expanded=false title="查看当前视图状态"><span id=view-label>月 · 全部模型 · 全景</span></button><div class=view-pop id=view-pop><h3>Current View · 当前视图</h3><div class=view-summary id=view-summary></div><div class=view-actions><button class=ghostbtn id=view-copy type=button>⧉ 复制视图链接</button><button class=ghostbtn id=view-reset type=button>↺ 恢复全景</button></div></div></div>
 </nav>
 
@@ -106,6 +108,17 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
    <div style="display:flex;align-items:center;gap:9px"><button class="ghostbtn comparebtn" id=compare-btn type=button aria-pressed=false title="叠加上一期轮廓">◫ 幻影对比</button><span class=sub id=bar-hint style=margin:0;color:var(--faint)></span></div>
  </div>
  <div id=bar style=margin-top:14px></div>
+</section>
+
+<section class=card data-module=provenance id=section-provenance>
+ <div class=row-between>
+  <div><h2 style=margin:0>数据可信度实验室 · DATA PROVENANCE</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">解释这份快照能支持哪些分析，以及某些视图为什么可能稀疏</p></div>
+  <button class=ghostbtn id=provenance-copy type=button>复制体检摘要</button>
+ </div>
+ <div class=prov-summary><div class=prov-stamp id=prov-stamp></div><div class=prov-copy id=prov-copy></div></div>
+ <div class=prov-meters id=prov-meters></div>
+ <div class=prov-sources id=prov-sources></div>
+ <div class=prov-capabilities id=prov-capabilities></div>
 </section>
 
 <section class=card data-module=project data-lazy=project id=section-project>

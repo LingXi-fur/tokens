@@ -496,7 +496,7 @@ function initLazyRendering(){
 function renderCoreViews(){renderKPI();const n=DATA[state.gran].length;document.getElementById('bar-hint').textContent=n+' 期 · 点击柱子进入时光探针';renderBar();renderDonut();renderTable();renderTop();renderStatusPulse();renderViewCapsule();}
 function renderTimeViews(){renderClock();renderWeather();renderProbe();renderRhythm();renderBlock();renderDaily();}
 function renderModelViews(){renderMultiples();markLazyDirty();markStaticLazyDirty();}
-function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderFunFacts();renderFortune();renderDiscovery();renderFooter();bindModelLinks();syncViewURL();}
+function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderFunFacts();renderFortune();renderDiscovery();renderFooter();bindModelLinks();syncViewURL();}
 function render(){renderDataViews();}
 
 
@@ -666,7 +666,7 @@ function renderFunFacts(){
 document.getElementById('fun-shuffle').addEventListener('click',renderFunFacts);
 
 /* ---- 模块开关（附加功能可勾选 + 记忆）---- */
-const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true,rhythm:true,fortune:true,multiples:true,project:true,reuse:true,flow:true,creature:true,race:true,badges:true,dna:true,top:true};
+const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true,rhythm:true,fortune:true,multiples:true,provenance:true,project:true,reuse:true,flow:true,creature:true,race:true,badges:true,dna:true,top:true};
 function loadMods(){ try{ const m=Object.assign({},JSON.parse(localStorage.getItem(MODS_KEY)||'{}'));let legacy;if(Object.prototype.hasOwnProperty.call(m,'orbit'))legacy=m.orbit;else if(Object.prototype.hasOwnProperty.call(m,'city'))legacy=m.city;if(!Object.prototype.hasOwnProperty.call(m,'flow')&&legacy!==undefined)m.flow=legacy;delete m.orbit;delete m.city;localStorage.setItem(MODS_KEY,JSON.stringify(m));return m; }catch(e){ return {}; } }
 function applyMods(){
   const m=Object.assign({},MOD_DEFAULT,loadMods());
@@ -764,6 +764,27 @@ function renderRhythm(){
 }
 
 let selectedProject=null;
+const SOURCE_NOTES={claude:'Claude total 由 input、output、cache read/write 组成；通常保留 cwd 与 session。',gemini:'Gemini total 以日志报告值为准；通常有 session，但缺少 cwd。',codex:'Codex input 通常包含 cached input；当前记录通常缺少 cwd 与 session。'};
+function coverageRatio(value,total){return total?value/total:0;}
+function freshnessInfo(){const p=DATA.provenance||{},generated=String(DATA.generated||'').slice(0,10),last=p.last_day||'',explicit=DATA.range?.until;if(explicit)return {key:'range',label:'范围快照',detail:'报告固定到 '+explicit};if(!generated||!last)return {key:'stale',label:'日期未知',detail:'缺少可比较的日期范围'};const days=Math.max(0,Math.round((new Date(generated+'T00:00:00')-new Date(last+'T00:00:00'))/86400000));return days===0?{key:'fresh',label:'刚刚同步',detail:'最后数据日与生成日一致'}:days<=3?{key:'recent',label:'近期快照',detail:'最后数据距生成日 '+days+' 天'}:{key:'stale',label:'历史快照',detail:'最后数据距生成日 '+days+' 天'};}
+function provenanceHealth(){const p=DATA.provenance||{},n=p.records||0,ts=coverageRatio(p.valid_ts,n),cwd=coverageRatio(p.with_cwd,n),session=coverageRatio(p.with_session,n),components=coverageRatio(Math.min(p.with_input||0,p.with_output||0),n),fresh=freshnessInfo();if(!n)return {key:'base',label:'等待数据',detail:'当前范围没有可体检的记录。'};if(ts>=.95&&cwd>=.7&&session>=.7&&components>=.9)return {key:'full',label:'全景数据',detail:'时间、项目、会话和 Token 组成覆盖较完整。'};if(ts>=.9&&(cwd>=.25||session>=.25))return {key:'trend',label:fresh.key==='stale'?'历史趋势':'趋势数据',detail:'适合趋势与部分实体分析，项目或会话能力可能不完整。'};return {key:'base',label:'基础数据',detail:'主要适合总量、模型和来源趋势，实体分析能力有限。'};}
+function capabilityInfo(){const p=DATA.provenance||{},n=p.records||1,ratio=k=>coverageRatio(p[k]||0,n),items=[
+  {key:'project',label:'项目透镜',ratio:ratio('with_cwd'),target:'section-project',reason:'需要记录包含 cwd 项目路径'},
+  {key:'session',label:'会话回放',ratio:ratio('with_session'),target:'section-top',reason:'需要记录包含 session 标识'},
+  {key:'rhythm',label:'作息分析',ratio:ratio('valid_ts'),target:'section-rhythm',reason:'需要可解析的时间戳'},
+  {key:'reuse',label:'复用之河',ratio:coverageRatio(Math.min(p.with_input||0,p.with_output||0),n),target:'section-reuse',reason:'需要 input/output/cache 组成字段'},
+  {key:'flow',label:'流光关系',ratio:Math.max(ratio('with_cwd'),ratio('with_session')),target:'section-flow',reason:'需要项目或会话 identity'},
+];return items.map(x=>({...x,status:x.ratio>=.85?'ok':x.ratio>0?'partial':'off'}));}
+function capabilityReason(key){const item=capabilityInfo().find(x=>x.key===key);if(!item)return '当前范围缺少所需数据。';const sources=Object.keys((DATA.provenance||{}).sources||{});return item.reason+(sources.length?'；当前来源：'+sources.join(' / '):'')+'。';}
+function renderProvenance(){const p=DATA.provenance||{},n=p.records||0,health=provenanceHealth(),fresh=freshnessInfo(),percent=v=>coverageRatio(v,n)*100;
+  document.getElementById('prov-stamp').innerHTML='<div><span>LOCAL DATA CHECK</span><b>'+health.label+'</b><small>'+fresh.label+'</small></div>';
+  document.getElementById('prov-copy').innerHTML='<b>'+health.detail+'</b><br>'+fresh.detail+'。本结论由本地字段覆盖规则生成，不代表日志绝对准确，也不是隐私或安全保证。';
+  const meters=[['时间戳',p.valid_ts],['项目字段',p.with_cwd],['会话字段',p.with_session],['组成字段',Math.min(p.with_input||0,p.with_output||0)],['回放记录',p.with_replay]];document.getElementById('prov-meters').innerHTML=meters.map(([label,value])=>{const pc=percent(value);return '<div class=prov-meter><div class=pm-head><span>'+label+'</span><b>'+pc.toFixed(1)+'%</b></div><div class=pm-track><i style="width:'+Math.min(100,pc).toFixed(1)+'%"></i></div><small>'+fmt(value||0)+' / '+fmt(n)+'</small></div>';}).join('');
+  const sources=Object.entries(p.sources||{}).sort((a,b)=>b[1].total-a[1].total);document.getElementById('prov-sources').innerHTML=sources.map(([source,x])=>'<article class=prov-source><h3>'+esc(source)+'</h3><p>'+esc(SOURCE_NOTES[source]||'该来源按统一 record 进入趋势；具体字段能力取决于本地日志版本。')+'</p><div class=ps-meta><span>'+fmt(x.records)+' records</span><span>'+human(x.total)+' tk</span><span>项目 '+(coverageRatio(x.with_cwd,x.records)*100).toFixed(0)+'%</span><span>会话 '+(coverageRatio(x.with_session,x.records)*100).toFixed(0)+'%</span></div></article>').join('');
+  document.getElementById('prov-capabilities').innerHTML=capabilityInfo().map(x=>'<button type=button class="prov-cap '+x.status+'" data-cap="'+x.key+'" data-target="'+x.target+'" title="'+esc(capabilityReason(x.key))+'">'+(x.status==='ok'?'●':x.status==='partial'?'◐':'○')+' '+x.label+' · '+(x.ratio*100).toFixed(0)+'%</button>').join('');
+  const beacon=document.getElementById('freshness-beacon');beacon.classList.toggle('stale',fresh.key==='stale');beacon.classList.toggle('range',fresh.key==='range');document.getElementById('freshness-text').textContent=fresh.label;beacon.title=fresh.detail+' · 点击查看数据可信度';}
+function provenanceSummary(){const p=DATA.provenance||{},n=p.records||0,line=(label,value)=>label+'：'+fmt(value||0)+' / '+fmt(n)+'（'+(coverageRatio(value,n)*100).toFixed(1)+'%）';return ['tokens 数据体检',provenanceHealth().label+' · '+freshnessInfo().label,'范围：'+(p.first_day||'—')+' ~ '+(p.last_day||'—'),'来源：'+Object.keys(p.sources||{}).join(' / '),'Records：'+fmt(n),'Token：'+fmt(p.total||0),line('时间戳',p.valid_ts),line('项目字段',p.with_cwd),line('会话字段',p.with_session),line('组成字段',Math.min(p.with_input||0,p.with_output||0)),'说明：不包含 cwd、session 或逐轮 Token 明细。'].join('\n');}
+
 function projectPeriod(day,gran){
   if(gran==='day')return day;if(gran==='month')return day.slice(0,7)+'-01';
   const p=day.split('-').map(Number),d=new Date(p[0],p[1]-1,p[2]),offset=(d.getDay()+6)%7;d.setDate(d.getDate()-offset);return localISO(d);
@@ -938,14 +959,17 @@ function secretCommand(q){
 }
 
 function scrollToSection(id){const el=document.getElementById(id);if(!el)return;const lazy=el.dataset.lazy;if(lazy){lazyState[lazy]=Object.assign({},lazyState[lazy],{visible:true});renderLazy(lazy,true);}el.scrollIntoView({behavior:scrollBehavior(),block:'start'});}
-const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-project','项目'],['section-rhythm','节奏'],['section-reuse','复用'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
+const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-provenance','体检'],['section-project','项目'],['section-rhythm','节奏'],['section-reuse','复用'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
 function initSectionDock(){
   const dock=document.getElementById('section-dock');dock.addEventListener('click',e=>{const b=e.target.closest('button[data-target]');if(b)scrollToSection(b.dataset.target);});
   const mark=id=>dock.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.target===id));
   if('IntersectionObserver'in window){const obs=new IntersectionObserver(entries=>{const hit=entries.filter(x=>x.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(hit)mark(hit.target.id);},{rootMargin:'-18% 0px -65% 0px',threshold:[0,.15,.4]});SECTION_LINKS.forEach(([id])=>{const el=document.getElementById(id);if(el)obs.observe(el);});}
 }
 initSectionDock();
+document.getElementById('freshness-beacon').addEventListener('click',()=>scrollToSection('section-provenance'));
 document.getElementById('status-pulse').addEventListener('click',()=>scrollToSection('section-trend'));
+document.getElementById('provenance-copy').addEventListener('click',()=>copyText(provenanceSummary()).then(ok=>toast(ok?'数据体检摘要已复制':'复制失败')));
+document.getElementById('prov-capabilities').addEventListener('click',e=>{const b=e.target.closest('[data-cap]');if(!b)return;const item=capabilityInfo().find(x=>x.key===b.dataset.cap);if(!item)return;if(item.status==='off'){toast(capabilityReason(item.key));return;}scrollToSection(item.target);});
 function usageStatus(rows){if(rows.length<2)return {label:'—',cls:'',last:rows.length?rows[rows.length-1].total:0,avg:null,delta:null,detail:'至少需要两期数据才能计算状态'};const last=rows[rows.length-1].total,prior=rows.slice(Math.max(0,rows.length-5),-1),avg=prior.reduce((a,r)=>a+r.total,0)/Math.max(1,prior.length);if(avg===0){if(last>0)return {label:'升温',cls:'warming',last,avg,delta:null,detail:'此前均值为 0，本期出现新活动'};return {label:'平稳',cls:'steady',last,avg,delta:0,detail:'本期与此前均值均为 0'};}const delta=last/avg-1,label=delta>.12?'升温':delta<-.12?'降温':'平稳',cls=delta>.12?'warming':delta<-.12?'cooling':'steady';return {label,cls,last,avg,delta,detail:'变化 '+(delta>=0?'+':'')+(delta*100).toFixed(1)+'%'};}
 function renderStatusPulse(){const el=document.getElementById('status-pulse'),text=document.getElementById('status-text'),s=usageStatus(selectedRows(true));el.classList.remove('warming','steady','cooling');if(s.cls)el.classList.add(s.cls);text.textContent='状态 '+s.label;el.title=s.avg===null?s.detail+' · 点击查看趋势':'最后一期 '+fmt(s.last)+' Token；此前均值 '+fmt(s.avg)+'；'+s.detail+' · 点击查看趋势';}
 
@@ -953,6 +977,7 @@ function renderStatusPulse(){const el=document.getElementById('status-pulse'),te
 function cmdActions(){ return [
   {ic:'◎',t:'跳转 · 总览',k:'',run:()=>scrollToSection('section-overview')},
   {ic:'↗',t:'跳转 · 趋势',k:'',run:()=>scrollToSection('section-trend')},
+  {ic:'⌁',t:'跳转 · 数据可信度实验室',k:'',run:()=>scrollToSection('section-provenance')},
   {ic:'▣',t:'跳转 · 项目透镜',k:'',run:()=>scrollToSection('section-project')},
   {ic:'◫',t:'跳转 · 节奏',k:'',run:()=>scrollToSection('section-rhythm')},
   {ic:'≈',t:'跳转 · Context Reuse River',k:'',run:()=>scrollToSection('section-reuse')},
