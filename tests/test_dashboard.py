@@ -290,6 +290,14 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("if(avg===0){if(last>0)", template)
         self.assertIn("本期与此前均值均为 0", template)
         self.assertIn("last/avg-1", template)
+        self.assertIn("const W=1040,H=340,padL=56,padR=18,padT=34", template)
+        self.assertIn("function barAnnotationLayout(barTop,compareTop)", template)
+        self.assertIn("delta:Math.max(9,compareTop-21)", template)
+        self.assertIn("y=\"'+annotation.peak.toFixed(1)+'\"", template)
+        self.assertIn("y=\"'+annotation.value.toFixed(1)+'\"", template)
+        self.assertIn("y=\"'+annotation.delta.toFixed(1)+'\"", template)
+        self.assertIn("id=compare-btn type=button aria-pressed=false", template)
+        self.assertIn("compare.setAttribute('aria-pressed',String(state.compare))", template)
 
     def test_module_preferences_migrate_city_and_orbit_to_flow(self):
         template = report_dashboard._TEMPLATE
@@ -567,7 +575,28 @@ if(rhythmLevel(4,[1,2,3,4])!==4)throw new Error('maximum must be hottest');
         self.assertIn("activateRhythmCell(c)", template)
         self.assertIn("无 Token 记录", template)
 
-    def test_modal_semantics_focus_and_responsive_stabilization(self):
+    def test_compare_annotation_layout_separates_peak_value_and_delta(self):
+        script = (ROOT / "dashboard_assets" / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("function barAnnotationLayout(")
+        end = script.index("\nfunction renderBar()", start)
+        helper = script[start:end]
+        node_script = helper + r'''
+const peak=barAnnotationLayout(34,34);
+if(peak.peak-peak.delta<12)throw new Error('peak and delta overlap');
+if(peak.value-peak.delta<12)throw new Error('value and delta overlap');
+const previousHigher=barAnnotationLayout(90,34);
+if(previousHigher.value-previousHigher.delta<12)throw new Error('previous-high comparison overlaps value');
+const equal=barAnnotationLayout(60,60);
+if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
         template = report_dashboard._TEMPLATE
         for marker in (
             "function openModal(modal,initialFocus)",

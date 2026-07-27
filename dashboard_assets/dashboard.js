@@ -158,9 +158,10 @@ function describeBar(el,focus=true){
   const dom=Object.entries(r.models||{}).sort((a,b)=>b[1]-a[1])[0],hint=fmtLabel(r.period,state.gran)+' · '+fmt(r.total)+' Token'+(dom?' · 主力 '+pretty(dom[0])+' '+pct(dom[1],r.total):'')+' · Enter 回看';
   document.getElementById('bar-hint').textContent=hint;if(focus)el.focus();
 }
+function barAnnotationLayout(barTop,compareTop){return {peak:Math.max(24,barTop-7),value:Math.max(24,barTop-6),delta:Math.max(9,compareTop-21)};}
 function renderBar(){
   const rows=selectedRows(true);
-  const W=1040,H=340,padL=56,padR=18,padT=18;
+  const W=1040,H=340,padL=56,padR=18,padT=34;
   const plotW=W-padL-padR;
   const n=Math.max(1,rows.length), step=plotW/n;
   // 每根柱都标日期：少→横排，中→斜排(-45)，密→竖排(-90)，永不抽稀、不重叠
@@ -198,18 +199,20 @@ function renderBar(){
       segs+='<rect class="seg model-mark" data-model="'+esc(m)+'" x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="2" fill="'+DATA.colors[m]+'"><title>'+esc(r.period)+' · '+esc(pretty(m))+': '+fmt(v)+' ('+pct(v,r.total)+')</title></rect>';
       y0-=h;
     });
+    const barTop=padT+plotH-r.total/vmax*plotH;
+    const annotation=barAnnotationLayout(barTop,state.compare&&i>0?padT+plotH-Math.max(r.total,rows[i-1].total)/vmax*plotH:barTop);
     const isPeak = rows.length>1 && i===peakI;
     const isFocus=state.focusPeriod===r.period;
     const aria=fmtLabel(r.period,state.gran)+'，'+fmt(r.total)+' Token'+(isPeak?'，峰值':'')+(isFocus?'，当前时光探针':'')+'，按 Enter 回看';
     p.push('<g class="barstack'+(isPeak?' peak':'')+(isFocus?' focused':'')+(state.focusPeriod&&!isFocus?' muted':'')+'" data-period="'+esc(r.period)+'" data-index="'+i+'" tabindex="'+(i===Math.min(barCursor,rows.length-1)?'0':'-1')+'" role="button" aria-label="'+esc(aria)+'"><rect class="bar-focus" x="'+(padL+step*i+2).toFixed(1)+'" y="'+(padT+1).toFixed(1)+'" width="'+Math.max(1,step-4).toFixed(1)+'" height="'+(plotH+padB-2).toFixed(1)+'" rx="6"/>'+segs+'</g>');
     if(isPeak&&!state.focusPeriod){
-      p.push('<text class="peak-flag" x="'+(x+bw/2).toFixed(1)+'" y="'+(padT+plotH-r.total/vmax*plotH-7).toFixed(1)+'" text-anchor="middle">▲峰值 '+vfmt(r.total)+'</text>');
+      p.push('<text class="peak-flag" x="'+(x+bw/2).toFixed(1)+'" y="'+annotation.peak.toFixed(1)+'" text-anchor="middle">▲峰值 '+vfmt(r.total)+'</text>');
     } else if(showVal){
-      p.push('<text class="vlabel" x="'+(x+bw/2).toFixed(1)+'" y="'+(padT+plotH-r.total/vmax*plotH-6).toFixed(1)+'" text-anchor="middle">'+vfmt(r.total)+'</text>');
+      p.push('<text class="vlabel" x="'+(x+bw/2).toFixed(1)+'" y="'+annotation.value.toFixed(1)+'" text-anchor="middle">'+vfmt(r.total)+'</text>');
     }
     if(state.compare&&i>0&&rows[i-1].total>0&&n<=18){
       const d=(r.total-rows[i-1].total)/rows[i-1].total*100;
-      p.push('<text class="delta-tag" x="'+(x+bw/2).toFixed(1)+'" y="'+Math.max(11,padT+plotH-Math.max(r.total,rows[i-1].total)/vmax*plotH-18).toFixed(1)+'" text-anchor="middle">'+(d>=0?'+':'')+d.toFixed(0)+'%</text>');
+      p.push('<text class="delta-tag" x="'+(x+bw/2).toFixed(1)+'" y="'+annotation.delta.toFixed(1)+'" text-anchor="middle">'+(d>=0?'+':'')+d.toFixed(0)+'%</text>');
     }
     const lx=padL+step*i+step/2;
     let ly, anchor, tr;
@@ -468,7 +471,7 @@ function renderViewCapsule(){
   label.textContent=d.gran.replace('按','')+' · '+(d.modelCount===DATA.models.length?'全部模型':d.modelCount+'/'+DATA.models.length+' 模型')+' · '+d.focus;
   capsule.classList.toggle('dirty',!!state.focusPeriod||state.models.size!==DATA.models.length||state.compare);
   document.getElementById('view-summary').innerHTML='<b>'+d.gran+'</b> · '+d.modelCount+' / '+DATA.models.length+' 个模型<br><b>'+(state.focusPeriod?'时光探针':'时间范围')+'</b> · '+esc(d.focus)+'<br><b>幻影对比</b> · '+d.compare;
-  syncGranControls();document.getElementById('compare-btn').classList.toggle('on',state.compare);
+  syncGranControls();const compare=document.getElementById('compare-btn');compare.classList.toggle('on',state.compare);compare.setAttribute('aria-pressed',String(state.compare));
 }
 function resetView(){state.gran='month';state.models=new Set(DATA.models);state.focusPeriod=null;state.compare=false;previousModels=null;invalidateDerived();renderFilters();renderDataViews();toast('已恢复月度全景');}
 async function copyText(text){try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return true;}}catch(e){}const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}ta.remove();return ok;}
