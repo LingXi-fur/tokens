@@ -62,9 +62,14 @@ def main(argv=None):
     p.add_argument("--html", action="store_true", help="生成静态 HTML 报告")
     p.add_argument("--dashboard", action="store_true",
                    help="生成交互式 dashboard（内含日/周/月，离线可用）")
+    p.add_argument("--anonymize", action="store_true",
+                   help="生成脱敏 Dashboard（替换项目路径、会话标识与标题）")
     p.add_argument("--open", action="store_true", help="生成 HTML 后自动打开")
     p.add_argument("--no-cache", action="store_true", help="强制重读日志")
     args = p.parse_args(argv)
+
+    if args.anonymize and not (args.dashboard or args.range == "dashboard"):
+        p.error("--anonymize 只能与 dashboard 模式或 --dashboard 一起使用")
 
     now = datetime.now(config.TZ).date()
     mode = args.range
@@ -78,7 +83,12 @@ def main(argv=None):
     # 交互式 dashboard：内含日/周/月，忽略 range 粒度，遵守 since/until/source
     if args.dashboard or mode == "dashboard":
         path = report_dashboard.write_dashboard(
-            records, since=args.since, until=args.until, sources=sources)
+            records,
+            since=args.since,
+            until=args.until,
+            sources=sources,
+            anonymize=args.anonymize,
+        )
         print(f"Dashboard：{path}")
         if args.open:
             report_dashboard.open_path(path)

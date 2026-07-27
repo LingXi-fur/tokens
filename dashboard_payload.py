@@ -1,5 +1,9 @@
 """Single-pass data aggregation for the interactive Dashboard."""
+import base64
+import hashlib
 import heapq
+import hmac
+import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
@@ -11,6 +15,41 @@ import report_term
 
 PALETTE = ["#5b8def", "#14b8a6", "#f59e0b", "#a78bfa",
            "#f472b6", "#38bdf8", "#fb923c", "#94a3b8"]
+
+
+class _ReportAliases:
+    """Report-scoped keyed aliases; the random key never enters the payload."""
+
+    def __init__(self):
+        self.key = secrets.token_bytes(32)
+        self.aliases = {"project": {}, "session": {}}
+        self.reverse = {"project": {}, "session": {}}
+
+    def get(self, kind, value):
+        if not value:
+            return value
+        value = str(value)
+        cached = self.aliases[kind].get(value)
+        if cached:
+            return cached
+
+        digest = hmac.new(
+            self.key,
+            f"tokens/{kind}/v1\0{value}".encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        token = base64.b32encode(digest).decode("ascii").rstrip("=")
+        prefix = "Project" if kind == "project" else "Session"
+        length = 10
+        while True:
+            alias = f"{prefix}-{token[:length]}"
+            owner = self.reverse[kind].get(alias)
+            if owner is None or owner == value:
+                break
+            length += 2
+        self.aliases[kind][value] = alias
+        self.reverse[kind][alias] = value
+        return alias
 
 
 def _short_cwd(path):
@@ -39,6 +78,20 @@ def _flow_add(buckets, left, right, total):
         buckets[key] = buckets.get(key, 0) + total
 
 
+def _reuse_parts(source, total, input_value, output_value, cache_read, cache_write):
+    total = max(0, total)
+    fresh_input = max(0, input_value - cache_read) if source == "codex" else max(0, input_value)
+    candidates = [fresh_input, max(0, output_value), max(0, cache_read), max(0, cache_write)]
+    parts = []
+    remaining = total
+    for value in candidates:
+        shown = min(value, remaining)
+        parts.append(shown)
+        remaining -= shown
+    parts.append(remaining)
+    return parts
+
+
 def _period_add(buckets, period, model, total, input_value=0, output_value=0,
                 cache_read=0, cache_write=0, source="unknown"):
     item = buckets.get(period)
@@ -47,49 +100,18 @@ def _period_add(buckets, period, model, total, input_value=0, output_value=0,
             "total": 0,
             "calls": 0,
             "models": {},
+            "model_calls": {},
             "reuse_models": {},
         }
         buckets[period] = item
     item["total"] += total
     item["calls"] += 1
     item["models"][model] = item["models"].get(model, 0) + total
+    item["model_calls"][model] = item["model_calls"].get(model, 0) + 1
     parts = item["reuse_models"].setdefault(model, [0, 0, 0, 0, 0])
-    # Values are mutually exclusive for visualization and always sum to total.
-    if source == "claude":
-        parts[0] += input_value
-        parts[1] += output_value
-        parts[2] += cache_read
-        parts[3] += cache_write
-        parts[4] += max(0, total - input_value - output_value - cache_read - cache_write)
-    elif source == "gemini":
-        # Gemini CLI versions disagree on whether cached tokens are already in input/total.
-        # Preserve output first, then reserve cache and fit fresh input into the remainder.
-        shown_output = min(output_value, total)
-        remaining = total - shown_output
-        cached = min(cache_read, remaining)
-        remaining -= cached
-        fresh_input = min(max(0, input_value - cache_read), remaining)
-        remaining -= fresh_input
-        parts[0] += fresh_input
-        parts[1] += shown_output
-        parts[2] += cached
-        parts[4] += remaining
-    elif source == "codex":
-        # Codex input includes cached input; fit every component to total defensively.
-        cached = min(cache_read, total)
-        remaining = total - cached
-        fresh_input = min(max(0, input_value - cache_read), remaining)
-        remaining -= fresh_input
-        shown_output = min(output_value, remaining)
-        remaining -= shown_output
-        parts[0] += fresh_input
-        parts[1] += shown_output
-        parts[2] += cached
-        parts[4] += remaining
-    else:
-        parts[0] += min(total, input_value)
-        parts[1] += min(max(0, total - parts[0]), output_value)
-        parts[4] += max(0, total - input_value - output_value)
+    for index, value in enumerate(_reuse_parts(
+            source, total, input_value, output_value, cache_read, cache_write)):
+        parts[index] += value
 
 
 
@@ -102,6 +124,7 @@ def _pack_periods(buckets):
             "total": stats["total"],
             "calls": stats["calls"],
             "models": models,
+            "model_calls": dict(stats["model_calls"]),
         })
     return packed
 
@@ -118,6 +141,7 @@ def _new_day():
         "hourly": [0] * 24,
         "hourly_models": {},
         "cache_read": 0,
+        "cache_read_models": {},
         "cwds": {},
         "sessions": {},
         "project_model": {},
@@ -147,22 +171,32 @@ def _flow_payload(project_model, model_session, title_for_session):
     }
 
 
-def _top_cwds(buckets):
+def _entity_payload(buckets, label_for_ident):
     return [
-        [_short_cwd(path), stats[0], path, dict(stats[1])]
-        for path, stats in _top_entities(buckets)
+        [label_for_ident(ident), stats[0], ident, dict(stats[1])]
+        for ident, stats in sorted(
+            buckets.items(), key=lambda item: item[1][0], reverse=True
+        )
     ]
+
+
+def _top_cwds(buckets):
+    return _entity_payload(
+        dict(_top_entities(buckets)),
+        _short_cwd,
+    )
 
 
 def _top_sessions(buckets, title_for_session):
-    return [
-        [title_for_session(sid) or str(sid)[:8], stats[0], sid, dict(stats[1])]
-        for sid, stats in _top_entities(buckets)
-    ]
+    return _entity_payload(
+        dict(_top_entities(buckets)),
+        lambda sid: title_for_session(sid) or str(sid)[:8],
+    )
 
 
-def build_payload(records, since=None, until=None, sources=None):
+def build_payload(records, since=None, until=None, sources=None, anonymize=False):
     generated_at = datetime.now(config.TZ)
+    aliases = _ReportAliases() if anonymize else None
     model_totals = {}
     hourly = [0] * 24
     hour_buckets = {}
@@ -200,6 +234,9 @@ def build_payload(records, since=None, until=None, sources=None):
         source = record.get("source") or "unknown"
         cwd = record.get("cwd")
         sid = record.get("session")
+        if aliases:
+            cwd = aliases.get("project", cwd)
+            sid = aliases.get("session", sid)
         cache_value = record.get("cache_read", 0) or 0
         input_value = record.get("input", 0) or 0
         output_value = record.get("output", 0) or 0
@@ -225,6 +262,7 @@ def build_payload(records, since=None, until=None, sources=None):
             detail = _new_day()
             day_acc[day] = detail
         detail["cache_read"] += cache_value
+        detail["cache_read_models"][model] = detail["cache_read_models"].get(model, 0) + cache_value
         _entity_add(detail["cwds"], cwd, model, total)
         _entity_add(detail["sessions"], sid, model, total)
         _flow_add(detail["project_model"], cwd, model, total)
@@ -282,18 +320,22 @@ def build_payload(records, since=None, until=None, sources=None):
     pretty = {model: config.pretty_model(model) for model in models}
     colors = {model: PALETTE[i % len(PALETTE)] for i, model in enumerate(models)}
 
-    summaries = readers.load_session_summaries()
-    session_index = readers.build_session_index()
-    title_cache = {}
+    if anonymize:
+        def title_for_session(sid):
+            return sid or ""
+    else:
+        summaries = readers.load_session_summaries()
+        session_index = readers.build_session_index()
+        title_cache = {}
 
-    def title_for_session(sid):
-        if sid not in title_cache:
-            title_cache[sid] = (
-                summaries.get(sid)
-                or readers.session_title(sid, session_index=session_index)
-                or ""
-            )
-        return title_cache[sid]
+        def title_for_session(sid):
+            if sid not in title_cache:
+                title_cache[sid] = (
+                    summaries.get(sid)
+                    or readers.session_title(sid, session_index=session_index)
+                    or ""
+                )
+            return title_cache[sid]
 
     day_details = {}
     for day, detail in day_acc.items():
@@ -301,6 +343,12 @@ def build_payload(records, since=None, until=None, sources=None):
             "hourly": detail["hourly"],
             "hourly_models": detail["hourly_models"],
             "cache_read": detail["cache_read"],
+            "cache_read_models": detail["cache_read_models"],
+            "cwds": _entity_payload(detail["cwds"], _short_cwd),
+            "sessions": _entity_payload(
+                detail["sessions"],
+                lambda sid: title_for_session(sid) or str(sid)[:8],
+            ),
             "top_cwds": _top_cwds(detail["cwds"]),
             "top_sessions": _top_sessions(detail["sessions"], title_for_session),
             "flow": _flow_payload(
@@ -335,6 +383,7 @@ def build_payload(records, since=None, until=None, sources=None):
     }
 
     return {
+        "anonymized": anonymize,
         "generated": generated_at.strftime("%Y-%m-%d %H:%M"),
         "source": sources or [],
         "range": {"since": since, "until": until},

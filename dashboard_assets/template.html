@@ -22,31 +22,31 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
     <button class=themebtn id=theme-btn aria-label="切换主题" title="主题：自动"></button>
     <select class=motion-select id=motion-select aria-label="环境动效强度" title="环境动效强度"><option value=auto>动效 · 自动</option><option value=full>动效 · 完整</option><option value=low>动效 · 克制</option><option value=off>动效 · 关闭</option></select>
     <div class=pop style=position:relative>
-      <button class=themebtn id=mods-btn aria-label="模块开关" title="模块开关">⚙</button>
+      <button class=themebtn id=mods-btn aria-label="模块开关" aria-controls=mods-pop aria-expanded=false title="模块开关">⚙</button>
       <div class=popover id=mods-pop>
         <h3>显示模块</h3>
-        <div class=mrow><label><input type=checkbox data-mod=clock checked>作息时钟</label><span class="switch on" data-sw=clock></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=fun checked>趣味换算</label><span class="switch on" data-sw=fun></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=block checked>5h 计费块</label><span class="switch on" data-sw=block></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=daily checked>每天趋势</label><span class="switch on" data-sw=daily></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=rhythm checked>作息织锦</label><span class="switch on" data-sw=rhythm></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=multiples checked>每模型趋势</label><span class="switch on" data-sw=multiples></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=reuse checked>复用之河</label><span class="switch on" data-sw=reuse></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=fingerprint checked>脉冲指纹</label><span class="switch on" data-sw=fingerprint></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=flow checked>Token 流光图</label><span class="switch on" data-sw=flow></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=creature checked>Token 生物</label><span class="switch on" data-sw=creature></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=race checked>柱图竞赛</label><span class="switch on" data-sw=race></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=fortune checked>今日运势</label><span class="switch on" data-sw=fortune></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=badges checked>成就徽章</label><span class="switch on" data-sw=badges></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=dna checked>Token 星云</label><span class="switch on" data-sw=dna></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=top checked>Top 榜</label><span class="switch on" data-sw=top></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=clock checked>作息时钟</label><span class="switch on" aria-hidden=true data-sw=clock></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=fun checked>趣味换算</label><span class="switch on" aria-hidden=true data-sw=fun></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=block checked>5h 计费块</label><span class="switch on" aria-hidden=true data-sw=block></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=daily checked>每天趋势</label><span class="switch on" aria-hidden=true data-sw=daily></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=rhythm checked>作息织锦</label><span class="switch on" aria-hidden=true data-sw=rhythm></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=multiples checked>每模型趋势</label><span class="switch on" aria-hidden=true data-sw=multiples></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=project checked>项目透镜</label><span class="switch on" aria-hidden=true data-sw=project></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=reuse checked>复用之河</label><span class="switch on" aria-hidden=true data-sw=reuse></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=flow checked>Token 流光图</label><span class="switch on" aria-hidden=true data-sw=flow></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=creature checked>Token 生物</label><span class="switch on" aria-hidden=true data-sw=creature></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=race checked>柱图竞赛</label><span class="switch on" aria-hidden=true data-sw=race></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=fortune checked>今日运势</label><span class="switch on" aria-hidden=true data-sw=fortune></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=badges checked>成就徽章</label><span class="switch on" aria-hidden=true data-sw=badges></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=dna checked>Token 星云</label><span class="switch on" aria-hidden=true data-sw=dna></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=top checked>Top 榜</label><span class="switch on" aria-hidden=true data-sw=top></span></div>
       </div>
     </div>
   </div>
 </header>
 
 <nav class=section-dock id=section-dock aria-label="Dashboard 区域导航">
- <div class=section-links><button data-target=section-overview class=on>总览</button><button data-target=section-trend>趋势</button><button data-target=section-rhythm>节奏</button><button data-target=section-reuse>复用</button><button data-target=section-fingerprint>指纹</button><button data-target=section-flow>流光</button><button data-target=section-achievements>成就</button><button data-target=section-top>Top</button></div>
+ <div class=section-links><button data-target=section-overview class=on>总览</button><button data-target=section-trend>趋势</button><button data-target=section-project>项目</button><button data-target=section-rhythm>节奏</button><button data-target=section-reuse>复用</button><button data-target=section-flow>流光</button><button data-target=section-achievements>成就</button><button data-target=section-top>Top</button></div>
  <div class=view-wrap><button class=view-capsule id=view-capsule type=button aria-controls=view-pop aria-expanded=false title="查看当前视图状态"><span id=view-label>月 · 全部模型 · 全景</span></button><div class=view-pop id=view-pop><h3>Current View · 当前视图</h3><div class=view-summary id=view-summary></div><div class=view-actions><button class=ghostbtn id=view-copy type=button>⧉ 复制视图链接</button><button class=ghostbtn id=view-reset type=button>↺ 恢复全景</button></div></div></div>
 </nav>
 
@@ -90,10 +90,10 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 <section class=card>
  <div class=row-between>
    <h2 style=margin:0>粒度与筛选</h2>
-   <div class=tabs id=tabs role=tablist>
-     <button data-gran=day role=tab>按日</button>
-     <button data-gran=week role=tab>按周</button>
-     <button data-gran=month role=tab class=on>按月</button>
+   <div class=tabs id=tabs role=group aria-label="统计粒度">
+     <button type=button data-gran=day aria-pressed=false>按日</button>
+     <button type=button data-gran=week aria-pressed=false>按周</button>
+     <button type=button data-gran=month class=on aria-pressed=true>按月</button>
    </div>
  </div>
  <div class=filters id=filters aria-label="模型筛选"></div>
@@ -106,6 +106,16 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
    <div style="display:flex;align-items:center;gap:9px"><button class="ghostbtn comparebtn" id=compare-btn title="叠加上一期轮廓">◫ 幻影对比</button><span class=sub id=bar-hint style=margin:0;color:var(--faint)></span></div>
  </div>
  <div id=bar style=margin-top:14px></div>
+</section>
+
+<section class=card data-module=project data-lazy=project id=section-project>
+ <div class=row-between>
+  <div><h2 style=margin:0>项目透镜 · Project Lens</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">追踪一个项目在当前粒度、模型筛选与时光探针下的 Token 轨迹</p></div>
+  <label class=project-picker>项目 <select id=project-select aria-label="选择项目"></select></label>
+ </div>
+ <div class=project-kpis id=project-kpis></div>
+ <div class=project-chart-wrap><svg class=project-chart id=project-chart viewBox="0 0 1080 280" role=img aria-label="项目 Token 趋势"></svg><div class=project-panel id=project-panel aria-live=polite></div></div>
+ <div class=table-scroll tabindex=0 role=region aria-label="项目趋势明细，可横向滚动"><table class=project-table><thead id=project-thead></thead><tbody id=project-tbody></tbody></table></div>
 </section>
 
 <section class=card data-module=fun>
@@ -168,11 +178,6 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  <div class=reuse-shell><svg class=reuse-chart id=reuse-chart viewBox="0 0 1080 300" preserveAspectRatio="none" role=img aria-label="上下文复用构成随时间变化"></svg><div class=reuse-panel id=reuse-panel aria-live=polite>悬停或用方向键检查每一期的 Token 构成。</div></div>
 </section>
 
-<section class=card data-module=fingerprint data-lazy=fingerprint id=section-fingerprint>
- <div class=row-between><div><h2 style=margin:0>Token 脉冲指纹 · 你的开发节奏印记</h2><div class=sub style="margin-top:4px;color:var(--faint)">24 小时形成环形脉冲，模型颜色与星期节奏共同生成一枚本地指纹</div></div><button class=ghostbtn id=fingerprint-save type=button>保存 SVG</button></div>
- <div class=fingerprint-wrap><svg class=fingerprint id=fingerprint viewBox="0 0 420 420" role=img aria-label="Token 开发节奏脉冲指纹"></svg><div><div class=fingerprint-meta id=fingerprint-meta></div><div class=fingerprint-panel id=fingerprint-panel aria-live=polite>用方向键检查 24 小时脉冲。</div></div></div>
-</section>
-
 <section class=card data-module=flow data-lazy=flow id=section-flow>
  <div class=row-between><h2 style=margin:0>Token 流光图 · 项目 → 模型 → 会话</h2><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class=sub style="margin:0;color:var(--faint)">光带宽度对应真实 Token 流量；点击项目或模型锁定链路，点击会话回放</span><button class=ghostbtn id=flow-save type=button title="保存当前流光图为 SVG">保存 SVG</button></div></div>
  <div class=flow-shell style=margin-top:14px><svg class=flow-map id=flow-map viewBox="0 0 1120 470" preserveAspectRatio="xMidYMid meet" role=img aria-label="项目到模型再到会话的 Token 流光图"></svg><div class=flow-panel id=flow-panel aria-live=polite><b>Token 流光图</b><span>悬停或聚焦节点查看真实流向，点击项目或模型可锁定链路。</span></div></div>
@@ -210,7 +215,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
    <h2 style=margin:0>明细</h2>
    <div style="display:flex;gap:8px"><button class=ghostbtn id=md-btn title="下载当前明细为 Markdown">◇ 导出 MD</button><button class=ghostbtn id=csv-btn title="下载当前明细为 CSV">⤓ 导出 CSV</button></div>
  </div>
- <table style=margin-top:12px><thead id=thead></thead><tbody id=tbody></tbody></table>
+ <div class=table-scroll tabindex=0 role=region aria-label="Token 明细，可横向滚动"><table class=detail-table><thead id=thead></thead><tbody id=tbody></tbody></table></div>
 </section>
 
 <div class=grid2>
@@ -267,26 +272,26 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 
 <canvas class=comet-canvas id=comet-canvas aria-hidden=true></canvas>
 <button id=rocket title="返回数据宇宙顶部" aria-label="返回顶部">🚀</button>
-<div class=share-modal id=share-modal><div class=share-sheet><button class=share-close id=share-close>×</button><div id=share-content></div><div class=share-actions style="justify-content:center;margin-top:18px"><button class=ghostbtn id=share-save>保存为 HTML</button></div></div></div>
+<div class=share-modal id=share-modal aria-hidden=true><div class=share-sheet role=dialog aria-modal=true aria-label="Token 分享卡"><button class=share-close id=share-close aria-label="关闭分享卡">×</button><div id=share-content></div><div class=share-actions style="justify-content:center;margin-top:18px"><button class=ghostbtn id=share-save>保存为 HTML</button></div></div></div>
 
 <div class=rh-tip id=rhythm-tip role=tooltip></div>
 <div class=scrim id=scrim aria-hidden=true>
- <div class=palette role=dialog aria-label="命令面板">
-  <input id=palette-q placeholder="输入命令或搜索…（例如：月、暗、导出）" autocomplete=off>
-  <ul id=palette-list></ul>
+ <div class=palette role=dialog aria-modal=true aria-label="命令面板">
+  <input id=palette-q role=combobox aria-autocomplete=list aria-controls=palette-list aria-expanded=true placeholder="输入命令或搜索…（例如：月、暗、导出）" autocomplete=off>
+  <ul id=palette-list role=listbox></ul>
  </div>
 </div>
 
 <div class=ach-modal id=ach-modal aria-hidden=true>
- <div class=ach-sheet>
+ <div class=ach-sheet role=dialog aria-modal=true aria-labelledby=ach-title>
   <div class=ach-top>
    <button class=x id=ach-x aria-label=关闭>×</button>
-   <h3>🏆 成就图鉴</h3>
+   <h3 id=ach-title>🏆 成就图鉴</h3>
    <div class=ach-bar>
      <span class=ach-meta id=ach-modal-meta></span>
-     <input class=ach-search id=ach-search placeholder="搜索 2000+ 成就（名称/描述/分类）…" autocomplete=off>
+     <input class=ach-search id=ach-search aria-label="搜索成就" placeholder="搜索 2000+ 成就（名称/描述/分类）…" autocomplete=off>
      <select class=ach-filter id=ach-filter aria-label="筛选成就"><option value=all>全部</option><option value=on>已解锁</option><option value=off>未解锁</option><option value=secret>隐藏</option><option value=bronze>青铜</option><option value=silver>白银</option><option value=gold>黄金</option><option value=prismatic>彩钻</option></select>
-     <button class=ghostbtn id=ach-confetti>🎉</button>
+     <button class=ghostbtn id=ach-confetti aria-label="庆祝成就进度">🎉</button>
    </div>
   </div>
   <div class=ach-body id=ach-body></div>

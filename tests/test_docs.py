@@ -214,6 +214,21 @@ class DocsTests(unittest.TestCase):
         self.assertNotIn("/home/", preview)
         self.assertNotRegex(preview, UUID_RE)
 
+    def test_anonymized_dashboard_is_documented_without_overclaiming(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        pages = "\n".join(
+            (DOCS / name).read_text(encoding="utf-8")
+            for name in ("cli.html", "dashboard.html", "data-and-privacy.html", "architecture.html")
+        )
+        combined = readme + "\n" + pages
+        self.assertIn("--anonymize", combined)
+        self.assertIn("dashboard-anonymized.html", combined)
+        for retained in ("精确日期", "Token", "模型", "逐轮"):
+            self.assertIn(retained, combined)
+        self.assertTrue("假名化" in combined or "不是完全匿名" in combined)
+        for overclaim in ("完全匿名，可直接公开", "保证匿名", "无条件公开"):
+            self.assertNotIn(overclaim, combined)
+
     def test_docs_do_not_load_third_party_runtime_assets(self):
         remote = []
         for path, parser in self.parsers.items():

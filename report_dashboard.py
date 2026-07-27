@@ -16,12 +16,13 @@ import config
 import dashboard_payload
 import dashboard_wire
 
-def build_payload(records, since=None, until=None, sources=None):
+def build_payload(records, since=None, until=None, sources=None, anonymize=False):
     return dashboard_payload.build_payload(
         records,
         since=since,
         until=until,
         sources=sources,
+        anonymize=anonymize,
     )
 
 
@@ -56,12 +57,19 @@ def _embed_json(payload):
              .replace(chr(0x2029), "\\u2029"))
 
 
-def write_dashboard(records, since=None, until=None, sources=None):
-    payload = build_payload(records, since=since, until=until, sources=sources)
+def write_dashboard(records, since=None, until=None, sources=None, anonymize=False):
+    payload = build_payload(
+        records,
+        since=since,
+        until=until,
+        sources=sources,
+        anonymize=anonymize,
+    )
     wire = dashboard_wire.encode_payload(payload)
     html_doc = _TEMPLATE.replace("__DATA__", _embed_json(wire))
     os.makedirs(config.OUT_DIR, exist_ok=True)
-    path = os.path.join(config.OUT_DIR, "dashboard.html")
+    filename = "dashboard-anonymized.html" if anonymize else "dashboard.html"
+    path = os.path.join(config.OUT_DIR, filename)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html_doc)
     return path

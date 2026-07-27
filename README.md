@@ -45,6 +45,9 @@ python3 cli.py
 
 # 推荐：生成并打开交互式 Dashboard
 python3 cli.py dashboard --open
+
+# 生成标识脱敏的可分享版本
+python3 cli.py dashboard --anonymize --open
 ```
 
 ### 安装为全局命令
@@ -81,7 +84,7 @@ tokens dashboard --open
 - 趋势柱图支持 roving tabindex：Tab 进入图表后，用左右方向键检查周期，Enter / Space 进入时光探针；
 - 总 Token、缓存命中、调用次数、模型数、主力模型与月末预测；
 - 模型筛选支持点击、双击独看、`Alt` 点击全选/清空、右键反选；
-- 筛选台账显示已选模型数和 Token 覆盖率，并提供全选、清空和单步撤销；
+- 模型筛选会同步重算 Token、调用次数、缓存、Top、项目透镜、作息与导出内容；
 - 点击柱子进入“时光探针”，对单日、单周或单月重算局部视图；
 - 当前视图胶囊显示粒度、模型筛选、时光探针与幻影对比状态；
 - 当前 UI 状态可复制为链接，URL 只记录粒度、模型名、日期焦点、对比和主题，不记录 cwd、session 或 Token 明细。
@@ -96,8 +99,8 @@ tokens dashboard --open
 
 ### 数据宇宙
 
+- **项目透镜**：选择项目查看日 / 周 / 月堆叠趋势、当前占比、活跃期、峰值期与主力模型；响应模型筛选和时光探针，脱敏报告自动使用项目别名；
 - **Context Reuse River**：将 Fresh Input、Output、Cache Read、Cache Write 与无法归类的 Other 按时间堆叠，所有分量严格回归各来源报告的 `total`；支持模型筛选、时光探针与键盘逐期检查；
-- **Token 脉冲指纹**：24 小时环形脉冲按每小时真实主力模型着色，可用方向键检查并导出独立 SVG；
 - **Token 流光图**：展示真实聚合的“项目 → 模型 → 会话”流向；光带宽度对应 Token 量；项目和模型可锁定链路，会话可进入逐轮回放；当前视图可导出 SVG；
 - **Top 项目 / 会话构成**：保留原始 Top 顺序，数值和分段色条按当前模型筛选重算；会话行支持键盘回放；
 - **会话回放检查器**：显示当前轮、累计 Token 和累计占比；支持滑块、播放以及直接点击 ECG 定位；横轴表示轮次，最多保留最近 200 轮；
@@ -132,7 +135,7 @@ tokens dashboard --open
 usage: cli.py [-h] [--since SINCE] [--until UNTIL]
               [--days DAYS] [--weeks WEEKS] [--months MONTHS]
               [--source {claude,gemini,codex}]
-              [--html] [--dashboard] [--open] [--no-cache]
+              [--html] [--dashboard] [--anonymize] [--open] [--no-cache]
               [{day,week,month,all,dashboard}]
 ```
 
@@ -158,6 +161,7 @@ usage: cli.py [-h] [--since SINCE] [--until UNTIL]
 | `--source SOURCE` | 限定来源，可重复使用；不传时读取 `config.DEFAULT_SOURCES` |
 | `--html` | 为普通报告生成单期静态 HTML |
 | `--dashboard` | 生成交互式 Dashboard，等价于位置模式 `dashboard` |
+| `--anonymize` | 仅用于 Dashboard：以报告级稳定别名替换项目路径、会话标识与自然语言标题，输出 `out/dashboard-anonymized.html` |
 | `--open` | 生成 HTML 后调用 macOS `open` |
 | `--no-cache` | 忽略文件缓存并强制重读日志 |
 
@@ -176,6 +180,9 @@ python3 cli.py dashboard \
   --source gemini \
   --source codex \
   --open
+
+# 生成标识脱敏 Dashboard；保留精确日期、Token、模型、流光关系与匿名会话回放
+python3 cli.py dashboard --anonymize --since 2026-07-01 --until 2026-07-31
 
 # 强制重新解析日志
 python3 cli.py day --no-cache
@@ -249,13 +256,28 @@ flowchart LR
 - 来自 `out/session_summaries.json` 的摘要；
 - 或从 Claude 会话第一条有效用户文本提取的标题。
 
+### 脱敏 Dashboard
+
+`python3 cli.py dashboard --anonymize` 会生成独立的 `out/dashboard-anonymized.html`：
+
+- 完整 cwd、项目短路径、原始 session ID、sidecar 摘要和会话首条文本标题不会进入报告；
+- 同一项目/会话在本次报告内使用稳定的 `Project-…` / `Session-…` 别名，Top、流光关系和逐轮回放仍可联动；
+- 每次生成使用新的本地随机密钥，不把密钥写入 HTML、URL 或缓存，因此不同报告默认不能直接用别名关联；
+- 精确日期、Token 数值、小时分布、模型、来源和逐轮 Token 序列仍然保留。
+
+这属于**假名化而非完全匿名**。活动时间、模型别名、精确数值和回放序列仍可能形成行为指纹；自定义模型名也可能包含组织或项目语义。公开发布前仍应检查生成文件，并优先使用受限日期范围。
+
+本地 `file:` 页面复制视图链接时只复制文件名和 UI 状态，不再复制本机绝对路径；粒度、模型选择、焦点日期、对比和主题仍会出现在链接中。
+
 ### 分享前检查清单
 
+- [ ] 优先使用 `dashboard --anonymize`，不要误传原始 `out/dashboard.html`；
 - [ ] 搜索 `/Users/`、`/home/` 和本机用户名；
 - [ ] 检查客户名、仓库名、项目路径和分支语义；
-- [ ] 检查会话标题、摘要和 session 标识；
+- [ ] 检查会话标题、摘要、session 标识与自定义模型名；
+- [ ] 评估精确日期、小时分布和逐轮序列是否适合目标接收者；
 - [ ] 优先分享脱敏截图、合成数据演示或终端汇总；
-- [ ] 不要直接把真实 Dashboard 上传到公开 Issue、Pages、网盘或聊天群。
+- [ ] 不要直接把真实原始 Dashboard 上传到公开 Issue、Pages、网盘或聊天群。
 
 详见 [数据与隐私文档](docs/data-and-privacy.html)。
 
@@ -338,9 +360,9 @@ git diff --check
 - [ ] 模型价格表与可配置成本估算；
 - [ ] `tokens serve` 本地自动刷新；
 - [ ] Windows `os.startfile` 与 Linux opener 兼容；
-- [ ] 进一步细化项目维度趋势和对比；
+- [x] 项目透镜：项目日 / 周 / 月趋势、模型构成与焦点联动；
 - [ ] 扁平模块迁移到正式包结构；
-- [ ] 可选的脱敏导出模式。
+- [x] 可选的 Dashboard 标识脱敏导出模式。
 
 ## License
 
