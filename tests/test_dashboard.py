@@ -224,6 +224,7 @@ class DashboardTests(unittest.TestCase):
             "generated", "source", "range", "models", "colors", "hourly",
             "day_details", "top_cwds", "top_sessions", "session_series",
             "flow", "reuse", "day", "week", "month", "provenance", "achievement_stats",
+            "achievement_daily",
         ):
             self.assertIn(key, payload)
         self.assertEqual(["claude"], payload["source"])
@@ -252,6 +253,19 @@ class DashboardTests(unittest.TestCase):
             {(row[0], row[2], row[3]) for row in payload["flow"]["model_session"]},
         )
         self.assertIn("flow", payload["day_details"]["2026-07-01"])
+        self.assertEqual(
+            [
+                {
+                    "day": "2026-07-01", "input": 70, "output": 20,
+                    "cache_write": 0, "sources": {"claude": 100}, "max_turns": 1,
+                },
+                {
+                    "day": "2026-07-02", "input": 120, "output": 60,
+                    "cache_write": 0, "sources": {"claude": 200}, "max_turns": 1,
+                },
+            ],
+            payload["achievement_daily"],
+        )
 
     @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
     @mock.patch("dashboard_payload.readers.session_title", return_value="")
@@ -401,18 +415,19 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("当前模型筛选构成", template)
         self.assertIn("row.addEventListener('keydown'", template)
         self.assertIn("document.getElementById('replay-ecg').addEventListener('pointerdown'", template)
+        self.assertIn("const days=DATA.day||[], total=days.reduce((a,d)=>a+(d.total||0),0), calls=days.reduce", template)
         self.assertIn("累计占比", template)
         self.assertIn("横轴为轮次，不代表真实耗时", template)
         self.assertIn("class=rscrub id=race-scrub type=range", template)
         self.assertIn("document.getElementById('race-scrub').addEventListener('input'", template)
         self.assertIn('class="bar-focus"', template)
         self.assertIn(".bar-hit{fill:transparent;pointer-events:all}", template)
-        self.assertIn("previousModels=null;invalidateDerived();renderFilters();renderDataViews();toast('已恢复月度全景')", template)
+        self.assertIn("previousModels=null;invalidateDerived();renderFilters();renderDataViews();announceViewChange('已恢复月度全景'", template)
         self.assertIn("modal.setAttribute('aria-hidden','false')", template)
         self.assertIn("role=dialog aria-modal=true aria-labelledby=replay-title", template)
         self.assertIn("scrub.max=String(s.length-1)", template)
         self.assertIn("drawECG(Number(e.target.value||0))", template)
-        self.assertIn("box.querySelectorAll('.bar-hit').forEach", template)
+        self.assertIn("box.onclick=e=>", template)
         self.assertIn("toggleFocus(el.dataset.period,true)", template)
         self.assertIn("document.getElementById('replay-modal').addEventListener('keydown',e=>trapModalFocus(e,e.currentTarget))", template)
         self.assertIn("data-lazy=flow", template)
@@ -432,7 +447,7 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("d.className='comet'", template)
         self.assertIn("active=e.target.closest('.card')", template)
         self.assertIn("document.addEventListener('visibilitychange'", template)
-        self.assertIn("clearInterval(_stripT)", template)
+        self.assertNotIn("clearInterval(_stripT)", template)
         self.assertIn("data-lazy=reuse", template)
         self.assertIn("function selectedReuseRows()", template)
         self.assertIn("function renderReuseRiver()", template)
@@ -638,8 +653,9 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
         self.assertIn("function scrollBehavior()", template)
         self.assertNotIn("behavior:'smooth'", template)
         self.assertIn("if(motionDisabled())return", template)
-        self.assertIn("if(document.documentElement.dataset.motion==='full')_stripT=setInterval", template)
-        self.assertIn("window.addEventListener('tk-motion-change'", template)
+        self.assertNotIn("runAchievementStrip", template)
+        self.assertNotIn("_stripT", template)
+        self.assertIn("function compareAchievementSnapshot(all)", template)
         self.assertIn("*,*::before,*::after{animation:none!important;transition:none!important}", template)
         self.assertIn("function provenanceHealth()", template)
         self.assertIn("function freshnessInfo()", template)
@@ -651,7 +667,52 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
         self.assertIn("id=freshness-beacon", template)
         self.assertIn("provenance:true", template)
         self.assertIn("跳转 · 数据可信度实验室", template)
-        self.assertIn("说明：不包含 cwd、session 或逐轮 Token 明细。", template)
+        self.assertIn("说明：解析器拒绝的原始事件不在分母；不包含 cwd、session 或逐轮 Token 明细。", template)
+
+
+    def test_achievement_center_structured_progress_and_snapshot_contracts(self):
+        template = report_dashboard._TEMPLATE
+        for marker in (
+            "Achievement Center · 成就中心",
+            "id=ach-latest",
+            "id=ach-timeline",
+            "id=ach-goals",
+            "id=ach-collection-summary",
+            "id=ach-detail",
+            "function achievementSnapshots()",
+            "function finalizeAchievements(cats)",
+            "function achievementTimeline(all)",
+            "function nextAchievementGoals(all)",
+            "function compareAchievementSnapshot(all)",
+            "本报告范围内首次达到",
+            "不是全球用户稀有度",
+            "data-ach-id=",
+            "aria-live=polite",
+        ):
+            self.assertIn(marker, template)
+        self.assertNotIn("runAchievementStrip", template)
+        self.assertNotIn("setInterval(roll,3500)", template)
+        self.assertIn("document.documentElement.dataset.motion==='full')confetti()", template)
+
+    @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("dashboard_payload.readers.load_session_summaries", return_value={})
+    def test_achievement_daily_accumulates_session_turns_without_identifiers(
+            self, _summaries, _title, _index):
+        records = []
+        for day, turns in (("2026-07-01", 2), ("2026-07-02", 3)):
+            for index in range(turns):
+                records.append({
+                    "source": "claude", "ts": f"{day}T0{index}:00:00+08:00",
+                    "date": day, "model": "model-a", "input": 2, "output": 1,
+                    "cache_read": 1, "cache_write": 1, "total": 5,
+                    "session": "secret-session", "cwd": "/tmp/secret-project",
+                })
+        payload = report_dashboard.build_payload(records)
+        self.assertEqual([2, 5], [row["max_turns"] for row in payload["achievement_daily"]])
+        serialized = json.dumps(payload["achievement_daily"], ensure_ascii=False)
+        self.assertNotIn("secret-session", serialized)
+        self.assertNotIn("secret-project", serialized)
 
     def test_provenance_counts_range_and_matches_anonymized_payload(self):
         records = self.synthetic_records() + [{
@@ -668,7 +729,9 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
         self.assertEqual(340, provenance["total"])
         self.assertEqual(2, provenance["valid_ts"])
         self.assertEqual(2, provenance["with_cwd"])
-        self.assertEqual(2, provenance["with_session"])
+        self.assertEqual(2, provenance["replay_eligible"])
+        self.assertEqual(2, provenance["replay_retained"])
+        self.assertEqual(3, provenance["with_components"])
         self.assertEqual("2026-07-01", provenance["first_day"])
         self.assertEqual("2026-07-03", provenance["last_day"])
         self.assertEqual(1, provenance["sources"]["codex"]["records"])
@@ -676,6 +739,57 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
         serialized = json.dumps(provenance, ensure_ascii=False)
         self.assertNotIn("/tmp/project-a", serialized)
         self.assertNotIn("session-a", serialized)
+
+
+    def test_standardized_component_coverage_requires_same_record(self):
+        records = [
+            {
+                "source": "claude", "ts": "2026-07-01T01:00:00+08:00",
+                "date": "2026-07-01", "model": "model-a",
+                "input": 5, "output": 5, "total": 10,
+            },
+            {
+                "source": "claude", "ts": "2026-07-01T02:00:00+08:00",
+                "date": "2026-07-01", "model": "model-a",
+                "cache_read": 5, "cache_write": 5, "total": 10,
+            },
+            {
+                "source": "claude", "ts": "2026-07-01T03:00:00+08:00",
+                "date": "2026-07-01", "model": "model-a",
+                "input": 2, "output": 3, "cache_read": 4, "cache_write": 1,
+                "total": 10,
+            },
+        ]
+        provenance = report_dashboard.build_payload(records)["provenance"]
+        self.assertEqual(2, provenance["with_input"])
+        self.assertEqual(2, provenance["with_output"])
+        self.assertEqual(2, provenance["with_cache_read"])
+        self.assertEqual(2, provenance["with_cache_write"])
+        self.assertEqual(1, provenance["with_components"])
+
+    @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("dashboard_payload.readers.load_session_summaries", return_value={})
+    def test_replay_provenance_distinguishes_eligible_and_retained(self, _summaries, _title, _index):
+        records = []
+        for i in range(250):
+            records.append({
+                "source": "claude", "ts": f"2026-07-{1 + i // 24:02d}T{i % 24:02d}:00:00+08:00",
+                "date": f"2026-07-{1 + i // 24:02d}", "model": "model-a",
+                "input": 1, "output": 0, "cache_read": 0, "cache_write": 0,
+                "total": i + 1, "session": "session-a", "cwd": "/tmp/main",
+            })
+        payload = report_dashboard.build_payload(records)
+        self.assertEqual(250, payload["provenance"]["replay_eligible"])
+        self.assertEqual(200, payload["provenance"]["replay_retained"])
+        self.assertEqual(200, len(payload["session_series"]["session-a"]))
+
+        records[200]["session"] = "session-b"
+        for index in range(201, 250):
+            records[index]["session"] = "session-b"
+        payload = report_dashboard.build_payload(records)
+        self.assertEqual(250, payload["provenance"]["replay_eligible"])
+        self.assertEqual(250, payload["provenance"]["replay_retained"])
 
     def test_provenance_helpers_cover_health_freshness_and_capabilities(self):
         script = (ROOT / "dashboard_assets" / "dashboard.js").read_text(encoding="utf-8")
@@ -690,14 +804,21 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
                     if depth == 0: return script[start:index + 1]
             self.fail(name)
         helpers = "\n".join(extract_function(name) for name in (
-            "coverageRatio", "freshnessInfo", "provenanceHealth", "capabilityInfo",
+            "coverageRatio", "standardizedComponentCount", "freshnessInfo", "provenanceHealth",
+            "capabilityInfo",
         ))
         node_script = r'''
-const DATA={generated:'2026-07-27 12:00',range:{since:null,until:null},provenance:{records:100,total:1000,valid_ts:100,with_cwd:80,with_session:90,with_replay:90,with_input:100,with_output:100,last_day:'2026-07-27',sources:{claude:{records:100,total:1000}}}};
+const DATA={generated:'2026-07-27 12:00',range:{since:null,until:null},provenance:{records:100,total:1000,valid_ts:100,with_cwd:80,with_session:90,replay_eligible:90,replay_retained:90,with_input:100,with_output:100,with_cache_read:100,with_cache_write:100,with_components:100,last_day:'2026-07-27',sources:{claude:{records:100,total:1000}}},session_series:{s:[1]}};
 ''' + helpers + r'''
 if(freshnessInfo().key!=='fresh')throw new Error('freshness');
 if(provenanceHealth().key!=='full')throw new Error('health');
 if(capabilityInfo().find(x=>x.key==='project').status!=='partial')throw new Error('project capability');
+DATA.provenance={records:100,valid_ts:100,with_cwd:80,with_session:1,replay_eligible:1,replay_retained:1,with_input:100,with_output:100,with_cache_read:100,with_cache_write:100,with_components:100,sources:{}};
+const sparseReplay=capabilityInfo().find(x=>x.key==='session');if(sparseReplay.ratio!==.01||sparseReplay.status!=='partial')throw new Error('session capability denominator');
+DATA.provenance={records:100,valid_ts:100,with_cwd:80,with_session:90,replay_eligible:90,replay_retained:90,with_input:100,with_output:100,with_cache_read:100,with_cache_write:100,with_components:0,sources:{}};
+if(standardizedComponentCount(DATA.provenance)!==0)throw new Error('component minimum');
+if(provenanceHealth().key==='full')throw new Error('cache fields must affect health');
+if(capabilityInfo().find(x=>x.key==='reuse').status!=='off')throw new Error('cache fields must affect reuse');
 DATA.range.until='2026-07-20';if(freshnessInfo().key!=='range')throw new Error('range freshness');
 DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw new Error('empty health');
 '''
@@ -709,9 +830,11 @@ DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw 
             "Data Moments · 数据时刻", "id=moments", "function emptyStateReason(kind)",
             "function contextEmptyHTML(kind)", "function copyExactValue(label,value)",
             "id=k-total-copy", "function selectedDailyRows()", "function continuousCalendar(rows,end,count)",
+            "function currentActiveStreak(rows,end)", "function longestActiveStreak(rows)",
             "function activeStreakDays(rows,end)", "function trailingQuietDays(rows,end)",
             "function latestMilestone(rows)", "function latestModelRelay(rows)",
-            "function projectFirstSeen(projectId)", "function renderDataMoments()",
+            "function projectFirstSeenInRange(projectId)", "function buildMomentEvents()",
+            "function momentEventsForRows(rows,events=buildMomentEvents())", "function renderDataMoments()",
             "function focusMomentDay(day)", "copyExactValue('项目 Token',total)",
         ):
             self.assertIn(marker, template)
@@ -732,8 +855,9 @@ DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw 
                     if depth == 0: return script[start:index + 1]
             self.fail(name)
         helpers = "\n".join(extract_function(name) for name in (
-            "localISO", "continuousCalendar", "activeStreakDays", "trailingQuietDays",
-            "latestMilestone", "dominantModel", "latestModelRelay",
+            "localISO", "continuousCalendar", "currentActiveStreak", "activeStreakDays",
+            "longestActiveStreak", "trailingQuietDays", "latestMilestone", "dominantModel",
+            "latestModelRelay",
         ))
         node_script = r'''
 const state={models:new Set(['a','b'])};const DATA={models:['a','b']};
@@ -743,15 +867,120 @@ const rows=[
  {period:'2026-07-02',total:500,models:{a:200,b:300}},
  {period:'2026-07-04',total:10,models:{b:10}}
 ];
-if(activeStreakDays(rows,'2026-07-04')!==1)throw new Error('gap must break streak');
-if(trailingQuietDays(rows,'2026-07-06')!==2)throw new Error('quiet tail');
+if(currentActiveStreak(rows,'2026-07-04')!==1)throw new Error('gap must break current streak');
+if(longestActiveStreak(rows)!==2)throw new Error('longest streak');
+const quiet=trailingQuietDays(rows,'2026-07-06');if(quiet.kind!=='quiet'||quiet.days!==2)throw new Error('quiet tail');
 const milestone=latestMilestone(rows);if(!milestone||milestone.day!=='2026-07-02'||milestone.value!==1000)throw new Error('milestone');
 const relay=latestModelRelay(rows);if(!relay||relay.day!=='2026-07-02'||relay.from!=='a'||relay.to!=='b')throw new Error('relay');
-state.models.clear();if(trailingQuietDays(rows,'2026-07-06')!==null)throw new Error('empty filter');
+const gapRelay=latestModelRelay([rows[0],rows[2]]);if(gapRelay)throw new Error('gap relay');
+const tieRelay=latestModelRelay([{period:'2026-07-01',total:10,models:{a:10}},{period:'2026-07-02',total:20,models:{a:10,b:10}}]);if(tieRelay)throw new Error('tie relay');
+state.models.clear();if(trailingQuietDays(rows,'2026-07-06').kind!=='no-observation')throw new Error('empty filter');
+'''
+        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        self.assertEqual(0, result.returncode, result.stderr)
+    def test_trend_annotation_rail_maps_merges_and_supports_keyboard(self):
+        script = (ROOT / "dashboard_assets" / "dashboard.js").read_text(encoding="utf-8")
+        for marker in (
+            "function buildMomentEvents()", "function periodForMoment(day,gran)",
+            "function momentEventsForRows(rows,events=buildMomentEvents())", "function handleMomentKey(e,markers,index)", 'class="moment-marker', 'class="moment-target"',
+            'role="button" aria-label="数据时刻', "moment-marker.moment-active",
+            "box.onclick=e=>", "focusMomentDay((marker||target).dataset.momentDay)", "handleMomentKey(e,markers,i)",
+            "下一个数据时刻",
+        ):
+            self.assertIn(marker, report_dashboard._TEMPLATE)
+
+        def extract_function(name):
+            start = script.index(f"function {name}(")
+            brace = script.index("{", start)
+            depth = 0
+            for index in range(brace, len(script)):
+                if script[index] == "{": depth += 1
+                elif script[index] == "}":
+                    depth -= 1
+                    if depth == 0: return script[start:index + 1]
+            self.fail(name)
+
+        helpers = "\n".join(extract_function(name) for name in (
+            "localISO", "projectPeriod", "periodForMoment", "momentEventsForRows",
+        ))
+        node_script = r'''
+const state={gran:'week'};
+function buildMomentEvents(){return [
+ {kind:'milestone',day:'2026-07-01',label:'A',description:'A',icon:'◆'},
+ {kind:'project',day:'2026-07-02',label:'B',description:'B',icon:'◇'},
+ {kind:'relay',day:'2026-07-08',label:'C',description:'C',icon:'↗'}
+];}
+''' + helpers + r'''
+let rows=[{period:'2026-06-29'},{period:'2026-07-06'}],events=momentEventsForRows(rows);
+if(events.length!==2||events[0].events.length!==2||events[1].events.length!==1)throw new Error('weekly merge');
+if(events[0].description!=='A；B')throw new Error('merged description');
+state.gran='month';rows=[{period:'2026-07-01'}];events=momentEventsForRows(rows);
+if(events.length!==1||events[0].events.length!==3)throw new Error('monthly merge');
+state.gran='day';rows=[{period:'2026-07-01'},{period:'2026-07-02'},{period:'2026-07-08'}];events=momentEventsForRows(rows);
+if(events.length!==3)throw new Error('daily mapping');
 '''
         result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
+        keyboard_helpers = "\n".join(extract_function(name) for name in (
+            "describeMoment", "handleMomentKey",
+        ))
+        keyboard_script = r'''
+let focused=null,activated=null,hint='';
+const hintEl={set textContent(value){hint=value;},get textContent(){return hint;}};
+const markers=[0,1,2].map(index=>({
+  __moment:{day:'2026-07-0'+(index+1),description:'moment '+index},
+  tabIndex:-1,
+  setAttribute(name,value){if(name==='tabindex')this.tabIndex=Number(value);},
+  focus(){focused=this;},
+}));
+const document={
+  querySelectorAll(){return markers;},
+  getElementById(){return hintEl;},
+};
+function focusMomentDay(day){activated=day;}
+''' + keyboard_helpers + r'''
+function event(key){return {key,prevented:false,preventDefault(){this.prevented=true;}};}
+let e=event('ArrowRight');if(!handleMomentKey(e,markers,1)||focused!==markers[2]||!e.prevented)throw new Error('ArrowRight');
+e=event('ArrowRight');if(!handleMomentKey(e,markers,2)||focused!==markers[2])throw new Error('right boundary');
+e=event('ArrowLeft');if(!handleMomentKey(e,markers,0)||focused!==markers[0])throw new Error('left boundary');
+e=event('Home');if(!handleMomentKey(e,markers,2)||focused!==markers[0])throw new Error('Home');
+e=event('End');if(!handleMomentKey(e,markers,0)||focused!==markers[2])throw new Error('End');
+e=event('Enter');if(!handleMomentKey(e,markers,1)||activated!=='2026-07-02'||!e.prevented)throw new Error('Enter');
+activated=null;e=event(' ');if(!handleMomentKey(e,markers,0)||activated!=='2026-07-01'||!e.prevented)throw new Error('Space');
+e=event('Tab');if(handleMomentKey(e,markers,1)||e.prevented)throw new Error('unhandled key');
+'''
+        result = subprocess.run(["node", "-e", keyboard_script], capture_output=True, text=True, check=False)
+        self.assertEqual(0, result.returncode, result.stderr)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_filtered_top_recomputes_complete_entities_and_drops_zero_rows(self):
+        template = report_dashboard._TEMPLATE
+        for marker in (
+            "function aggregateEntities(days,kind)", "function selectedTopEntities(kind)",
+            ".filter(row=>row[1]>0)", ".filter(x=>x.total>0)",
+            "按当前模型筛选重新计算 Top", "回放展示完整会话 Token 序列",
+        ):
+            self.assertIn(marker, template)
+
+        script = (ROOT / "dashboard_assets" / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("function aggregateEntities(")
+        end = script.index("\nfunction focusDetail()", start)
+        aggregate_helper = script[start:end]
+        node_script = r'''
+const state={models:new Set(['a'])};
+const DATA={day_details:{
+  '2026-07-01':{cwds:[['Alpha',70,'alpha',{a:70}],['Beta',90,'beta',{b:90}]],sessions:[['Session Alpha',40,'sa',{a:40}],['Session Beta',80,'sb',{b:80}]]},
+  '2026-07-02':{cwds:[['Gamma',80,'gamma',{a:80}],['Alpha',20,'alpha',{a:20,b:50}]],sessions:[['Session Gamma',75,'sg',{a:75}],['Session Alpha',20,'sa',{a:20,b:60}]]},
+}};
+''' + aggregate_helper + r'''
+let projects=aggregateEntities(Object.keys(DATA.day_details),'project');
+if(projects.length!==2)throw new Error('zero rows must be removed');
+if(projects[0][2]!=='alpha'||projects[0][1]!==90)throw new Error('cross-day project aggregation');
+if(projects[1][2]!=='gamma'||projects[1][1]!==80)throw new Error('project ranking');
+let sessions=aggregateEntities(Object.keys(DATA.day_details),'session');
+if(sessions.length!==2||sessions[0][2]!=='sg'||sessions[0][1]!==75||sessions[1][2]!=='sa'||sessions[1][1]!==60)throw new Error('session aggregation');
+state.models=new Set(['b']);projects=aggregateEntities(Object.keys(DATA.day_details),'project');
+if(projects.length!==2||projects[0][2]!=='beta'||projects[0][1]!==90||projects[1][2]!=='alpha'||projects[1][1]!==50)throw new Error('model switch ranking');
+'''
+        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        self.assertEqual(0, result.returncode, result.stderr)

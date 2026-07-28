@@ -142,6 +142,13 @@ def _new_day():
         "hourly_models": {},
         "cache_read": 0,
         "cache_read_models": {},
+        "achievement": {
+            "input": 0,
+            "output": 0,
+            "cache_write": 0,
+            "sources": {},
+            "sessions": {},
+        },
         "cwds": {},
         "sessions": {},
         "project_model": {},
@@ -226,11 +233,13 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "valid_ts": 0,
         "with_cwd": 0,
         "with_session": 0,
-        "with_replay": 0,
+        "replay_eligible": 0,
+        "replay_retained": 0,
         "with_input": 0,
         "with_output": 0,
         "with_cache_read": 0,
         "with_cache_write": 0,
+        "with_components": 0,
         "first_day": None,
         "last_day": None,
         "sources": {},
@@ -270,6 +279,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             "with_output": 0,
             "with_cache_read": 0,
             "with_cache_write": 0,
+            "with_components": 0,
         })
         provenance["records"] += 1
         provenance["total"] += total
@@ -277,6 +287,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         provenance["last_day"] = day if provenance["last_day"] is None or day > provenance["last_day"] else provenance["last_day"]
         source_provenance["records"] += 1
         source_provenance["total"] += total
+        component_keys = ("input", "output", "cache_read", "cache_write")
         coverage = (
             ("valid_ts", local_dt is not None),
             ("with_cwd", bool(raw_cwd)),
@@ -285,13 +296,14 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             ("with_output", "output" in record and record.get("output") is not None),
             ("with_cache_read", "cache_read" in record and record.get("cache_read") is not None),
             ("with_cache_write", "cache_write" in record and record.get("cache_write") is not None),
+            ("with_components", all(key in record and record.get(key) is not None for key in component_keys)),
         )
         for key, present in coverage:
             if present:
                 provenance[key] += 1
                 source_provenance[key] += 1
         if raw_sid:
-            provenance["with_replay"] += 1
+            provenance["replay_eligible"] += 1
 
         model_totals[model] = model_totals.get(model, 0) + total
         cache_read += cache_value
@@ -314,6 +326,13 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             day_acc[day] = detail
         detail["cache_read"] += cache_value
         detail["cache_read_models"][model] = detail["cache_read_models"].get(model, 0) + cache_value
+        achievement = detail["achievement"]
+        achievement["input"] += input_value
+        achievement["output"] += output_value
+        achievement["cache_write"] += cache_write
+        achievement["sources"][source] = achievement["sources"].get(source, 0) + total
+        if sid:
+            achievement["sessions"][sid] = achievement["sessions"].get(sid, 0) + 1
         _entity_add(detail["cwds"], cwd, model, total)
         _entity_add(detail["sessions"], sid, model, total)
         _flow_add(detail["project_model"], cwd, model, total)
@@ -388,7 +407,20 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             return title_cache[sid]
 
     day_details = {}
-    for day, detail in day_acc.items():
+    achievement_daily = []
+    cumulative_session_turns = defaultdict(int)
+    for day, detail in sorted(day_acc.items()):
+        achievement = detail["achievement"]
+        for sid, turns in achievement["sessions"].items():
+            cumulative_session_turns[sid] += turns
+        achievement_daily.append({
+            "day": day,
+            "input": achievement["input"],
+            "output": achievement["output"],
+            "cache_write": achievement["cache_write"],
+            "sources": dict(achievement["sources"]),
+            "max_turns": max(cumulative_session_turns.values(), default=0),
+        })
         day_details[day] = {
             "hourly": detail["hourly"],
             "hourly_models": detail["hourly_models"],
@@ -412,6 +444,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         sid: [item[2] for item in sorted(heap)]
         for sid, heap in replay_heaps.items()
     }
+    provenance["replay_retained"] = sum(len(values) for values in session_series.values())
     buckets = []
     for offset in range(5, -1, -1):
         point = generated_at - timedelta(hours=offset)
@@ -453,6 +486,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "max_turns": max(session_counts.values(), default=0),
         "provenance": provenance,
         "achievement_stats": achievement_stats,
+        "achievement_daily": achievement_daily,
         "reuse": {
             "day": _reuse_periods(day_periods),
             "week": _reuse_periods(week_periods),

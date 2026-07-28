@@ -122,8 +122,21 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 </section>
 
 <section class=card id=section-moments>
- <div class=row-between><div><h2 style=margin:0>Data Moments · 数据时刻</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">从当前模型筛选中挑出值得回看的日期，不增加另一张图</p></div><span class=sub id=moments-meta style="margin:0;color:var(--faint)"></span></div>
+ <div class=row-between><div><h2 style=margin:0>Data Moments · 数据时刻</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">从当前模型筛选中提取范围限定事件，并复用到趋势注释轨道</p></div><span class=sub id=moments-meta style="margin:0;color:var(--faint)"></span></div>
  <div class=moments id=moments></div>
+</section>
+
+<section class="card achievement-center" data-module=badges data-lazy=badges id=section-achievements>
+ <div class=row-between>
+  <div><h2 style=margin:0>🏆 Achievement Center · 成就中心</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">解锁日期以本报告范围为界；阶位表示图鉴门槛，不代表全球用户稀有度</p></div>
+  <span class=ach-meta id=ach-meta></span>
+ </div>
+ <div class=ach-center-grid>
+  <section class=ach-latest aria-labelledby=ach-latest-title><div class=ach-section-k>LAST UNLOCK · 最近解锁</div><div id=ach-latest aria-live=polite></div></section>
+  <section class=ach-recent aria-labelledby=ach-recent-title><div class=ach-section-head><div><div class=ach-section-k>RECENT TIMELINE</div><h3 id=ach-recent-title>最近达成</h3></div><span id=ach-scope></span></div><ol class=ach-timeline id=ach-timeline></ol></section>
+  <section class=ach-next aria-labelledby=ach-next-title><div class=ach-section-head><div><div class=ach-section-k>NEXT GOALS</div><h3 id=ach-next-title>距离最近的目标</h3></div><span>每个阶梯只推荐下一枚</span></div><div class=ach-goals id=ach-goals></div></section>
+  <section class=ach-collection aria-labelledby=ach-collection-title><div class=ach-section-head><div><div class=ach-section-k>COLLECTION PRESTIGE</div><h3 id=ach-collection-title>收藏与阶位</h3></div></div><div class=ach-collection-summary id=ach-collection-summary></div><div class=ach-tiers id=ach-tiers></div><p class=ach-prestige-note id=ach-prestige-note></p><button class=ghostbtn ach-open id=ach-open>📜 查看完整图鉴与详情 →</button></section>
+ </div>
 </section>
 
 <section class=card data-module=project data-lazy=project id=section-project>
@@ -236,42 +249,15 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  <div class=table-scroll tabindex=0 role=region aria-label="Token 明细，可横向滚动"><table class=detail-table><thead id=thead></thead><tbody id=tbody></tbody></table></div>
 </section>
 
-<div class=grid2>
- <section class=card data-module=badges data-lazy=badges id=section-achievements>
-   <div class=row-between>
-     <h2 style=margin:0>🏆 成就徽章</h2>
-     <span class=ach-meta id=ach-meta></span>
-   </div>
-   <div class=ach-compact>
-     <div class=ach-ring aria-hidden=true>
-       <div class=ach-ring-disc>
-         <svg viewBox="0 0 100 100" width=104 height=104>
-           <circle cx=50 cy=50 r=42 fill=none style="stroke:var(--track)" stroke-width=9/>
-           <circle id=ach-arc cx=50 cy=50 r=42 fill=none stroke=url(#achg) stroke-width=9 stroke-linecap=round stroke-dasharray="263.9" stroke-dashoffset=263.9 style="transition:stroke-dashoffset 1s cubic-bezier(.2,.75,.2,1)"/>
-           <defs><linearGradient id=achg x1=0 y1=0 x2=1 y2=1><stop offset=0 style="stop-color:var(--accent)"/><stop offset=.5 style="stop-color:#a78bfa"/><stop offset=1 style="stop-color:#f472b6"/></linearGradient></defs>
-         </svg>
-         <div class=pct id=ach-pct>0%</div>
-       </div>
-       <div class=ach-ringlab id=ach-ringlab></div>
-     </div>
-     <div class=ach-info>
-       <div class=ach-meta2 id=ach-meta2></div>
-       <div class=ach-strip id=ach-strip></div>
-       <button class=ghostbtn ach-open id=ach-open>📜 查看全部成就 · 图鉴 →</button>
-     </div>
-   </div>
-   <div class=ach-tiers id=ach-tiers></div>
- </section>
- <section class=card data-module=dna data-lazy=dna>
-   <h2>Token 星云 · 你的数据深空</h2>
-   <div class=dna-wrap>
-     <div class=nebula-stage><svg class=dna id=dna viewBox="0 0 300 300"></svg></div>
-     <div class=dna-tip>24 小时形成星云旋臂 · 模型化作彩色星团 · 缓存点亮中央星核</div>
-     <div class=nebula-meta id=nebula-meta></div>
-     <button class=dnadl id=dna-dl>📥 收藏这片星云</button>
-   </div>
- </section>
-</div>
+<section class=card data-module=dna data-lazy=dna>
+ <h2>Token 星云 · 你的数据深空</h2>
+ <div class=dna-wrap>
+  <div class=nebula-stage><svg class=dna id=dna viewBox="0 0 300 300"></svg></div>
+  <div class=dna-tip>24 小时形成星云旋臂 · 模型化作彩色星团 · 缓存点亮中央星核</div>
+  <div class=nebula-meta id=nebula-meta></div>
+  <button class=dnadl id=dna-dl>📥 收藏这片星云</button>
+ </div>
+</section>
 
 <section class=card data-module=top id=section-top>
  <div class=row-between>
@@ -312,6 +298,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
      <button class=ghostbtn id=ach-confetti aria-label="庆祝成就进度">🎉</button>
    </div>
   </div>
+  <div class=ach-detail id=ach-detail aria-live=polite>选择一枚成就查看状态、日期、目标与图鉴阶位。</div>
   <div class=ach-body id=ach-body></div>
  </div>
 </div>
