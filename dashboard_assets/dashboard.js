@@ -499,11 +499,11 @@ window.addEventListener('popstate',()=>{restoringView=true;restoreViewFromURL();
 
 document.getElementById('compare-btn').addEventListener('click',()=>{state.compare=!state.compare;renderBar();renderViewCapsule();syncViewURL();announceViewChange(state.compare?'幻影对比已开启':'幻影对比已关闭',['section-trend']);});
 
-const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,creature:renderCreature,race:renderRace,badges:renderBadges,dna:renderDNA};
+const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,creature:renderCreature,race:renderRace,almanac:renderAlmanac,badges:renderBadges,dna:renderDNA};
 const lazyState={};
 function renderLazy(name,force=false){const card=document.querySelector('[data-lazy="'+name+'"]');if(!card||card.style.display==='none')return;if(!force&&!lazyState[name]?.visible){card.classList.add('lazy-pending');lazyState[name]=Object.assign({},lazyState[name],{dirty:true});return;}card.classList.remove('lazy-pending');LAZY_RENDERERS[name]();lazyState[name]=Object.assign({},lazyState[name],{dirty:false,rendered:true});}
 function markLazyDirty(){['project','reuse','flow','dna'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible)renderLazy(name,true);});}
-function markStaticLazyDirty(){['creature','race','badges'].forEach(name=>{if(!lazyState[name]?.rendered)lazyState[name]=Object.assign({},lazyState[name],{dirty:true});});}
+function markStaticLazyDirty(){['creature','race','almanac','badges'].forEach(name=>{if(!lazyState[name]?.rendered)lazyState[name]=Object.assign({},lazyState[name],{dirty:true});});}
 function initLazyRendering(){
   document.querySelectorAll('[data-lazy]').forEach(card=>{const name=card.dataset.lazy;lazyState[name]={visible:false,dirty:true,rendered:false};card.classList.add('lazy-pending');});
   if(!('IntersectionObserver'in window)){Object.keys(LAZY_RENDERERS).forEach(name=>{lazyState[name].visible=true;renderLazy(name,true);});return;}
@@ -564,9 +564,9 @@ function downloadBlob(content,type,filename){const url=URL.createObjectURL(new B
 const modalState=new WeakMap();
 function modalFocusables(modal){return [...modal.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')].filter(x=>!x.disabled&&x.getClientRects().length);}
 function openModal(modal,initialFocus){modalState.set(modal,{returnFocus:document.activeElement});modal.classList.add('open');modal.setAttribute('aria-hidden','false');document.body.classList.add('modal-open');setTimeout(()=>{const target=initialFocus||modalFocusables(modal)[0];if(target)target.focus();},0);}
-function closeModal(modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!document.querySelector('.share-modal.open,.ach-modal.open,.help-modal.open,.modal.open'))document.body.classList.remove('modal-open');const state=modalState.get(modal);modalState.delete(modal);if(state?.returnFocus&&document.contains(state.returnFocus))state.returnFocus.focus();}
+function closeModal(modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!document.querySelector('.share-modal.open,.almanac-modal.open,.ach-modal.open,.help-modal.open,.modal.open'))document.body.classList.remove('modal-open');const state=modalState.get(modal);modalState.delete(modal);if(state?.returnFocus&&document.contains(state.returnFocus))state.returnFocus.focus();}
 function trapModalFocus(e,modal){if(e.key!=='Tab'||!modal.classList.contains('open'))return;const items=modalFocusables(modal);if(!items.length){e.preventDefault();return;}const first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
-function activeModal(){return document.querySelector('.share-modal.open,.ach-modal.open,.help-modal.open,.modal.open');}
+function activeModal(){return document.querySelector('.share-modal.open,.almanac-modal.open,.ach-modal.open,.help-modal.open,.modal.open');}
 
 // CSV 导出（当前粒度 + 所选模型）
 function exportCSV(){
@@ -681,7 +681,7 @@ function renderFunFacts(){
 document.getElementById('fun-shuffle').addEventListener('click',renderFunFacts);
 
 /* ---- 模块开关（附加功能可勾选 + 记忆）---- */
-const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true,rhythm:true,fortune:true,multiples:true,provenance:true,project:true,reuse:true,flow:true,creature:true,race:true,badges:true,dna:true,top:true};
+const MODS_KEY='tk-mods', MOD_DEFAULT={clock:true,fun:true,block:true,daily:true,rhythm:true,fortune:true,multiples:true,provenance:true,project:true,reuse:true,flow:true,creature:true,race:true,almanac:true,badges:true,dna:true,top:true};
 function loadMods(){ try{ const m=Object.assign({},JSON.parse(localStorage.getItem(MODS_KEY)||'{}'));let legacy;if(Object.prototype.hasOwnProperty.call(m,'orbit'))legacy=m.orbit;else if(Object.prototype.hasOwnProperty.call(m,'city'))legacy=m.city;if(!Object.prototype.hasOwnProperty.call(m,'flow')&&legacy!==undefined)m.flow=legacy;delete m.orbit;delete m.city;localStorage.setItem(MODS_KEY,JSON.stringify(m));return m; }catch(e){ return {}; } }
 function applyMods(){
   const m=Object.assign({},MOD_DEFAULT,loadMods());
@@ -1010,7 +1010,7 @@ function secretCommand(q){
 }
 
 function scrollToSection(id){const el=document.getElementById(id);if(!el)return;const lazy=el.dataset.lazy;if(lazy){lazyState[lazy]=Object.assign({},lazyState[lazy],{visible:true});renderLazy(lazy,true);}el.scrollIntoView({behavior:scrollBehavior(),block:'start'});}
-const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-provenance','体检'],['section-project','项目'],['section-rhythm','节奏'],['section-reuse','复用'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
+const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-provenance','体检'],['section-almanac','年鉴'],['section-project','项目'],['section-rhythm','节奏'],['section-reuse','复用'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
 function initSectionDock(){
   const dock=document.getElementById('section-dock');dock.addEventListener('click',e=>{const b=e.target.closest('button[data-target]');if(b)scrollToSection(b.dataset.target);});
   const mark=id=>dock.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.target===id));
@@ -1029,6 +1029,8 @@ function cmdActions(){ return [
   {ic:'◎',t:'跳转 · 总览',k:'',run:()=>scrollToSection('section-overview')},
   {ic:'↗',t:'跳转 · 趋势',k:'',run:()=>scrollToSection('section-trend')},
   {ic:'⌁',t:'跳转 · 数据可信度实验室',k:'',run:()=>scrollToSection('section-provenance')},
+  {ic:'✦',t:'跳转 · Token 年鉴',k:'',run:()=>scrollToSection('section-almanac')},
+  {ic:'◉',t:'打开 · 数据时间胶囊',k:'',run:()=>{scrollToSection('section-almanac');setTimeout(openAlmanacCapsule,60);}},
   {ic:'▣',t:'跳转 · 项目透镜',k:'',run:()=>scrollToSection('section-project')},
   {ic:'◫',t:'跳转 · 节奏',k:'',run:()=>scrollToSection('section-rhythm')},
   {ic:'≈',t:'跳转 · Context Reuse River',k:'',run:()=>scrollToSection('section-reuse')},
@@ -1069,7 +1071,7 @@ document.getElementById('scrim').addEventListener('click',e=>{ if(e.target.id===
 function syncPal(){const input=document.getElementById('palette-q');document.querySelectorAll('#palette-list li').forEach((li,i)=>{const active=i===pal.i;li.classList.toggle('active',active);li.setAttribute('aria-selected',String(active));});if(pal.items.length)input.setAttribute('aria-activedescendant','palette-opt-'+pal.i);else input.removeAttribute('aria-activedescendant');}
 document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); document.getElementById('scrim').classList.contains('open')?closePalette():openPalette(); return; }
-  if(e.key==='Escape'){const modal=activeModal();if(modal){e.preventDefault();if(modal.id==='replay-modal')closeReplay();else if(modal.id==='help-modal')closeHelp();else if(modal.id==='share-modal')closeShare();else if(modal.id==='ach-modal')closeAchievements();return;}}
+  if(e.key==='Escape'){const modal=activeModal();if(modal){e.preventDefault();if(modal.id==='replay-modal')closeReplay();else if(modal.id==='help-modal')closeHelp();else if(modal.id==='share-modal')closeShare();else if(modal.id==='almanac-modal')closeAlmanacCapsule();else if(modal.id==='ach-modal')closeAchievements();return;}}
   if(e.key==='Escape' && state.focusPeriod){ e.preventDefault(); clearFocus(true); return; }
   if(!document.getElementById('scrim').classList.contains('open')) return;
   if(e.key==='Tab'){e.preventDefault();document.getElementById('palette-q').focus();}
@@ -1078,6 +1080,103 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='ArrowUp'){ e.preventDefault(); pal.i=(pal.i-1+Math.max(1,pal.items.length))%Math.max(1,pal.items.length); syncPal(); }
   else if(e.key==='Enter'){ e.preventDefault(); runPalette(pal.i); }
 });
+
+/* ---- Token Almanac：跨快照赛季、个人纪录与时间胶囊 ---- */
+const ALMANAC_KEY='tk-almanac-v1',ALMANAC_VERSION=1,ALMANAC_SCOPE_LIMIT=8,ALMANAC_SNAPSHOT_LIMIT=24;
+function isoDayNumber(day){const p=String(day||'').split('-').map(Number);return p.length===3?Math.floor(Date.UTC(p[0],p[1]-1,p[2])/86400000):0;}
+function dayDistance(a,b){return isoDayNumber(b)-isoDayNumber(a);}
+function almanacDailyRows(data=DATA){
+  const extras=Object.fromEntries((data.achievement_daily||[]).map(x=>[x.day,x]));
+  return [...(data.day||[])].sort((a,b)=>a.period.localeCompare(b.period)).map(row=>{
+    const detail=(data.day_details||{})[row.period]||{},extra=extras[row.period]||{},hourly=detail.hourly||[],peakValue=Math.max(0,...hourly),peakHour=peakValue?hourly.indexOf(peakValue):null,models=Object.entries(row.models||{}).filter(([,value])=>value>0);
+    return {day:row.period,total:row.total||0,calls:row.calls||0,models:Object.fromEntries(models),modelCount:models.length,cache:detail.cache_read||0,input:extra.input||0,output:extra.output||0,cacheWrite:extra.cache_write||0,maxTurns:extra.max_turns||0,peakHour,peakHourValue:peakValue};
+  });
+}
+function seasonCharacter(season,previous){
+  if(!season.activeDays)return {key:'quiet',label:'静默'};
+  if(season.activeDays<5)return {key:'incipient',label:'初生'};
+  if(previous&&season.dominantModel&&previous.dominantModel&&season.dominantModel!==previous.dominantModel)return {key:'migration',label:'迁徙'};
+  const mean=season.total/season.activeDays,variance=season.rows.reduce((sum,row)=>sum+Math.pow(row.total-mean,2),0)/season.activeDays,cv=mean?Math.sqrt(variance)/mean:0;
+  if(cv>=1.15)return {key:'surge',label:'潮涌'};
+  if(cv<=.28)return {key:'steady',label:'恒定'};
+  return {key:'echo',label:'回声'};
+}
+function finalizeSeason(rows,index,range,previous){
+  const first=rows[0],last=rows[rows.length-1],models={};rows.forEach(row=>Object.entries(row.models).forEach(([model,value])=>models[model]=(models[model]||0)+value));
+  const total=rows.reduce((sum,row)=>sum+row.total,0),calls=rows.reduce((sum,row)=>sum+row.calls,0),cache=rows.reduce((sum,row)=>sum+row.cache,0),dominant=Object.entries(models).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0],peak=rows.reduce((best,row)=>!best||row.total>best.total?row:best,null),streak=longestActiveStreak(rows.map(row=>({period:row.day,total:row.total})));
+  const season={id:first.day+'..'+last.day,index,start:first.day,end:last.day,rows,total,calls,cache,activeDays:rows.length,spanDays:dayDistance(first.day,last.day)+1,dominantModel:dominant?.[0]||null,dominantShare:total&&dominant?dominant[1]/total:0,peakDay:peak?.day||null,peakValue:peak?.total||0,longestStreak:streak,truncatedStart:!!(range?.since&&range.since===first.day),truncatedEnd:!!(range?.until&&range.until===last.day)};
+  season.character=seasonCharacter(season,previous);return season;
+}
+function deriveSeasons(rows,range={}){
+  const active=rows.filter(row=>row.total>0).sort((a,b)=>a.day.localeCompare(b.day));if(!active.length)return [];
+  const groups=[];let current=[];active.forEach(row=>{const prev=current[current.length-1],monthBreak=prev&&prev.day.slice(0,7)!==row.day.slice(0,7),quietBreak=prev&&dayDistance(prev.day,row.day)>=8;if(prev&&(monthBreak||quietBreak)){groups.push(current);current=[];}current.push(row);});if(current.length)groups.push(current);
+  const seasons=[];groups.forEach((group,index)=>seasons.push(finalizeSeason(group,index,range,seasons[seasons.length-1])));return seasons;
+}
+function bestRecord(rows,id,label,unit,valueOf,extra={}){
+  let best=null;rows.forEach(row=>{const candidate=valueOf(row);if(candidate==null||!Number.isFinite(candidate.value)||candidate.value<=0)return;if(!best||candidate.value>best.value||(candidate.value===best.value&&row.day<best.achievedDay))best={id,label,unit,value:candidate.value,achievedDay:row.day,precision:'exact-day',detail:candidate.detail||'',format:candidate.format||'number',...extra};});return best;
+}
+function derivePersonalRecords(rows){
+  if(!rows.length)return [];
+  const records=[
+    bestRecord(rows,'peak-day-token','单日 Token 峰值','tk',row=>({value:row.total})),
+    bestRecord(rows,'peak-day-calls','单日调用峰值','次',row=>({value:row.calls})),
+    bestRecord(rows,'peak-hour-token','单小时峰值','tk',row=>row.peakHour==null?null:{value:row.peakHourValue,detail:String(row.peakHour).padStart(2,'0')+':00'}),
+    bestRecord(rows,'peak-day-cache','单日缓存量峰值','tk',row=>({value:row.cache})),
+    bestRecord(rows,'peak-cache-ratio','单日缓存占比','%',row=>row.total>=1000?{value:row.cache/row.total,format:'percent'}:null,{note:'仅比较单日总量至少 1K Token 的日期'}),
+    bestRecord(rows,'peak-day-input','单日输入峰值','tk',row=>({value:row.input})),
+    bestRecord(rows,'peak-day-output','单日输出峰值','tk',row=>({value:row.output})),
+    bestRecord(rows,'peak-day-cache-write','单日缓存写入峰值','tk',row=>({value:row.cacheWrite})),
+    bestRecord(rows,'max-session-turns','单会话累计轮数','轮',row=>({value:row.maxTurns}),{precision:'range-day'}),
+    bestRecord(rows,'peak-model-diversity','单日模型多样性','种',row=>({value:row.modelCount}))
+  ].filter(Boolean);
+  const active=rows.filter(row=>row.total>0),activeSet=new Set(active.map(row=>row.day));let current=0,longest=0,end=null,previous=null;active.forEach(row=>{current=previous&&dayDistance(previous,row.day)===1?current+1:1;if(current>longest){longest=current;end=row.day;}previous=row.day;});if(longest)records.push({id:'longest-active-streak',label:'最长连续活跃',unit:'天',value:longest,achievedDay:end,precision:activeSet.has(rows[0].day)&&end===rows[Math.max(0,longest-1)]?.day?'range-boundary':'exact-day',detail:'截至 '+end,format:'number'});
+  return records.sort((a,b)=>a.id.localeCompare(b.id));
+}
+function almanacScopeKey(data=DATA){const s=data.snapshot||{},until=data.range?.until?'fixed:'+data.range.until:'rolling';return ['v1',data.anonymized?'anon':'raw',[...(data.source||[])].sort().join(','),data.range?.since||'all',until,s.timezone||'local','m'+(s.metric_schema||1)].join('|');}
+function readAlmanacStore(storage=localStorage){try{const parsed=JSON.parse(storage.getItem(ALMANAC_KEY)||'{}');return parsed&&parsed.v===ALMANAC_VERSION&&parsed.scopes&&typeof parsed.scopes==='object'?parsed:{v:ALMANAC_VERSION,scopes:{}};}catch(e){return {v:ALMANAC_VERSION,scopes:{}};}}
+function recordDisplay(record){const value=Number(record.value||0);return record.format==='percent'?(value*100).toFixed(1)+'%':fmt(Math.round(value))+(record.unit?' '+record.unit:'');}
+function recordDeltaDisplay(record,delta){return record.format==='percent'?(delta*100).toFixed(1)+' 个百分点':fmt(Math.round(delta))+(record.unit?' '+record.unit:'');}
+function summarizeAlmanacSnapshot(rows,seasons,records,data=DATA){const models={};rows.forEach(row=>Object.entries(row.models).forEach(([model,value])=>models[model]=(models[model]||0)+value));return {id:data.snapshot?.id||['legacy',data.generated,rows.length,rows.reduce((sum,row)=>sum+row.total,0)].join(':'),generated:String(data.generated||''),coverage:data.snapshot?.coverage||{first_day:rows[0]?.day||null,last_day:rows[rows.length-1]?.day||null},totals:{tokens:rows.reduce((sum,row)=>sum+row.total,0),calls:rows.reduce((sum,row)=>sum+row.calls,0),cache:rows.reduce((sum,row)=>sum+row.cache,0)},models,records:records.map(({id,label,unit,value,achievedDay,precision,detail,format})=>({id,label,unit,value,achievedDay,precision,detail,format})),seasons:seasons.map(({id,start,end,total,calls,activeDays,spanDays,dominantModel,dominantShare,peakDay,peakValue,longestStreak,character})=>({id,start,end,total,calls,activeDays,spanDays,dominantModel,dominantShare,peakDay,peakValue,longestStreak,character}))};}
+function compareAlmanacRecords(current,history){const prior={};history.forEach(snapshot=>(snapshot.records||[]).forEach(record=>{const old=prior[record.id];if(!old||record.value>old.value)prior[record.id]=record;}));return current.map(record=>{const old=prior[record.id];let status='baseline',delta=null;if(old){delta=record.value-old.value;if(record.value>old.value)status='broken';else if(record.value===old.value&&record.achievedDay!==old.achievedDay)status='tied';else if(record.value===old.value)status='standing';else status='historic';}return {...record,status,delta,prior:old||null};});}
+function writeAlmanacObservation(summary,storage=localStorage,data=DATA){
+  const store=readAlmanacStore(storage),scope=almanacScopeKey(data),existing=store.scopes[scope]||{updated:'',snapshots:[]},all=(existing.snapshots||[]).filter(item=>item&&item.id),isDuplicate=all.some(item=>item.id===summary.id),snapshots=all.filter(item=>item.id!==summary.id),history=[...snapshots].sort((a,b)=>String(a.generated).localeCompare(String(b.generated))),comparison=compareAlmanacRecords(summary.records,history),previous=history[history.length-1]||null;
+  snapshots.push(summary);snapshots.sort((a,b)=>String(a.generated).localeCompare(String(b.generated)));existing.updated=summary.generated;existing.snapshots=snapshots.slice(-ALMANAC_SNAPSHOT_LIMIT);store.scopes[scope]=existing;
+  const scoped=Object.entries(store.scopes).sort((a,b)=>String(b[1].updated).localeCompare(String(a[1].updated))).slice(0,ALMANAC_SCOPE_LIMIT);store.scopes=Object.fromEntries(scoped);try{storage.setItem(ALMANAC_KEY,JSON.stringify(store));}catch(e){}
+  return {store,scope,history,previous,comparison,isBaseline:history.length===0,isDuplicate};
+}
+function dominantModelFromSnapshot(snapshot){return Object.entries(snapshot?.models||{}).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]?.[0]||null;}
+function buildCapsuleStories(observation,summary,seasons){
+  if(observation.isBaseline)return [{k:'BASELINE SEALED',title:'时间胶囊已建立基线',copy:'这是本设备在当前作用域第一次观察这份年鉴。等下一份不同快照到来后，它才会展开真实的前后变化。',metric:'没有伪造过去'}];
+  const previous=observation.previous,stories=[{k:'CAPSULE OPENED',title:'过去的快照回信了',copy:'正在比较 '+(previous.coverage?.last_day||previous.generated||'上一份快照')+' 与 '+(summary.coverage?.last_day||summary.generated||'当前快照')+'。',metric:observation.isDuplicate?'内容与既有快照相同':'发现新的快照内容'}];
+  const delta=summary.totals.tokens-(previous.totals?.tokens||0),ratio=previous.totals?.tokens?delta/previous.totals.tokens:null;stories.push({k:'TOKEN TIDE',title:delta===0?'总量没有可辨认变化':delta>0?'新的 Token 已进入年鉴':'当前范围比上一快照更窄',copy:delta>=0?'当前聚合总量相对上一份本地快照的差异。':'这通常来自日期范围收缩；年鉴不会把它描述为负向表现。',metric:(delta>=0?'+':'')+fmt(delta)+' tk'+(ratio==null?'':' · '+(ratio>=0?'+':'')+(ratio*100).toFixed(1)+'%')});
+  const broken=observation.comparison.filter(record=>record.status==='broken');if(broken.length)stories.push({k:'NEW CONSTELLATIONS',title:'有 '+broken.length+' 项个人纪录被改写',copy:broken.slice(0,4).map(record=>record.label+' '+recordDisplay(record)).join(' · '),metric:'只与本设备既有快照比较'});else stories.push({k:'STANDING STARS',title:'旧纪录仍在轨道上',copy:'当前快照没有超过本设备此前观察到的个人纪录；保持不变也是一种真实状态。',metric:'0 项新纪录'});
+  const before=dominantModelFromSnapshot(previous),now=dominantModelFromSnapshot(summary);stories.push({k:'MODEL COMPASS',title:before&&now&&before!==now?'主力模型发生迁徙':'主力模型方向保持稳定',copy:before&&now?pretty(before)+' → '+pretty(now):'当前快照不足以比较主力模型。',metric:now?pretty(now):'—'});
+  const priorSeasons=previous.seasons||[],latest=seasons[seasons.length-1];if(latest)stories.push({k:'SEASON MEMORIAL',title:priorSeasons.some(season=>season.id===latest.id)?'当前赛季继续生长':'年鉴出现了新的赛季章节',copy:latest.start+' → '+latest.end+' · '+latest.character.label+' · '+latest.activeDays+' 个活跃日。',metric:human(latest.total)+' tk'});
+  return stories;
+}
+let _almanac=null,seasonCursor=0,recordCursor=0,capsuleCursor=0;
+function almanacHash(value){let h=2166136261;for(const ch of String(value))h=Math.imul(h^ch.charCodeAt(0),16777619);return h>>>0;}
+function recordStatusLabel(record){return {baseline:'首次观察',broken:'新纪录',tied:'追平纪录',standing:'纪录保持',historic:'历史纪录在范围外'}[record.status]||record.status;}
+function renderSeasonDetail(season){const el=document.getElementById('season-detail');if(!season){el.innerHTML='<div class=ach-empty>当前报告没有可划分的活跃赛季。</div>';return;}const clipped=[season.truncatedStart?'起点为报告边界':'',season.truncatedEnd?'终点为报告边界':''].filter(Boolean).join(' · ');el.innerHTML='<div><span>'+esc(season.character.label)+' SEASON</span><b>'+season.start+' → '+season.end+'</b><small>'+season.activeDays+' 个活跃日 · 跨 '+season.spanDays+' 个自然日'+(clipped?' · '+clipped:'')+'</small></div><div><b>'+human(season.total)+' tk</b><small>峰值 '+season.peakDay+' · '+human(season.peakValue)+'</small></div><div><b>'+(season.dominantModel?esc(pretty(season.dominantModel)):'—')+'</b><small>主力占比 '+(season.dominantShare*100).toFixed(1)+'% · 最长连续 '+season.longestStreak+' 天</small></div>';}
+function focusSeason(index,focus=true){if(!_almanac?.seasons.length)return;seasonCursor=Math.max(0,Math.min(_almanac.seasons.length-1,index));const buttons=[...document.querySelectorAll('.season-node')];buttons.forEach((button,i)=>{button.tabIndex=i===seasonCursor?0:-1;button.setAttribute('aria-selected',String(i===seasonCursor));button.classList.toggle('on',i===seasonCursor);});renderSeasonDetail(_almanac.seasons[seasonCursor]);if(focus)buttons[seasonCursor]?.focus();}
+function renderRecordDetail(record){const el=document.getElementById('record-detail');if(!record){el.textContent='当前范围没有可重建的个人纪录。';return;}const date=record.precision==='range-boundary'?'报告范围开始时已在保持':record.achievedDay?'本报告范围内记录于 '+record.achievedDay:'日期不可还原',delta=record.status==='broken'&&record.delta!=null?' · 比此前高 '+recordDeltaDisplay(record,record.delta):'';el.innerHTML='<span>'+recordStatusLabel(record)+'</span><b>'+esc(record.label)+' · '+esc(recordDisplay(record))+'</b><small>'+esc(date+(record.detail?' · '+record.detail:'')+delta)+'</small>';}
+function focusRecord(index,focus=true){if(!_almanac?.records.length)return;recordCursor=Math.max(0,Math.min(_almanac.records.length-1,index));document.querySelectorAll('[data-record-index]').forEach((node,i)=>{node.setAttribute('tabindex',i===recordCursor?'0':'-1');node.classList.toggle('on',i===recordCursor);});renderRecordDetail(_almanac.records[recordCursor]);if(focus)document.querySelector('[data-record-index="'+recordCursor+'"]')?.focus();}
+function renderCapsuleStory(){const stories=_almanac?.stories||[],story=stories[capsuleCursor];if(!story)return;document.getElementById('capsule-story').innerHTML='<div class=capsule-k>'+esc(story.k)+'</div><h4>'+esc(story.title)+'</h4><p>'+esc(story.copy)+'</p><strong>'+esc(story.metric)+'</strong>';document.getElementById('capsule-pos').textContent=(capsuleCursor+1)+' / '+stories.length;document.getElementById('capsule-progress').innerHTML=stories.map((_,i)=>'<i class="'+(i===capsuleCursor?'on':'')+'"></i>').join('');document.getElementById('capsule-prev').disabled=capsuleCursor===0;document.getElementById('capsule-next').disabled=capsuleCursor===stories.length-1;}
+function openAlmanacCapsule(){if(!_almanac)return;capsuleCursor=0;renderCapsuleStory();openModal(document.getElementById('almanac-modal'),document.getElementById('almanac-x'));if(!_almanac.observation.isBaseline&&_almanac.records.some(record=>record.status==='broken')&&document.documentElement.dataset.motion==='full')confetti();}
+function closeAlmanacCapsule(){closeModal(document.getElementById('almanac-modal'));}
+function renderAlmanac(){
+  const rows=almanacDailyRows(),seasons=deriveSeasons(rows,DATA.range||{}),records=derivePersonalRecords(rows),summary=summarizeAlmanacSnapshot(rows,seasons,records),observation=writeAlmanacObservation(summary),compared=observation.comparison,stories=buildCapsuleStories(observation,summary,seasons);_almanac={rows,seasons,records:compared,summary,observation,stories};
+  const letter=document.getElementById('almanac-letter'),broken=compared.filter(record=>record.status==='broken');letter.innerHTML=observation.isBaseline?'<div class=almanac-seal>◉</div><div><span>FIRST OBSERVATION · 初次装订</span><b>年鉴已安静地记住这份快照</b><p>首次打开只建立基线，不会把旧数据假装成刚刚发生。下一份不同快照到来时，时间胶囊才会回信。</p></div>':'<div class="almanac-seal '+(broken.length?'lit':'')+'">'+(broken.length?'✦':'◉')+'</div><div><span>LETTER FROM '+esc(observation.previous?.coverage?.last_day||'PAST SNAPSHOT')+'</span><b>'+(broken.length?'过去的你目击了 '+broken.length+' 项新纪录':'旧纪录仍在星图中保持')+'</b><p>'+esc(stories[1]?.metric||'打开时间胶囊查看完整变化')+'</p></div>';
+  document.getElementById('season-meta').textContent=seasons.length+' 个章节 · 月界或 ≥7 日静默切季';document.getElementById('season-rail').innerHTML=seasons.map((season,index)=>'<button type=button class=season-node data-season-index="'+index+'" role=option aria-selected="'+(index===0?'true':'false')+'" tabindex="'+(index===0?'0':'-1')+'" style="--season-color:'+(season.dominantModel?(DATA.colors[season.dominantModel]||'var(--accent)'):'var(--accent)')+';--season-span:'+Math.max(1,Math.min(5,season.spanDays/7)).toFixed(2)+'"><i></i><span>'+esc(season.character.label)+'</span><b>'+season.start.slice(5)+' → '+season.end.slice(5)+'</b><small>'+season.activeDays+' 日 · '+human(season.total)+'</small></button>').join('')||'<div class=ach-empty>当前报告没有活跃赛季。</div>';
+  const maxHistory=Math.max(1,...compared.map(record=>Math.max(record.value,record.prior?.value||0)));document.getElementById('record-sky').innerHTML='<defs><radialGradient id="record-glow"><stop offset="0" stop-color="#fff"/><stop offset=".25" stop-color="#9fc1ff"/><stop offset="1" stop-color="#5b8def" stop-opacity="0"/></radialGradient></defs>'+compared.map((record,index)=>{const seed=almanacHash(record.id),x=42+seed%436,y=35+Math.floor(seed/521)%225,r=record.status==='broken'?7:4+Math.min(3,record.value/maxHistory*8);return '<g class="record-star '+record.status+'" data-record-index="'+index+'" role=button tabindex="'+(index===0?'0':'-1')+'" aria-label="'+esc(record.label+'，'+recordDisplay(record)+'，'+recordStatusLabel(record))+'"><circle class=halo cx="'+x+'" cy="'+y+'" r="'+(r*4)+'"/><circle class=core cx="'+x+'" cy="'+y+'" r="'+r+'"/><text x="'+(x+10)+'" y="'+(y+4)+'">'+esc(record.label)+'</text></g>';}).join('');
+  document.getElementById('record-list').innerHTML=compared.map((record,index)=>'<button type=button data-record-index="'+index+'" tabindex="'+(index===0?'0':'-1')+'" class="record-chip '+record.status+'"><span>'+recordStatusLabel(record)+'</span><b>'+esc(record.label)+'</b><small>'+esc(recordDisplay(record))+'</small></button>').join('');document.getElementById('almanac-privacy').textContent='本地年鉴保存最多 '+ALMANAC_SNAPSHOT_LIMIT+' 份紧凑快照 / 作用域；不保存 cwd、session、标题或逐轮 Token。raw 与脱敏报告、固定日期范围和时区不会互相合并。';
+  seasonCursor=Math.min(seasonCursor,Math.max(0,seasons.length-1));recordCursor=Math.min(recordCursor,Math.max(0,compared.length-1));focusSeason(seasonCursor,false);focusRecord(recordCursor,false);
+}
+function handleAlmanacNav(event,selector,index,activate){const items=[...document.querySelectorAll(selector)];if(!items.length)return;let next=null;if(event.key==='ArrowRight'||event.key==='ArrowDown')next=Math.min(items.length-1,index+1);else if(event.key==='ArrowLeft'||event.key==='ArrowUp')next=Math.max(0,index-1);else if(event.key==='Home')next=0;else if(event.key==='End')next=items.length-1;else if(event.key==='Enter'||event.key===' '){event.preventDefault();activate(index);return;}if(next!=null){event.preventDefault();activate(next);}}
+document.getElementById('season-rail').addEventListener('click',event=>{const button=event.target.closest('[data-season-index]');if(button)focusSeason(Number(button.dataset.seasonIndex),false);});document.getElementById('season-rail').addEventListener('keydown',event=>{const button=event.target.closest('[data-season-index]');if(button)handleAlmanacNav(event,'.season-node',Number(button.dataset.seasonIndex),focusSeason);});
+document.getElementById('record-sky').addEventListener('click',event=>{const node=event.target.closest('[data-record-index]');if(node)focusRecord(Number(node.dataset.recordIndex),false);});document.getElementById('record-sky').addEventListener('keydown',event=>{const node=event.target.closest('[data-record-index]');if(node)handleAlmanacNav(event,'#record-sky [data-record-index]',Number(node.dataset.recordIndex),focusRecord);});document.getElementById('record-list').addEventListener('click',event=>{const node=event.target.closest('[data-record-index]');if(node)focusRecord(Number(node.dataset.recordIndex),false);});document.getElementById('record-list').addEventListener('keydown',event=>{const node=event.target.closest('[data-record-index]');if(node)handleAlmanacNav(event,'#record-list [data-record-index]',Number(node.dataset.recordIndex),focusRecord);});
+document.getElementById('almanac-open').addEventListener('click',openAlmanacCapsule);document.getElementById('almanac-x').addEventListener('click',closeAlmanacCapsule);document.getElementById('almanac-modal').addEventListener('click',event=>{if(event.target.id==='almanac-modal')closeAlmanacCapsule();});document.getElementById('almanac-modal').addEventListener('keydown',event=>{if(event.key==='ArrowLeft'&&event.target.tagName!=='BUTTON'){event.preventDefault();capsuleCursor=Math.max(0,capsuleCursor-1);renderCapsuleStory();}else if(event.key==='ArrowRight'&&event.target.tagName!=='BUTTON'){event.preventDefault();capsuleCursor=Math.min((_almanac?.stories.length||1)-1,capsuleCursor+1);renderCapsuleStory();}trapModalFocus(event,event.currentTarget);});document.getElementById('capsule-prev').addEventListener('click',()=>{capsuleCursor=Math.max(0,capsuleCursor-1);renderCapsuleStory();});document.getElementById('capsule-next').addEventListener('click',()=>{capsuleCursor=Math.min((_almanac?.stories.length||1)-1,capsuleCursor+1);renderCapsuleStory();});
+document.getElementById('almanac-export').addEventListener('click',()=>{const store=readAlmanacStore(),scope=almanacScopeKey(),payload={version:ALMANAC_VERSION,exported_from:DATA.snapshot?.id||null,scope,almanac:store.scopes[scope]||null,privacy:'No cwd, session identifiers, titles, or per-turn series.'};downloadBlob(JSON.stringify(payload,null,2),'application/json;charset=utf-8','token-almanac.json');toast('本地年鉴已导出为 JSON');});document.getElementById('almanac-clear').addEventListener('click',()=>{if(!confirm('只清除 Token 年鉴的本地跨快照历史？主题、模块设置和成就基线不会被删除。'))return;try{localStorage.removeItem(ALMANAC_KEY);}catch(e){}renderAlmanac();toast('Token 年鉴历史已清除，并以当前快照重新建立基线');});
 
 /* ---- 成就徽章（生成器：3000+ 枚，四等 + 隐藏 + 分类折叠）---- */
 function tierFor(i,n){ const r=n<=1?1:i/Math.max(1,n-1); return r>=.85?'prismatic':r>=.6?'gold':r>=.35?'silver':'bronze'; }

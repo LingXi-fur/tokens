@@ -3,6 +3,7 @@ import base64
 import hashlib
 import heapq
 import hmac
+import json
 import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -15,6 +16,8 @@ import report_term
 
 PALETTE = ["#5b8def", "#14b8a6", "#f59e0b", "#a78bfa",
            "#f472b6", "#38bdf8", "#fb923c", "#94a3b8"]
+SNAPSHOT_SCHEMA = 1
+METRIC_SCHEMA = 1
 
 
 class _ReportAliases:
@@ -199,6 +202,46 @@ def _top_sessions(buckets, title_for_session):
         dict(_top_entities(buckets)),
         lambda sid: title_for_session(sid) or str(sid)[:8],
     )
+
+
+def _snapshot_identity(anonymize, sources, since, until, day_periods,
+                       day_acc, first_day, last_day):
+    """Return a deterministic ID built only from identity-free aggregates."""
+    days = []
+    cumulative_session_turns = defaultdict(int)
+    for day, stats in sorted(day_periods.items()):
+        detail = day_acc.get(day, {})
+        achievement = detail.get("achievement", {})
+        for sid, turns in achievement.get("sessions", {}).items():
+            cumulative_session_turns[sid] += turns
+        days.append({
+            "day": day,
+            "total": stats["total"],
+            "calls": stats["calls"],
+            "models": dict(sorted(stats["models"].items())),
+            "hourly": list(detail.get("hourly", [])),
+            "cache_read": detail.get("cache_read", 0),
+            "input": achievement.get("input", 0),
+            "output": achievement.get("output", 0),
+            "cache_write": achievement.get("cache_write", 0),
+            "max_turns": max(cumulative_session_turns.values(), default=0),
+        })
+    canonical = {
+        "snapshot_schema": SNAPSHOT_SCHEMA,
+        "metric_schema": METRIC_SCHEMA,
+        "anonymized": bool(anonymize),
+        "sources": sorted(sources or []),
+        "range": {"since": since, "until": until},
+        "coverage": {"first_day": first_day, "last_day": last_day},
+        "days": days,
+    }
+    encoded = json.dumps(
+        canonical,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
 
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False):
@@ -465,9 +508,27 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "last_day": last_day,
     }
 
+    snapshot = {
+        "snapshot_schema": SNAPSHOT_SCHEMA,
+        "metric_schema": METRIC_SCHEMA,
+        "id": _snapshot_identity(
+            anonymize,
+            sources,
+            since,
+            until,
+            day_periods,
+            day_acc,
+            first_day,
+            last_day,
+        ),
+        "timezone": getattr(config.TZ, "key", str(config.TZ)),
+        "coverage": {"first_day": first_day, "last_day": last_day},
+    }
+
     return {
         "anonymized": anonymize,
         "generated": generated_at.strftime("%Y-%m-%d %H:%M"),
+        "snapshot": snapshot,
         "source": sources or [],
         "range": {"since": since, "until": until},
         "models": models,

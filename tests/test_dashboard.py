@@ -3,6 +3,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -174,6 +175,9 @@ class DashboardTests(unittest.TestCase):
             "achievement_stats", "provenance", "reuse", "day", "week", "month",
         ):
             self.assertEqual(raw[key], anonymized[key], key)
+        self.assertNotEqual(raw["snapshot"]["id"], anonymized["snapshot"]["id"])
+        for key in ("snapshot_schema", "metric_schema", "timezone", "coverage"):
+            self.assertEqual(raw["snapshot"][key], anonymized["snapshot"][key], key)
         self.assertFalse(raw["anonymized"])
 
     def test_anonymized_payload_keeps_missing_identifiers_missing(self):
@@ -221,7 +225,7 @@ class DashboardTests(unittest.TestCase):
             sources=["claude"],
         )
         for key in (
-            "generated", "source", "range", "models", "colors", "hourly",
+            "generated", "snapshot", "source", "range", "models", "colors", "hourly",
             "day_details", "top_cwds", "top_sessions", "session_series",
             "flow", "reuse", "day", "week", "month", "provenance", "achievement_stats",
             "achievement_daily",
@@ -266,6 +270,57 @@ class DashboardTests(unittest.TestCase):
             ],
             payload["achievement_daily"],
         )
+        self.assertEqual(1, payload["snapshot"]["snapshot_schema"])
+        self.assertEqual(1, payload["snapshot"]["metric_schema"])
+        self.assertEqual("Asia/Shanghai", payload["snapshot"]["timezone"])
+        self.assertEqual(
+            {"first_day": "2026-07-01", "last_day": "2026-07-02"},
+            payload["snapshot"]["coverage"],
+        )
+        self.assertRegex(payload["snapshot"]["id"], r"^[0-9a-f]{24}$")
+
+    @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("dashboard_payload.readers.load_session_summaries", return_value={})
+    def test_snapshot_identity_is_deterministic_and_identity_free(
+            self, _summaries, _title, _index):
+        records = self.sensitive_records()
+        with mock.patch("dashboard_payload.datetime") as clock:
+            clock.now.side_effect = [
+                datetime(2026, 7, 10, 10, 0, tzinfo=dashboard_payload.config.TZ),
+                datetime(2026, 7, 11, 10, 0, tzinfo=dashboard_payload.config.TZ),
+            ]
+            first = report_dashboard.build_payload(records, sources=["claude"])
+            second = report_dashboard.build_payload(records, sources=["claude"])
+        self.assertNotEqual(first["generated"], second["generated"])
+        self.assertEqual(first["snapshot"]["id"], second["snapshot"]["id"])
+
+        changed = [dict(item) for item in records]
+        changed[0]["total"] += 1
+        changed_payload = report_dashboard.build_payload(changed, sources=["claude"])
+        self.assertNotEqual(first["snapshot"]["id"], changed_payload["snapshot"]["id"])
+
+        added_turn = [dict(item) for item in records]
+        added_turn.append({
+            **added_turn[0],
+            "ts": "2026-07-01T11:00:00+08:00",
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+        })
+        turns_payload = report_dashboard.build_payload(added_turn, sources=["claude"])
+        self.assertNotEqual(first["snapshot"]["id"], turns_payload["snapshot"]["id"])
+
+        snapshot = json.dumps(first["snapshot"], ensure_ascii=False)
+        for sensitive in (
+            "/private/Users/alice/Customer-Zephyr",
+            "raw-session-7b0fd86f",
+            "Project-",
+            "Session-",
+        ):
+            self.assertNotIn(sensitive, snapshot)
 
     @mock.patch("dashboard_payload.readers.build_session_index", return_value={})
     @mock.patch("dashboard_payload.readers.session_title", return_value="")
@@ -670,7 +725,89 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
         self.assertIn("说明：解析器拒绝的原始事件不在分母；不包含 cwd、session 或逐轮 Token 明细。", template)
 
 
-    def test_achievement_center_structured_progress_and_snapshot_contracts(self):
+    def test_token_almanac_structure_storage_and_accessibility_contracts(self):
+        template = report_dashboard._TEMPLATE
+        for marker in (
+            "Token 年鉴 · 会记得你的 Dashboard",
+            "data-module=almanac",
+            "data-lazy=almanac",
+            "id=section-almanac",
+            "id=season-rail role=listbox",
+            "id=record-sky",
+            "id=almanac-modal",
+            "function deriveSeasons(rows,range={})",
+            "function derivePersonalRecords(rows)",
+            "function writeAlmanacObservation(summary,storage=localStorage,data=DATA)",
+            "function buildCapsuleStories(observation,summary,seasons)",
+            "const ALMANAC_KEY='tk-almanac-v1'",
+            "ALMANAC_SNAPSHOT_LIMIT=24",
+            "不保存 cwd、session、标题或逐轮 Token",
+            "if(!confirm('只清除 Token 年鉴的本地跨快照历史？",
+            ".token-almanac",
+            ":root[data-motion=low] .token-almanac.almanac-awake",
+        ):
+            self.assertIn(marker, template)
+        self.assertIn("almanac:renderAlmanac", template)
+        self.assertIn("almanac:true", template)
+        self.assertIn("else if(modal.id==='almanac-modal')closeAlmanacCapsule()", template)
+        self.assertNotIn("setInterval(()=>renderCapsuleStory", template)
+
+    def test_token_almanac_helpers_cover_seasons_records_and_history(self):
+        script = (ROOT / "dashboard_assets" / "dashboard.js").read_text(encoding="utf-8")
+
+        def extract_function(name):
+            start = script.index(f"function {name}(")
+            paren = script.index("(", start)
+            paren_depth = 0
+            brace = None
+            for index in range(paren, len(script)):
+                if script[index] == "(":
+                    paren_depth += 1
+                elif script[index] == ")":
+                    paren_depth -= 1
+                    if paren_depth == 0:
+                        brace = script.index("{", index)
+                        break
+            self.assertIsNotNone(brace, name)
+            depth = 0
+            for index in range(brace, len(script)):
+                if script[index] == "{":
+                    depth += 1
+                elif script[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return script[start:index + 1]
+            self.fail(name)
+
+        helpers = "\n".join(extract_function(name) for name in (
+            "isoDayNumber", "dayDistance", "seasonCharacter", "finalizeSeason",
+            "deriveSeasons", "bestRecord", "derivePersonalRecords",
+            "almanacScopeKey", "readAlmanacStore", "summarizeAlmanacSnapshot",
+            "compareAlmanacRecords", "writeAlmanacObservation",
+        ))
+        node_script = r'''
+const DATA={anonymized:false,generated:'2026-07-28 12:00',source:['claude'],range:{since:null,until:null},snapshot:{id:'snap-a',metric_schema:1,timezone:'Asia/Shanghai',coverage:{first_day:'2026-06-29',last_day:'2026-07-21'}}};
+const ALMANAC_KEY='tk-almanac-v1',ALMANAC_VERSION=1,ALMANAC_SCOPE_LIMIT=8,ALMANAC_SNAPSHOT_LIMIT=24;
+function longestActiveStreak(rows){const active=new Set(rows.filter(r=>r.total>0).map(r=>r.period));let longest=0,current=0,previous=null;[...active].sort().forEach(period=>{const p=period.split('-').map(Number),day=new Date(p[0],p[1]-1,p[2]);if(previous){const next=new Date(previous);next.setDate(next.getDate()+1);current=next.getFullYear()===day.getFullYear()&&next.getMonth()===day.getMonth()&&next.getDate()===day.getDate()?current+1:1;}else current=1;longest=Math.max(longest,current);previous=day;});return longest;}
+''' + helpers + r'''
+const row=(day,total,calls=1,cache=0)=>({day,total,calls,cache,input:total*.4,output:total*.2,cacheWrite:0,maxTurns:calls,peakHour:10,peakHourValue:total,modelCount:1,models:{m:total}});
+const rows=[row('2026-06-29',100),row('2026-06-30',120),row('2026-07-01',130),row('2026-07-10',200),row('2026-07-11',220),row('2026-07-21',300)];
+const seasons=deriveSeasons(rows,{since:null,until:null});
+if(seasons.length!==4)throw new Error('season split '+seasons.length);
+if(seasons[0].end!=='2026-06-30'||seasons[1].start!=='2026-07-01'||seasons[2].start!=='2026-07-10')throw new Error('season boundaries');
+const boundaryRows=[row('2026-07-01',100),row('2026-07-08',120),row('2026-07-16',140)];const boundarySeasons=deriveSeasons(boundaryRows,{});if(boundarySeasons.length!==2||boundarySeasons[0].end!=='2026-07-08'||boundarySeasons[1].start!=='2026-07-16')throw new Error('seven quiet day boundary');
+const records=derivePersonalRecords(rows);const peak=records.find(r=>r.id==='peak-day-token');if(!peak||peak.value!==300||peak.achievedDay!=='2026-07-21')throw new Error('peak record');
+const ratioRows=[row('2026-07-01',100,1,100),row('2026-07-02',2000,1,1000)];if(derivePersonalRecords(ratioRows).find(r=>r.id==='peak-cache-ratio').achievedDay!=='2026-07-02')throw new Error('ratio floor');
+const memory={value:null,getItem(){return this.value},setItem(k,v){this.value=v}};
+const firstSummary=summarizeAlmanacSnapshot(rows,seasons,records,DATA),first=writeAlmanacObservation(firstSummary,memory,DATA);if(!first.isBaseline||first.isDuplicate)throw new Error('first baseline');
+const duplicate=writeAlmanacObservation(firstSummary,memory,DATA);if(!duplicate.isDuplicate||duplicate.history.length!==0)throw new Error('dedupe');
+DATA.snapshot.id='snap-b';DATA.generated='2026-07-29 12:00';const newerRows=[...rows,row('2026-07-22',500)];const newerRecords=derivePersonalRecords(newerRows),second=writeAlmanacObservation(summarizeAlmanacSnapshot(newerRows,deriveSeasons(newerRows,{}),newerRecords,DATA),memory,DATA);if(second.isBaseline||!second.comparison.some(r=>r.id==='peak-day-token'&&r.status==='broken'))throw new Error('record comparison');
+memory.value='{bad';if(readAlmanacStore(memory).v!==1)throw new Error('malformed storage');
+if(almanacScopeKey({...DATA,anonymized:true})===almanacScopeKey(DATA))throw new Error('raw anon scope');
+'''
+        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        self.assertEqual(0, result.returncode, result.stderr)
+
         template = report_dashboard._TEMPLATE
         for marker in (
             "Achievement Center · 成就中心",
