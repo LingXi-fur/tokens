@@ -15,7 +15,195 @@ function decodeWire(wire){
   return decode(wire.d);
 }
 const DATA = decodeWire(WIRE);
-const state = { gran: 'month', models: new Set(DATA.models), focusPeriod:null, compare:false, numberMode:0 };
+const I18N_EXACT = Object.freeze({
+  '点我有惊喜':'Click for a surprise','点我':'Click me','Token 用量':'Token Usage','查看数据可信度':'View data provenance','数据体检 —':'Data Health —','用量状态计算中':'Calculating usage status','状态 —':'Status —','切换主题':'Switch theme','主题：自动':'Theme: Auto','环境动效强度':'Ambient motion intensity','动效 · 自动':'Motion · Auto','动效 · 完整':'Motion · Full','动效 · 克制':'Motion · Low','动效 · 关闭':'Motion · Off','模块开关':'Module settings','显示模块':'Visible Modules','作息时钟':'Activity Clock','趣味换算':'Fun Conversions','5h 计费块':'5h Usage Blocks','每天趋势':'Daily Trend','作息织锦':'Activity Tapestry','每模型趋势':'Per-model Trend','数据可信度':'Data Provenance','项目透镜':'Project Lens','复用之河':'Reuse River','Token 流光图':'Token Flow Map','Token 生物':'Token Creature','柱图竞赛':'Bar Chart Race','今日运势':'Daily Fortune','Token 年鉴':'Token Almanac','成就徽章':'Achievements','Token 星云':'Token Nebula','Top 榜':'Top Lists','Dashboard 区域导航':'Dashboard section navigation','总览':'Overview','趋势':'Trend','体检':'Health','年鉴':'Almanac','项目':'Projects','节奏':'Rhythm','复用':'Reuse','流光':'Flow','成就':'Achievements','查看当前视图状态':'View current state','月 · 全部模型 · 全景':'Month · All models · Overview','Current View · 当前视图':'Current View','⧉ 复制视图链接':'⧉ Copy view link','↺ 恢复全景':'↺ Reset view','Signal Dock 信号坞':'Signal Dock','悬停或聚焦数据以 Peek':'Hover or focus data to Peek','还没有选择信号':'No signal selected','清除固定信号':'Clear pinned signal','模型、周期、项目与会话可以先 Peek；固定 Pin 后，继续比较兼容的本地聚合证据。':'Peek models, periods, projects, and sessions. Pin one to compare compatible local aggregate evidence.','未固定信号':'No pinned signal','悬停或聚焦以查看':'Hover or focus to inspect','固定后再 Peek 一个兼容信号':'Pin, then Peek a compatible signal','选择一个信号':'Select a signal','按住 Alt / Option 临时查看精确值':'Hold Alt / Option to reveal exact values','⌥ 精确层':'⌥ Exact values','数据气候计算中':'Calculating data climate','正在读取你的本地 Token 气压、活跃时段与缓存云层。':'Reading local Token pressure, active hours, and cache patterns.','相对近况':'Recent baseline','数据侦探，点击切换洞察':'Data Detective; click to cycle insights','YOU MAY NOT HAVE NOTICED · 数据侦探':'YOU MAY NOT HAVE NOTICED · DATA DETECTIVE','正在寻找藏在数字之间的线索……':'Looking for patterns hidden between the numbers…','所有发现均由本地数据计算，不调用 AI。':'All insights are computed locally without AI.','固定当前洞察':'Pin current insight','◇ 固定':'◇ Pin','换一条发现':'Show another insight','↻ 换一条':'↻ Next insight','沿当前范围开始数据寻迹（I）':'Start a Data Trail for the current scope (I)','⌁ 开始寻迹':'⌁ Start Trail','退出回看（Esc）':'Exit time probe (Esc)','退出时光探针':'Exit time probe','数据寻迹':'Data Trail','沿当前范围检查模型、项目、会话与 Context 证据；不会改变筛选，除非你明确选择。':'Inspect model, project, session, and context evidence in the current scope. Filters change only when you explicitly choose.','← 上一步':'← Back','关闭数据寻迹':'Close Data Trail','关闭':'Close','数据寻迹步骤':'Data Trail steps','总 token':'Total tokens','复制总 Token 精确值':'Copy exact total Token value','复制精确值':'Copy exact value','缓存命中 · Read':'Cache share · Read','调用次数':'Calls','命中模型数':'Models used','主力模型':'Primary model','粒度与筛选':'Granularity & Filters','统计粒度':'Aggregation granularity','按日':'Daily','按周':'Weekly','按月':'Monthly','模型筛选':'Model filters','全选':'Select all','清空':'Clear','撤销':'Undo','每期 token（按模型堆叠）':'Tokens per period (stacked by model)','按住预览上一期轮廓；点击固定对比':'Hold to preview the prior period; click to pin comparison','◫ 按住对比':'◫ Hold to Compare','拖动或用方向键预览 · Enter / Space / 点击提交':'Drag or use arrow keys to preview · Enter / Space / click to commit','数据可信度实验室 · DATA PROVENANCE':'DATA PROVENANCE LAB','解释这份快照能支持哪些分析，以及某些视图为什么可能稀疏':'Explains which analyses this snapshot supports and why some views may be sparse','复制体检摘要':'Copy health summary','Token 年鉴 · 会记得你的 Dashboard':'Token Almanac · Local Dashboard Memory','赛季、个人纪录与时间胶囊只由本地聚合快照生成；这是个人历史，不是全球排名。':'Seasons, personal records, and time capsules come only from local aggregate snapshots. This is personal history, not a global ranking.','✦ 打开时间胶囊':'✦ Open Time Capsule','导出年鉴':'Export Almanac','清除本地年鉴':'Clear Local Almanac','赛季星图':'Season Atlas','Token 赛季，使用方向键浏览':'Token seasons; use arrow keys to browse','个人纪录天文台':'Personal Record Observatory','全部模型 · 当前报告作用域':'All models · Current report scope','个人纪录星图':'Personal record star map','🏆 Achievement Center · 成就中心':'🏆 Achievement Center','解锁日期以本报告范围为界；阶位表示图鉴门槛，不代表全球用户稀有度':'Unlock dates are bounded by this report. Tiers describe catalog thresholds, not global rarity.','LAST UNLOCK · 最近解锁':'LAST UNLOCK','最近达成':'Recent Unlocks','距离最近的目标':'Nearest Goals','每个阶梯只推荐下一枚':'Only the next goal in each track is recommended','收藏与阶位':'Collection & Tiers','📜 查看完整图鉴与详情 →':'📜 View Full Catalog & Details →','项目透镜 · Project Lens':'Project Lens','追踪一个项目在当前粒度、模型筛选与时光探针下的 Token 轨迹':'Track one project across the current granularity, model filters, and time probe','选择项目':'Select project','项目 Token 趋势':'Project Token trend','项目趋势明细，可横向滚动':'Project trend details; horizontally scrollable','趣味换算 · 你的 token 约等于':'Fun Conversions · Your tokens are roughly','换一组':'Shuffle','🎲 换一组':'🎲 Shuffle','5h 计费窗口 · 近 5 小时':'5h Usage Window · Recent 5 Hours','每天 · 近 14 天':'Daily · Recent 14 Days','作息织锦 · 14 天 × 24 小时':'Activity Tapestry · 14 Days × 24 Hours','每一个方格，都是一小时留下的算力纹理':'Each cell represents one hour of Token activity','静':'Quiet','沸':'Peak','今日 token 运势':'Today’s Token Fortune','作息时钟 · 什么时段最肝':'Activity Clock · Peak Hours','每根辐条 = 一小时的 token 量 · 高亮为峰值':'Each spoke = one hour of tokens · Highlight marks the peak','模型占比':'Model Share','Context Reuse River · 上下文复用之河':'Context Reuse River','Input / Output / Cache Read / Cache Write 随时间流动，观察上下文何时开始被记住':'Input / Output / Cache Read / Cache Write over time, showing when context starts being reused','上下文复用构成随时间变化':'Context reuse composition over time','悬停或用方向键检查每一期的 Token 构成。':'Hover or use arrow keys to inspect each period’s Token composition.','Token 流光图 · 项目 → 模型 → 会话':'Token Flow Map · Project → Model → Session','光带宽度对应真实 Token 流量；悬停或聚焦 Peek，点击 Pin 到 Signal Dock':'Band width represents actual Token flow. Hover or focus to Peek; click to Pin in Signal Dock.','保存当前流光图为 SVG':'Save current flow map as SVG','保存 SVG':'Save SVG','项目到模型再到会话的 Token 流光图':'Token flow from projects to models to sessions','悬停或聚焦节点查看真实流向，点击项目或模型可锁定链路。':'Hover or focus nodes to inspect actual flow; click a project or model to lock the path.','Token 生物 · 你的数字生命':'Token Creature · Your Digital Life','每模型趋势 · 日':'Per-model Trend · Daily','柱图竞赛 · 累计 token':'Bar Chart Race · Cumulative Tokens','▶ 播放':'▶ Play','柱图竞赛日期位置':'Bar chart race date position','明细':'Details','下载当前明细为 Markdown':'Download current details as Markdown','◇ 导出 MD':'◇ Export MD','下载当前明细为 CSV':'Download current details as CSV','⤓ 导出 CSV':'⤓ Export CSV','Token 明细，可横向滚动':'Token details; horizontally scrollable','Token 星云 · 你的数据深空':'Token Nebula · Your Data Deep Space','24 小时形成星云旋臂 · 模型化作彩色星团 · 缓存点亮中央星核':'24 hours form spiral arms · Models become colored clusters · Cache lights the core','📥 收藏这片星云':'📥 Save This Nebula','Top 项目 / 会话':'Top Projects / Sessions','烧 token 的项目（cwd）':'Projects by tokens (cwd)','烧 token 的会话':'Sessions by tokens','✦ 生成 Token 护照':'✦ Generate Token Passport','▤ 打印 Token 收据':'▤ Print Token Receipt','返回数据宇宙顶部':'Return to the top','返回顶部':'Back to top','Token 分享卡':'Token share card','关闭分享卡':'Close share card','保存为 HTML':'Save as HTML','命令面板':'Command palette','输入命令或搜索…（例如：月、暗、导出）':'Type a command or search… (for example: month, dark, export)','关闭时间胶囊':'Close time capsule','来自过去快照的数据来信':'A Message from Past Snapshots','← 上一页':'← Previous','下一页 →':'Next →','🏆 成就图鉴':'🏆 Achievement Catalog','搜索成就':'Search achievements','搜索 2000+ 成就（名称/描述/分类）…':'Search 2,000+ achievements (name, description, category)…','筛选成就':'Filter achievements','全部':'All','已解锁':'Unlocked','未解锁':'Locked','隐藏':'Hidden','青铜':'Bronze','白银':'Silver','黄金':'Gold','彩钻':'Prismatic','庆祝成就进度':'Celebrate achievement progress','选择一枚成就查看状态、日期、目标与图鉴阶位。':'Select an achievement to inspect status, date, target, and catalog tier.','快捷键与交互说明':'Keyboard Shortcuts & Interaction Guide','关闭快捷键帮助':'Close keyboard shortcuts','切换日 / 周 / 月':'Switch day / week / month','打开命令面板':'Open command palette','切换主题':'Switch theme','导出当前 CSV':'Export current CSV','退出时光探针 / 关闭弹层':'Exit time probe / close overlay','打开本帮助':'Open this guide','数据侦探前后切换':'Cycle Data Detective insights','流光节点锁定 / 回放':'Pin flow node / replay','浏览年鉴赛季 / 胶囊章节':'Browse Almanac seasons / capsule chapters','打开赛季 / 纪录详情':'Open season / record details','打开 / 返回数据寻迹':'Open / return to Data Trail','寻迹步骤前后移动':'Move between trail steps','寻迹选项浏览':'Browse trail options','选择线索 / 打开证据':'Select clue / open evidence','寻迹返回上一步':'Go back one trail step','先关闭寻迹，再退出时光探针':'Close Data Trail before exiting the time probe','悬停 / 聚焦 · 点击':'Hover / focus · click','清除 Pin / 精确层':'Clear Pin / exact layer','临时显露精确值与分母':'Temporarily reveal exact values and denominators','按住 ⌥ Alt':'Hold ⌥ Alt','临时查看上一期轮廓':'Temporarily view prior-period outline','按住 C':'Hold C','固定 / 取消上一期对比':'Pin / unpin prior-period comparison','点击“按住对比”':'Click “Hold to Compare”','点击 · 全选 / 清空 / 撤销':'Click · select all / clear / undo','复制总 Token 精确值':'Copy exact total Token value','⧉ 复制按钮':'⧉ Copy button','会话回放':'Session Replay','会话回放轮次':'Session replay turn','无数据':'No data','暂无足够数据':'Not enough data yet','当前范围没有记录':'No records in the current scope','没有选择模型':'No models selected','当前时光探针没有活动':'No activity in the current time probe','当前日志缺少所需字段':'Required fields are missing from current logs','当前范围没有可显示数据':'No displayable data in the current scope','恢复全部模型':'Restore all models','查看数据体检':'View data health','自动':'Auto','亮色':'Light','暗色':'Dark','全景':'Overview','已固定':'Pinned','临时预览':'Preview','全部模型':'All models','时光探针':'Time Probe','时间范围':'Date range','已恢复月度全景':'Monthly overview restored','当前视图链接已复制':'Current view link copied','复制失败，请从地址栏复制':'Copy failed; copy from the address bar','精确层已固定':'Exact values pinned','精确层已取消固定':'Exact values unpinned','幻影对比已固定':'Prior-period comparison pinned','幻影对比已取消':'Prior-period comparison unpinned','正在临时预览上一期轮廓':'Previewing the prior-period outline','已复制':'Copied','复制失败':'Copy failed','调用':'Calls','Markdown 报告已生成':'Markdown report generated','分享卡已保存为 HTML':'Share card saved as HTML','当前范围':'Current scope','模型线索':'Model clue','证据分支':'Evidence branch','深入模块':'Open module','当前全景':'Current overview','无可比较上一期':'No comparable prior period','先选择一个模型线索。':'Select a model clue first.','范围':'Scope','粒度':'Granularity','模型覆盖':'Model coverage','调用记录':'Call records','项目证据':'Project evidence','会话证据':'Session evidence','Context 证据':'Context evidence','当前不可用':'Unavailable','证据边界':'Evidence boundary','需要 Pin 与 Peek 两个信号':'Pin and Peek are both required','混合类型仅并排查看，不计算 Delta':'Mixed types are shown side by side without Delta','同类型本地聚合可比较':'Same-type local aggregates are comparable','模型':'Model','周期':'Period','信号':'Signal','起始':'Start','至今':'Present','当前筛选无观察值':'No observations under current filters','无上一期':'No prior period','无百分比变化':'No percentage change','无上一期绝对变化':'No prior-period absolute change','无上一期百分比变化':'No prior-period percentage change','无模型构成':'No model composition','当前探针范围':'Current probe scope','当前报告范围':'Current report scope','最多最近 200 轮':'Most recent 200 turns maximum','完整保留序列':'Complete retained series','横轴是轮次，不代表耗时':'Horizontal axis is turn number, not elapsed time','未触及 200 轮边界':'Did not reach the 200-turn limit','回放不按模型或时光探针裁剪':'Replay is not clipped by model or time probe','当前信号没有可比较 Token 聚合':'Current signal has no comparable Token aggregate','缺少可比较聚合':'No comparable aggregate','Peek 相对 Pin':'Peek relative to Pin','只看此模型':'Show only this model','打开会话回放':'Open Session Replay','本地上下文':'Local context','当前范围信号':'Current-scope signal','已清除 Pin':'Pin cleared','已退出时光探针':'Time probe exited','已恢复全部模型':'All models restored','跟随系统主题':'Follow system theme','亮色主题':'Light theme','暗色主题':'Dark theme','导出 CSV':'Export CSV','导出 Markdown':'Export Markdown','查看快捷键与交互说明':'View keyboard shortcuts and interaction guide','播放柱图竞赛':'Play bar chart race','打开模块开关':'Open module settings','无匹配结果 · 试试 whoami、42、matrix、coffee':'No matches · Try whoami, 42, matrix, or coffee','范围快照':'Scope snapshot','日期未知':'Date unknown','缺少可比较的日期范围':'No comparable date range','刚刚同步':'Just synced','最后数据日与生成日一致':'Last data day matches generation day','近期快照':'Recent snapshot','历史快照':'Historical snapshot','等待数据':'Waiting for data','当前范围没有可体检的已解析记录。':'No parsed records to inspect in the current scope.','项目透镜':'Project Lens','会话回放':'Session Replay','作息分析':'Activity Analysis','复用之河':'Reuse River','流光关系':'Flow Relationships','当前范围缺少所需数据。':'Required data is unavailable in the current scope.','时间戳':'Timestamps','项目字段':'Project fields','会话字段':'Session fields','标准化组成字段':'Normalized composition fields','已解析记录':'Parsed records','回放保留':'Replay retention','当前筛选下无项目':'No projects under current filters','项目 Token':'Project Tokens','当前占比':'Current share','活跃期':'Active periods','峰值期':'Peak period','范围内首次观察':'First observed in scope','主力模型':'Primary model','当前筛选没有可导出的流向':'No exportable flow under current filters','当前流光图已保存为 SVG':'Current flow map saved as SVG','Token 生物已保存':'Token Creature saved','数据不足':'Insufficient data','截至':'Through','最高 Token 日':'Highest-token day','最活跃时刻':'Most active hour','▶ 播放':'▶ Play','⏸ 暂停':'⏸ Pause','至少需要两期数据才能计算状态':'At least two periods are required to calculate status','升温':'Rising','此前均值为 0，本期出现新活动':'Prior average was zero; new activity appeared this period','平稳':'Steady','本期与此前均值均为 0':'Both this period and the prior average are zero','降温':'Falling','数据体检摘要已复制':'Data health summary copied','继续':'Continue','开始':'Start','跳转 · 总览':'Go to · Overview','跳转 · 趋势':'Go to · Trend','跳转 · 数据可信度实验室':'Go to · Data Provenance Lab','跳转 · Token 年鉴':'Go to · Token Almanac','打开 · 数据时间胶囊':'Open · Data Time Capsule','跳转 · 项目透镜':'Go to · Project Lens','跳转 · 节奏':'Go to · Rhythm','跳转 · Context Reuse River':'Go to · Context Reuse River','跳转 · Token 流光图':'Go to · Token Flow Map','跳转 · 成就':'Go to · Achievements','跳转 · Top':'Go to · Top','下一个数据时刻':'Next data moment','当前筛选没有可回看的数据时刻':'No data moments under current filters','切换幻影对比':'Toggle prior-period comparison','复制当前视图链接':'Copy current view link','换一组趣味换算':'Shuffle fun conversions','成就未找到':'Achievement not found','不可用':'Unavailable','当前报告没有可划分的活跃赛季。':'No active seasons can be derived from this report.','当前范围没有可重建的个人纪录。':'No personal records can be reconstructed in the current scope.','日期不可还原':'Date cannot be reconstructed','本地年鉴已导出为 JSON':'Local Almanac exported as JSON','Token 年鉴历史已清除，并以当前快照重新建立基线':'Token Almanac history cleared; current snapshot is now the new baseline','图鉴':'Catalog','阶位':'Tier','来源':'Source','已解锁':'Unlocked','未解锁':'Locked','隐藏成就，达成自动揭晓':'Hidden achievement; revealed when unlocked','本地快照收藏':'Local snapshot collection','最早':'Earliest','最新':'Latest','当前报告全部数据':'All data in current report','还没有可展示的已解锁成就。':'No unlocked achievements to display yet.','当前聚合快照无法还原精确达成日期。':'The current aggregate snapshot cannot reconstruct exact unlock dates.','当前没有适合推荐的单调目标。':'No suitable monotonic goals to recommend.','已解锁':'Unlocked','最高阶位':'Highest tier','图鉴总数':'Catalog total','尚未达成':'Not unlocked yet','当前显示':'Currently shown','个分类':'categories','总图鉴':'Catalog total','展开分类时按需渲染':'Categories render on demand when expanded','该会话无逐轮数据':'No per-turn data for this session','（最近 200 轮）':'(most recent 200 turns)','轮':'turn','当前轮':'Current turn','累计':'Cumulative','累计占比':'Cumulative share','Token 晴朗':'Token Clear','用量平稳，算力气压舒适。今天适合把注意力留给代码本身。':'Usage is steady and Token pressure is comfortable. A good time to focus on the code.','稳定':'Stable','tk · 紧凑显示':'tk · compact','已选':'Selected','个模型 · 覆盖':'models · coverage','实体分析较完整':'Strong entity coverage','在已解析记录中，时间、项目、会话和标准化 Token 组成字段可用性较高。':'Parsed records have strong coverage for time, project, session, and normalized Token composition.','每个会话最多保留最近 200 轮':'Each session retains at most the most recent 200 turns','Claude total 由 input、output、cache read/write 组成；通常保留 cwd 与 session。':'Claude totals include input, output, cache read, and cache write; cwd and session are usually available.','一行代码':'one line of code','一条推文':'one post','一首流行歌词':'one pop-song lyric','近 6 个小时桶（按生成时刻往前）':'Recent 6 hourly buckets (counting back from generation time)','日间稳定型':'Daytime Steady','算力主要沿着白昼平稳展开。':'Token activity is spread steadily through daylight hours.','末吉':'Minor Luck','运势':'Fortune','宜':'Do','忌':'Avoid','宜喝口水':'Drink water','忌不留缓存':'Discarding all cache','token 如流水，缓存尚可留。':'Tokens flow like water; useful cache can remain.','峰值时段':'Peak hour','算力最常在':'Activity most often peaks at','亮起。':'peaks.','最近 14 天每小时 Token 作息织锦':'Hourly Token activity tapestry for the recent 14 days','每小时 token 分布':'Hourly Token distribution','需要已解析记录包含 cwd 项目路径':'Requires parsed records with cwd project paths','需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中':'Requires parsed records attributable to sessions with per-turn values retained in replay','需要已解析记录含可解析时间戳':'Requires parsed records with parseable timestamps','需要标准化 input/output/cache read/cache write 组成字段可用':'Requires normalized input/output/cache read/cache write composition fields','需要已解析记录包含项目或会话 identity':'Requires parsed records with project or session identity'
+});
+const I18N_CORE_EXACT = Object.freeze({
+  '月份':'Month','已解析记录':'parsed records','· 算力主要沿着白昼平稳展开。':'· Token activity is spread steadily through daylight hours.','自动':'Auto'
+});
+const I18N_LABS_EXACT = Object.freeze({
+  'FIRST OBSERVATION · 初次装订':'FIRST OBSERVATION · BASELINE','年鉴已安静地记住这份快照':'The Almanac quietly saved this snapshot','首次打开只建立基线，不会把旧数据假装成刚刚发生。下一份不同快照到来时，时间胶囊才会回信。':'The first visit only establishes a baseline; old data is never presented as newly occurring. The time capsule responds after a different snapshot arrives.','月界或 ≥7 日静默切季':'A month boundary or ≥7 silent days starts a new season','初生':'Dawn','最长连续活跃':'Longest active streak','单会话累计轮数':'Most turns in one session','单日缓存量峰值':'Daily cache-read peak','单日调用峰值':'Daily call peak','单日输入峰值':'Daily input peak','单日输出峰值':'Daily output peak','单日 Token 峰值':'Daily Token peak','单小时峰值':'Hourly peak','单日模型多样性':'Daily model diversity','首次观察':'First observed','报告范围开始时已在保持':'Already held at report start','本地快照收藏':'Local snapshot collection','小成':'Early Progress','摸鱼':'Getting Started','顺手':'Comfortable','坚持':'Persistent','起步':'First Steps','连胜':'Streak','上手':'Getting the Hang of It','熟练':'Proficient','图鉴青铜阶位':'Bronze catalog tier','还差':'Remaining','图鉴阶位与“该阶梯前 X% 门槛”只描述本地目录中的门槛位置，不是全球用户稀有度。':'Catalog tiers and “top X% of thresholds” describe positions within the local catalog only, not global user rarity.','总 Token':'Total Tokens','静默·微光幼体':'Quiet · Glimmerling','由总量、模型、项目、缓存与作息共同塑形 · 每份数据只会诞生这一只':'Shaped by total usage, models, projects, cache, and activity rhythm · Each dataset creates a unique creature','形态':'Form','进化阶段':'Evolution stage','模型触须':'Model tendrils','项目星斑':'Project marks','晶核纯度':'Core purity','夜行倾向':'Night tendency','生命年轮':'Life rings','个星团':'clusters','模型光谱':'Model spectrum','最亮轨道':'Brightest orbit','星核亮度':'Core brightness','按':'Press','复制项目 Token 精确值':'Copy exact project Token value','次':'calls','种':'models','轮':'turns','· 全景':'· Overview','幻影对比':'Prior-period comparison','· 关闭':'· Off','数据时刻已并入趋势注释轨道；悬停、聚焦或固定一个信号，可查看跨模块上下文。':'Data moments now appear on the trend annotation rail. Hover, focus, or pin a signal to inspect cross-module context.','宜重构':'Refactor','忌动数据库':'Avoid database changes','重构像减肥，明天再说。':'Refactoring is like dieting: tomorrow will do.','悬停 Peek · 点击 Pin 信号':'Hover to Peek · Click to Pin','① 悬停或聚焦 Peek　② 点击 Pin 到 Signal Dock　③ 在信号坞中选择深入动作':'① Hover or focus to Peek　② Click to Pin in Signal Dock　③ Choose a deeper action in the dock','单日峰值':'Daily peak','连续天数':'Consecutive days','累计活跃天':'Total active days','活跃小时数':'Active hours','模型种类':'Model count','项目足迹':'Project footprint','会话数量':'Session count','缓存命中':'Cache share','缓存读取量':'Cache read volume','单会话轮数':'Turns per session','日均 token':'Daily average tokens','累计输入':'Total input','累计输出':'Total output','缓存写入':'Cache writes','每次调用密度':'Tokens per call','每日调用密度':'Calls per day','平均会话体量':'Average session size','会话中位数':'Median session size','最大会话':'Largest session','每日会话密度':'Sessions per day','平均项目体量':'Average project size','最大项目':'Largest project','夜猫指数':'Night-owl index','晨光指数':'Morning index','工时集中度':'Work-hour concentration','黄昏指数':'Evening index','波动指数':'Volatility index','增长连击':'Growth streak','回落连击':'Decline streak','近期加速度':'Recent acceleration','七日均值':'Seven-day average','三十日均值':'Thirty-day average','活跃小时跨度':'Active-hour span','活跃小时均值':'Average active hour','主力模型占比':'Primary-model share','模型专注指数':'Model focus index','星期时空坐标':'Weekday coordinates','月份四时':'Seasonal months','模型时段羁绊':'Model-time affinity','复合炼金术':'Composite alchemy','时刻战士':'Time-of-day warrior','星期人格':'Weekday persona','月份里程碑':'Monthly milestones','模型图鉴':'Model catalog','奇思妙想 · 隐藏':'Curiosities · Hidden','枚':'items','时间胶囊已建立基线':'Time capsule baseline established','这是本设备在当前作用域第一次观察这份年鉴。等下一份不同快照到来后，它才会展开真实的前后变化。':'This is the first Almanac observation for the current scope on this device. It will show real changes after a different snapshot arrives.','没有伪造过去':'No fabricated history','本页装载了':'This page holds','Token 的痕迹。':'traces of Tokens.','本地数据宇宙居民':'Resident of the local data universe','及格':'On Track','晨光启动型':'Morning Starter','· 大部分算力在清晨苏醒，像一台提前预热的机器。':'· Most Token activity wakes early, like a machine warmed up before the day begins.','范围末端仍活跃':'Active through the end of the range','起点为报告边界':'Starts at the report boundary','终点为报告边界':'Ends at the report boundary'
+});
+
+const I18N_REPLACEMENTS = Object.freeze([
+['当前来源：','Current sources: '],['起始','Start'],['至今','Present'],['最后数据距生成日 ','Last data is '],['分母仅包含读取器已经接受并标准化的记录','The denominator includes only records accepted and normalized by readers'],['被解析器拒绝的原始事件不在其中','Raw events rejected by parsers are excluded'],['本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证','This does not guarantee absolute completeness or accuracy of raw logs, privacy, or security'],['已解析记录','parsed records'],['算力主要沿着白昼平稳展开','Token activity is spread steadily through daylight hours'],['点击查看数据可信度','Click to view data provenance'],['至少需要两期数据才能计算状态','At least two periods are required to calculate status'],['新观察项目 ','Newly observed project '],['需要已解析记录包含 cwd 项目路径','Requires parsed records with cwd project paths'],['需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中','Requires parsed records attributable to sessions with per-turn values retained in replay'],['需要已解析记录含可解析时间戳','Requires parsed records with parseable timestamps'],['需要标准化 input/output/cache read/cache write 组成字段可用','Requires normalized input/output/cache read/cache write composition fields'],['需要已解析记录包含项目或会话 identity','Requires parsed records with project or session identity'],[' · 自包含 HTML，离线可用 · 亮/暗随系统 · 按 ',' · Self-contained HTML · Works offline · Light/dark follows system · Press '],[' 唤起命令面板',' to open the command palette'],['随时打开 · 所有操作都在本地完成','to open anytime · Everything stays local'],['期 · 拖动或用方向键预览 · Enter / Space / 点击提交',' periods · Drag or use arrow keys to preview · Enter / Space / click to commit'],[' · Enter / Space / 点击提交',' · Enter / Space / click to commit'],['预览 ','Preview '],['。提交后进入时光探针。','. Commit to enter the time probe.'],['正在预览 ','Previewing '],[' tk · 松开仍为预览，点击或按 Enter 提交',' tk · Release to keep previewing; click or press Enter to commit'],[' · 尚未提交',' · Not committed'],[' · 主力 ',' · Primary '],['% 环比','% vs prior'],['预计月末 ','Projected month-end '],['%进度','% elapsed'],['上一期 ','Prior period '],['，峰值',', peak'],['，当前时光探针',', current time probe'],['，按 Enter 回看',', press Enter to inspect'],['▲峰值 ','▲ Peak '],['点击提交回看 ','Click to inspect '],['数据时刻，','Data moment, '],['，按 Enter 回看 ',']; press Enter to inspect '],[' 个模型',' models'],['已选 <b>','Selected <b>'],['</b> 个模型','</b> models'],['覆盖 <b>','Coverage <b>'],['点击切换模型筛选','Click to toggle model filter'],['已选择全部模型','All models selected'],['已清空模型筛选','Model filters cleared'],['已撤销上一次模型筛选','Previous model filter restored'],['主力 ','Primary '],[' · 当前模型筛选构成',' · Current model-filter composition'],['当前回看期 · ','Current probe period · '],['按当前模型筛选重新计算 Top · 悬停 Peek，点击 Pin 后从 Signal Dock 深入','Top lists recomputed for current model filters · Hover to Peek; Pin to explore from Signal Dock'],['最猛烈的一天是 ','Your highest-token day was '],['，单日燃烧 ', ', with '],['相当于日均值的 ','That is '],[' 倍','× the daily average'],['就贡献了全部 Token 的 ',' contributed '],['你的算力生物最喜欢在 ','Your activity peaks around '],['这个小时累计 ','This hour accumulated '],['夜色承载了你 ','Nighttime accounts for '],['% 的 Token','% of Tokens'],[' 是你的主力引擎，独自承载 ',' is your primary engine, handling '],['你使用过 ','You used '],[' 种模型',' models'],['累计 ','Cumulative '],['缓存占比 ','Cache share '],['最近七天的日均 Token 比此前七天 ','The recent seven-day Token average is '],[' 个会话',' sessions'],['所有发现均由本地数据计算。','All insights are computed locally.'],[' · 当前洞察已固定',' · Insight pinned'],['◆ 已固定','◆ Pinned'],['当前洞察已固定，取消固定后可切换','Current insight is pinned; unpin it to cycle'],['纯本地生成 · 没有任何数据离开这台电脑。','Generated locally · No data left this computer.'],[' 枚成就',' achievements'],['生成于 ','Generated at '],[' · 脱敏导出（标识已替换）',' · Pseudonymized export (identifiers replaced)'],['项目路径、会话标识与自然语言标题已替换；精确日期、Token、模型与逐轮序列仍保留。','Project paths, session identifiers, and natural-language titles are replaced; exact dates, Tokens, models, and per-turn series remain.'],['主题：','Theme: '],['（点击切换）','(click to switch)'],['本地生成于 ','Generated locally at '],['，未上传任何数据。', '; no data was uploaded.'],['数据还在沉睡，等第一批 Token 落下后，故事会从这里开始。','No Token data yet. The story starts here after the first records arrive.'],['调整日期范围或来源后重新生成报告。','Regenerate the report after adjusting the date range or sources.'],['恢复模型后可重新计算当前视图。','Restore models to recalculate the current view.'],['退出回看后查看完整范围。','Exit the time probe to view the full scope.'],['尝试调整日期范围、来源或模型筛选。','Try adjusting the date range, sources, or model filters.'],['达到 ','Reached '],['当前范围与时光探针下的完整模型聚合；Pin 不会修改模型筛选。','Complete model aggregate under the current scope and time probe. Pinning does not change model filters.'],[' 条调用记录',' calls'],['分子 ','Numerator '],[' / 分母 ',' / denominator '],[' 个模型分量',' model components'],[' 轮已保留',' retained turns'],['保留边界：最近 200 轮','Retention boundary: most recent 200 turns'],['已 Pin ','Pinned '],['模型线索已选择：','Model clue selected: '],['已展开','Opened '],['证据。',' evidence.'],['统计粒度已切换为 ','Granularity changed to '],['当前占比','Current share'],['活跃期','Active periods'],['峰值期','Peak period'],['范围内首次观察','First observed in scope'],[' 个项目',' projects'],[' 个会话',' sessions'],[' 条真实流向',' actual flows'],[' Token，占比 ',' Tokens, share '],['当前筛选总量 ','current filtered total '],['截至 ','Through '],['，第 ', ', period '],[' 期',''],['最后一期 ','Latest period '],[' Token；此前均值 ',' Tokens; prior average '],['；', '; '],[' · 点击查看趋势',' · Click to view trend'],[' 个活跃日',' active days'],[' 个自然日',' calendar days'],['峰值 ','Peak '],['主力占比 ','Primary share '],['最长连续 ','Longest streak '],[' 天',' days'],['本报告范围内记录于 ','Recorded within this report on '],[' · 比此前高 ',' · Above prior by '],[' 个章节',' chapters'],[' 份紧凑快照',' compact snapshots'],['不保存 cwd、session、标题或逐轮 Token。','No cwd, session identifiers, titles, or per-turn Tokens are stored.'],['当前 <b>','Current <b>'],['</b> / 目标 <b>','</b> / target <b>'],[' · 还差 <b>',' · remaining <b>'],[' 枚已解锁成就',' unlocked achievements'],[' token · 横轴为轮次，不代表真实耗时',' tokens · Horizontal axis is turn number, not elapsed time'],['第 ','Turn '],[' 轮，', ', '],[' Token，累计 ',' Tokens, cumulative '],[' tk</span><span>累计 ',' tk</span><span>Cumulative ']
+]);
+const I18N_PATTERNS = Object.freeze([
+  [/^(\d{1,2})月(\d{1,2})日星期([一二三四五六日])$/,(_,month,day,weekday)=>`${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']['一二三四五六日'.indexOf(weekday)]}, ${month}/${day}`],
+  [/^(\d{4}-\d{2}-\d{2}) · ([\d,.]+) tk（([\d,.]+) 次）$/,(_,date,tokens,calls)=>`${date} · ${tokens} tk (${calls} calls)`],
+  [/^模型 (.+)，([\d,.]+) Token，点击或按 Enter Pin 到 Signal Dock$/,(_,name,tokens)=>`Model ${name}, ${tokens} Tokens; click or press Enter to Pin in Signal Dock`],
+  [/^项目 (.+)，([\d,.]+) Token，点击或按 Enter Pin 到 Signal Dock$/,(_,name,tokens)=>`Project ${name}, ${tokens} Tokens; click or press Enter to Pin in Signal Dock`],
+  [/^会话 (.+)，([\d,.]+) Token，点击或按 Enter Pin 到 Signal Dock$/,(_,name,tokens)=>`Session ${name}, ${tokens} Tokens; click or press Enter to Pin in Signal Dock`],
+  [/^你最猛烈的一天是 (.+)，单日燃烧 ([\d,.]+) Token。$/,(_,day,tokens)=>`Your highest-token day was ${day}, with ${tokens} Tokens.`],
+  [/^最后数据距生成日 (\d+) 天$/,(_,days)=>`Last data is ${days} days before generation`],
+  [/^来源 (.+)$/,(_,sources)=>`Sources: ${sources}`],
+  [/^项目 ([\d.]+)%$/,(_,value)=>`Projects ${value}%`],
+  [/^会话 ([\d.]+)%$/,(_,value)=>`Sessions ${value}%`],
+  [/^● 项目透镜 · (.+)%$/,(_,value)=>`● Project Lens · ${value}%`],
+  [/^● 会话回放 · (.+)%$/,(_,value)=>`● Session Replay · ${value}%`],
+  [/^● 作息分析 · (.+)%$/,(_,value)=>`● Activity Analysis · ${value}%`],
+  [/^● 复用之河 · (.+)%$/,(_,value)=>`● Reuse River · ${value}%`],
+  [/^● 流光关系 · (.+)%$/,(_,value)=>`● Flow Relationships · ${value}%`],
+  [/^主题：(自动|亮色|暗色)（点击切换）$/,(_,theme)=>`Theme: ${{'自动':'Auto','亮色':'Light','暗色':'Dark'}[theme]} (click to switch)`],
+  [/^需要已解析记录包含 cwd 项目路径；当前来源：(.+)。$/,(_,sources)=>`Requires parsed records with cwd project paths; current sources: ${sources}.`],
+  [/^需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中；当前来源：(.+)。$/,(_,sources)=>`Requires parsed records attributable to sessions with per-turn values retained in replay; current sources: ${sources}.`],
+  [/^需要已解析记录含可解析时间戳；当前来源：(.+)。$/,(_,sources)=>`Requires parsed records with parseable timestamps; current sources: ${sources}.`],
+  [/^需要标准化 input\/output\/cache read\/cache write 组成字段可用；当前来源：(.+)。$/,(_,sources)=>`Requires normalized input/output/cache read/cache write composition fields; current sources: ${sources}.`],
+  [/^需要已解析记录包含项目或会话 identity；当前来源：(.+)。$/,(_,sources)=>`Requires parsed records with project or session identity; current sources: ${sources}.`],
+  [/^(\d+) 个活跃日 · 跨 (\d+) 个自然日(?: · (起点为报告边界))?(?: · (终点为报告边界))?$/,(_,active,span,start,end)=>`${active} active days · spans ${span} calendar days${start?' · Starts at the report boundary':''}${end?' · Ends at the report boundary':''}`],
+  [/^(\d+) 个可回看时刻$/,(_,count)=>`${count} replayable moments`],
+  [/^(\d+)\/(\d+) 模型$/,(_,selected,total)=>`${selected}/${total} models`],
+  [/^末端静默 (\d+) (?:天|days)$/,(_,days)=>`${days} quiet days at range end`],
+  [/^(\d+) 个章节 · 月界或 ≥7 日静默切季$/,(_,count)=>`${count} chapters · A month boundary or ≥7 silent days starts a new season`],
+  [/^(\d+) 日 · (.+)$/,(_,days,total)=>`${days} days · ${total}`],
+  [/^(.+) SEASON$/,(_,label)=>`${I18N_LABS_EXACT[label]||label} SEASON`],
+  [/^报告固定到 (\d{4}-\d{2}-\d{2})。分母仅包含读取器已经接受并标准化的记录；被解析器拒绝的原始事件不在其中。本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证。$/,(_,date)=>`Report fixed through ${date}. The denominator includes only records accepted and normalized by readers; raw events rejected by parsers are excluded. This does not guarantee absolute completeness or accuracy of raw logs, privacy, or security.`],
+  [/^报告固定到 (\d{4}-\d{2}-\d{2})。?$/,(_,date)=>`Report fixed through ${date}.`],
+  [/^(\d{4}-\d{2}-\d{2}) 在本报告范围、当前模型筛选中首次观察到项目 (.+?)。；(\d{4}-\d{2}-\d{2}) 与前一自然日连续，且每日唯一主力模型由 (.+) 变为 (.+)。$/,(_,projectDate,project,relayDate,from,to)=>`${projectDate}: Project ${project} was first observed within this report and current model filters; ${relayDate} is consecutive with the prior calendar day, and the sole daily primary model changed from ${from} to ${to}.`],
+  [/^(\d{4}-\d{2}-\d{2}) 在本报告范围、当前模型筛选中首次观察到项目 (.+)。$/,(_,date,project)=>`${date}: Project ${project} was first observed within this report and current model filters.`],
+  [/^(\d{4}-\d{2}-\d{2}) 与前一自然日连续，且每日唯一主力模型由 (.+) 变为 (.+)。$/,(_,date,from,to)=>`${date} is consecutive with the prior calendar day, and the sole daily primary model changed from ${from} to ${to}.`],
+  [/^(.+) · (\d+) days$/,(_,label,days)=>`${I18N_LABS_EXACT[label]||label} · ${days} days`],
+  [/^已解锁 (\d+) \/ (\d+) · 图鉴阶位并非全球稀有度$/,(_,unlocked,total)=>`${unlocked} unlocked / ${total} · Catalog tiers do not represent global rarity`],
+  [/^(.+) · 本地数据宇宙居民$/,(_,creature)=>`${I18N_LABS_EXACT[creature]||creature} · Resident of the local data universe`],
+  [/^报告范围开始时已在保持 · 截至 (.+)$/,(_,date)=>`Already held at report start · Through ${date}`],
+  [/^报告范围开始时已在保持 · Through (.+)$/,(_,date)=>`Already held at report start · Through ${date}`],
+  [/^本地年鉴保存最多 (\d+) 份紧凑快照 \/ 作用域；不保存 cwd、session、标题或逐轮 Token。raw 与脱敏报告、固定日期范围和时区不会互相合并。$/,(_,limit)=>`The local Almanac stores at most ${limit} compact snapshots per scope. No cwd, session identifiers, titles, or per-turn Tokens are stored. Raw and pseudonymized reports, fixed date ranges, and timezones are kept separate.`],
+  [/^本地年鉴保存最多 (\d+) compact snapshots \/ 作用域; No cwd, session identifiers, titles, or per-turn Tokens are stored\.raw 与脱敏报告、固定日期范围和时区不会互相合并。$/,(_,limit)=>`The local Almanac stores at most ${limit} compact snapshots per scope. No cwd, session identifiers, titles, or per-turn Tokens are stored. Raw and pseudonymized reports, fixed date ranges, and timezones are kept separate.`],
+  [/^枚 · 本地快照收藏$/,()=>`items · Local snapshot collection`],
+  [/^(.+) · 该阶梯前 (\d+)% 门槛$/,(_,label,rank)=>`${I18N_LABS_EXACT[label]||label} · Top ${rank}% threshold in this track`],
+  [/^本报告范围内首次达到 (\d{4}-\d{2}-\d{2})$/,(_,date)=>`First reached within this report on ${date}`],
+  [/^本报告范围内首次Reached (\d{4}-\d{2}-\d{2})$/,(_,date)=>`First reached within this report on ${date}`],
+  [/^范围 (.+) → (.+)$/,(_,start,end)=>`Range ${start} → ${end}`],
+  [/^(坚持|起步|及格|摸鱼|顺手) · (\d+)$/,(_,label,level)=>`${I18N_LABS_EXACT[label]||label} · ${level}`],
+  [/^(⚡|🗓️?|🕐️?)\s*(坚持|起步|及格|摸鱼|顺手|小成|连胜|上手|熟练) · (\d+)$/,(_,icon,label,level)=>`${icon} ${I18N_LABS_EXACT[label]||label} · ${level}`],
+  [/^([⚡🗓🕐](?:️)?\s*)(.+) · (\d+)$/,(_,icon,label,level)=>`${icon}${I18N_LABS_EXACT[label]||label} · ${level}`],
+  [/^还差 (.+)$/,(_,value)=>`${value} remaining`],
+  [/^缓存复用 (.+)$/,(_,value)=>`Cache reuse ${value}`],
+  [/^形态 (\d+)\/(\d+)$/,(_,current,total)=>`Form ${current}/${total}`],
+  [/^(.+)，(.+) (天|轮|次|种)，首次观察$/,(_,label,value,unit)=>`${I18N_LABS_EXACT[label]||label}, ${value} ${{'天':'days','轮':'turns','次':'calls','种':'models'}[unit]}, first observed`],
+  [/^报告固定到 (\d{4}-\d{2}-\d{2}) · 点击查看数据可信度$/,(_,date)=>`Report fixed through ${date} · Click to view data provenance`],
+  [/^项目 (.+)，([\d,.]+) Token，占比 (.+)$/,(_,name,tokens,share)=>`Project ${name}, ${tokens} Tokens, ${share} share`],
+  [/^会话 (.+)，([\d,.]+) Token，占比 (.+)$/,(_,name,tokens,share)=>`Session ${name}, ${tokens} Tokens, ${share} share`],
+  [/^模型 (.+)，([\d,.]+) Token，占比 (.+)$/,(_,name,tokens,share)=>`Model ${name}, ${tokens} Tokens, ${share} share`],
+  [/^(\d{4}-\d{2}) Token 构成$/,(_,period)=>`${period} Token composition`],
+  [/^Projects (.+)，([\d,.]+) Token，占比 (.+)$/,(_,name,tokens,share)=>`Project ${name}, ${tokens} Tokens, ${share} share`],
+  [/^模型 (.+)，([\d,.]+) Tokens, share (.+)$/,(_,name,tokens,share)=>`Model ${name}, ${tokens} Tokens, ${share} share`],
+  [/^Sessions (.+)，([\d,.]+) Token，占比 (.+)$/,(_,name,tokens,share)=>`Session ${name}, ${tokens} Tokens, ${share} share`],
+  [/^(.+) · (\d+) 天$/,(_,label,days)=>`${I18N_LABS_EXACT[label]||label} · ${days} days`],
+  [/^(.+)，(.+)，首次观察$/,(_,label,value)=>`${I18N_LABS_EXACT[label]||label}, ${value}, first observed`],
+  [/^(.+) · (\d+) 进度 (\d+)%$/,(_,label,level,progress)=>`${I18N_LABS_EXACT[label]||label} · ${level}, ${progress}% progress`],
+  [/^(\d+) (轮|次|种)$/,(_,value,unit)=>`${value} ${{'轮':'turns','次':'calls','种':'models'}[unit]}`],
+  [/^(\d+) 条$/,(_,value)=>`${value} tendrils`],
+  [/^(\d+) 枚$/,(_,value)=>`${value} marks`],
+  [/^(\d+) 个星团$/,(_,value)=>`${value} clusters`]
+]);
+const I18N_ATTRIBUTES = ['aria-label','title','placeholder'];
+const i18nTextSource = new WeakMap();
+const i18nAttributeSource = new WeakMap();
+let dashboardLanguage = document.documentElement.lang.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+let i18nObserver = null;
+let i18nRestoring = false;
+
+function englishText(value){
+  const match=String(value).match(/^(\s*)([\s\S]*?)(\s*)$/),body=match[2];
+  if(!body)return value;
+  let translated=I18N_EXACT[body]||I18N_CORE_EXACT[body]||I18N_LABS_EXACT[body]||body;
+  if(translated===body&&/[㐀-鿿]/.test(body)){
+    for(const [pattern,replacement] of I18N_PATTERNS){
+      if(pattern.test(body)){translated=body.replace(pattern,replacement);break;}
+    }
+  }
+  if(translated===body)I18N_REPLACEMENTS.forEach(([source,target])=>{translated=translated.split(source).join(target);});
+  return match[1]+translated+match[3];
+}
+function localizeTextNode(node){
+  if(!node||node.nodeType!==Node.TEXT_NODE||node.parentElement?.closest('script,style,[data-i18n-skip]'))return;
+  if(dashboardLanguage==='zh'){
+    if(i18nRestoring&&i18nTextSource.has(node))node.nodeValue=i18nTextSource.get(node);
+    else i18nTextSource.set(node,node.nodeValue);
+    return;
+  }
+  const source=node.nodeValue;
+  if(!/[㐀-鿿]/.test(source)&&i18nTextSource.has(node))return;
+  i18nTextSource.set(node,source);
+  node.nodeValue=englishText(source);
+}
+function localizeAttributes(element){
+  if(!(element instanceof Element)||element.closest('[data-i18n-skip]'))return;
+  let sources=i18nAttributeSource.get(element);
+  if(!sources){sources={};i18nAttributeSource.set(element,sources);}
+  I18N_ATTRIBUTES.forEach(name=>{
+    if(dashboardLanguage==='zh'){
+      if(i18nRestoring&&Object.prototype.hasOwnProperty.call(sources,name))element.setAttribute(name,sources[name]);
+      else if(element.hasAttribute(name))sources[name]=element.getAttribute(name);
+      return;
+    }
+    if(!element.hasAttribute(name))return;
+    const source=element.getAttribute(name);if(!/[㐀-鿿]/.test(source)&&Object.prototype.hasOwnProperty.call(sources,name))return;sources[name]=source;element.setAttribute(name,englishText(source));
+  });
+}
+function localizeTree(root=document.body){
+  if(!root)return;
+  if(root.nodeType===Node.TEXT_NODE){localizeTextNode(root);return;}
+  if(root instanceof Element)localizeAttributes(root);
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);
+  while(walker.nextNode()){
+    const node=walker.currentNode;
+    if(node.nodeType===Node.TEXT_NODE)localizeTextNode(node);else localizeAttributes(node);
+  }
+}
+function observeLanguageChanges(){
+  if(!i18nObserver)i18nObserver=new MutationObserver(records=>{
+    i18nObserver.disconnect();
+    const textNodes=new Set(),elements=new Set(),trees=new Set();
+    records.forEach(record=>{
+      if(record.type==='characterData')textNodes.add(record.target);
+      else if(record.type==='attributes')elements.add(record.target);
+      else record.addedNodes.forEach(node=>trees.add(node));
+    });
+    trees.forEach(localizeTree);
+    textNodes.forEach(localizeTextNode);
+    elements.forEach(localizeAttributes);
+    observeLanguageChanges();
+  });
+  i18nObserver.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:I18N_ATTRIBUTES});
+}
+function syncLanguageControl(){
+  const button=document.getElementById('lang-btn');
+  if(!button)return;
+  const english=dashboardLanguage==='en';
+  button.textContent=english?'中文':'English';
+  button.setAttribute('aria-label',english?'Switch language':'切换语言');
+  button.title=english?'Switch to Chinese':'切换到英文';
+}
+function applyLanguage(language,persist=true){
+  dashboardLanguage=language==='zh'?'zh':'en';
+  if(i18nObserver)i18nObserver.disconnect();
+  document.documentElement.lang=dashboardLanguage==='zh'?'zh-CN':'en';
+  document.title=dashboardLanguage==='zh'?'Token 用量 Dashboard':'Token Usage Dashboard';
+  i18nRestoring=dashboardLanguage==='zh';
+  localizeTree();
+  i18nRestoring=false;
+  syncLanguageControl();
+  if(persist)try{localStorage.setItem('tk-lang',dashboardLanguage);}catch(e){}
+  observeLanguageChanges();
+}
+function toggleLanguage(){
+  const next=dashboardLanguage==='en'?'zh':'en';
+  if(i18nObserver)i18nObserver.disconnect();
+  dashboardLanguage='zh';
+  i18nRestoring=true;
+  localizeTree();
+  i18nRestoring=false;
+  render();
+  applyLanguage(next);
+}
+
+const state = { gran: 'month', models: new Set(DATA.models), focusPeriod:null, compare:false };
+const trailState = {open:false,step:'scope',reached:0,model:null,opener:null,destination:null,branch:null};
+const signalState = {peek:null,peekSource:null,pinnedSignal:null,exactHeld:false,exactPinned:false,compareHeld:false,opener:null};
+const scrubState = {period:null,index:-1,source:null,pointerId:null,startX:0,startY:0,intent:null,dragged:false,raf:0,pendingIndex:null,suppressClickUntil:0};
+Object.defineProperties(signalState,{preview:{get(){return this.peek;},set(value){this.peek=value;}},pinned:{get(){return this.pinnedSignal;},set(value){this.pinnedSignal=value;}}});
 let selectedProject=null;
 let lastTotal = 0;
 let stateRevision=0,derivedRevision=-1,derivedCache={};
@@ -24,10 +212,15 @@ function memoDerived(key,build){if(derivedRevision!==stateRevision){derivedCache
 function stateKey(){return state.gran+'|'+[...state.models].sort().join(',')+'|'+(state.focusPeriod||'');}
 const LABEL = {day:'日期', week:'周(始)', month:'月份'};
 
+function compareActive(){return state.compare||signalState.compareHeld;}
+function exactnessActive(){return signalState.exactHeld||signalState.exactPinned;}
+function syncExactness(){const active=exactnessActive();document.documentElement.classList.toggle('exact-on',active);const button=document.getElementById('exact-btn');button.classList.toggle('on',active);button.setAttribute('aria-pressed',String(signalState.exactPinned));button.textContent=signalState.exactPinned?'⌥ 精确层已固定':signalState.exactHeld?'⌥ 精确层预览':'⌥ 精确层';}
+function setCompareHeld(on){if(signalState.compareHeld===on)return;signalState.compareHeld=on;renderBar();renderViewCapsule();}
+
 const fmt = n => Number(n||0).toLocaleString('en-US');
 function human(n){ if(n>=1e8) return (n/1e8).toFixed(1)+'亿'; if(n>=1e4) return (n/1e4).toFixed(1)+'万'; return String(Math.round(n)); }
 function metric(n){ if(n>=1e9)return (n/1e9).toFixed(2)+'B'; if(n>=1e6)return (n/1e6).toFixed(2)+'M'; if(n>=1e3)return (n/1e3).toFixed(1)+'K'; return String(Math.round(n)); }
-function displayNumber(n){ return state.numberMode===1?human(n):state.numberMode===2?metric(n):fmt(n); }
+function displayNumber(n){ return human(n); }
 const pretty = m => DATA.pretty[m] || m;
 const pct = (a,b) => b? ((a/b*100).toFixed(1)+'%') : '0%';
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -50,7 +243,8 @@ function filteredHourly(){
   });
   return out;
 }
-function aggregateEntities(days,kind){const buckets={};days.forEach(day=>{const detail=DATA.day_details?.[day];if(!detail)return;const rows=kind==='session'?(detail.sessions||detail.top_sessions||[]):(detail.cwds||detail.top_cwds||[]);rows.forEach(row=>{const id=row[2]||row[0],item=buckets[id]||(buckets[id]=[row[0],0,id,{}]);Object.entries(row[3]||{}).forEach(([m,v])=>{if(state.models.has(m)&&v){item[3][m]=(item[3][m]||0)+v;item[1]+=v;}});});});return Object.values(buckets).filter(row=>row[1]>0).sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))).slice(0,6);}
+function aggregateEntities(days,kind,limit=6){const buckets={};days.forEach(day=>{const detail=DATA.day_details?.[day];if(!detail)return;const rows=kind==='session'?(detail.sessions||detail.top_sessions||[]):(detail.cwds||detail.top_cwds||[]);rows.forEach(row=>{const id=row[2]||row[0],item=buckets[id]||(buckets[id]=[row[0],0,id,{}]);Object.entries(row[3]||{}).forEach(([m,v])=>{if(state.models.has(m)&&v){item[3][m]=(item[3][m]||0)+v;item[1]+=v;}});});});const rows=Object.values(buckets).filter(row=>row[1]>0).sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0])));return limit==null?rows:rows.slice(0,limit);}
+function scopedEntities(kind){return aggregateEntities(focusDays()||Object.keys(DATA.day_details||{}),kind,null);}
 function focusDetail(){
   const fd=focusDays(); if(!fd)return null;
   let cache_read=0;fd.forEach(day=>{const x=DATA.day_details[day];if(!x)return;Object.entries(x.cache_read_models||{}).forEach(([m,v])=>{if(state.models.has(m))cache_read+=v||0;});});
@@ -115,7 +309,8 @@ function renderKPI(){
   let dom='—', domv=-1;
   Object.entries(mtot).forEach(([m,v])=>{ if(v>domv){domv=v;dom=m;} });
   animateNum(document.getElementById('k-total'), total, 600, displayNumber);
-  document.getElementById('k-total-u').textContent = human(total)+' tk';
+  document.getElementById('k-total-exact').textContent=fmt(total);
+  document.getElementById('k-total-u').textContent = 'tk · 紧凑显示';
   animateNum(document.getElementById('k-calls'), calls, 500);
   animateNum(document.getElementById('k-models'), Object.keys(mtot).length, 400);
   document.getElementById('k-dom').textContent = dom!=='—' ? pretty(dom) : '—';
@@ -126,7 +321,7 @@ function renderKPI(){
     dEl.style.display=''; dEl.className='delta '+(d>=0?'up':'down');
     dEl.textContent=(d>=0?'▲ ':'▼ ')+Math.abs(d).toFixed(1)+'% 环比';
   } else dEl.style.display='none';
-  // 缓存命中：cache_read 占比；省下 = cache_read（无需重算的 token）
+  // 缓存命中：cache_read 占当前 Token 总量的比例；下方显示读取量，不推断货币节省
   const detail=focusDetail();
   const cr=detail?detail.cache_read:selectedCacheRead(), hit=total?(cr/total*100):0;
   animateNum(document.getElementById('k-cache-pct'), Math.round(hit), 500);
@@ -154,11 +349,33 @@ function renderSpark(rows){
 }
 
 let barCursor=0,momentCursor=0;
+function trendPeriodIndex(clientX,left,width,count){
+  if(!Number.isFinite(clientX)||!Number.isFinite(left)||!Number.isFinite(width)||width<=0||count<=0)return -1;
+  return Math.max(0,Math.min(count-1,Math.floor((clientX-left)/width*count)));
+}
+function trendPreviewCopy(row){
+  if(!row)return '';
+  const dom=Object.entries(row.models||{}).sort((a,b)=>b[1]-a[1])[0];
+  return fmtLabel(row.period,state.gran)+' · '+fmt(row.total)+' Token'+(dom?' · 主力 '+pretty(dom[0])+' '+pct(dom[1],row.total):'');
+}
+function scrubRow(){return scrubState.index<0?null:selectedRows(true)[scrubState.index]||null;}
+function renderScrubPreview(announce=false){
+  const rows=selectedRows(true),row=scrubRow(),stacks=[...document.querySelectorAll('#bar .barstack')],previewPeriod=row?.period||null;
+  stacks.forEach((el,index)=>{const preview=index===scrubState.index;el.classList.toggle('scrub-preview',preview);el.classList.toggle('scrub-away',!!row&&!preview);el.setAttribute('aria-current',preview?'true':'false');});
+  const hint=document.getElementById('bar-hint'),status=document.getElementById('scrub-status'),probe=document.getElementById('time-probe');
+  if(row){const copy=trendPreviewCopy(row);hint.textContent=copy+' · Enter / Space / 点击提交';status.textContent=announce?'预览 '+copy+'。提交后进入时光探针。':'';probe.classList.add('scrubbing');probe.dataset.scrubPeriod=previewPeriod;document.getElementById('probe-copy').innerHTML='<b>正在预览 '+esc(fmtLabel(row.period,state.gran))+'</b> · '+human(row.total)+' tk · 松开仍为预览，点击或按 Enter 提交';const pulse=document.getElementById('status-pulse'),pulseText=document.getElementById('status-text');pulse.classList.remove('warming','steady','cooling');pulse.classList.add('scrub-preview');pulseText.textContent='预览 '+fmtLabel(row.period,state.gran);pulse.title=copy+' · 尚未提交';}
+  else {hint.textContent=rows.length+' 期 · 拖动或用方向键预览 · Enter / Space / 点击提交';status.textContent='';probe.classList.remove('scrubbing');delete probe.dataset.scrubPeriod;renderProbe();}
+}
+function setScrubPreview(index,source='pointer',focus=false,announce=false){
+  const rows=selectedRows(true);if(!rows.length)return false;index=Math.max(0,Math.min(rows.length-1,Number(index)||0));const changed=scrubState.index!==index||scrubState.source!==source;scrubState.index=index;scrubState.period=rows[index].period;scrubState.source=source;barCursor=index;document.querySelectorAll('#bar .barstack').forEach((el,i)=>el.setAttribute('tabindex',i===index?'0':'-1'));renderScrubPreview(announce&&changed);if(focus)document.querySelector('#bar .barstack[data-index="'+index+'"]')?.focus({preventScroll:true});return changed;
+}
+function clearScrub(reason='',announce=false){
+  const had=!!scrubState.period;if(scrubState.raf){cancelAnimationFrame(scrubState.raf);scrubState.raf=0;}scrubState.pendingIndex=null;scrubState.period=null;scrubState.index=-1;scrubState.source=null;scrubState.pointerId=null;scrubState.intent=null;scrubState.dragged=false;renderScrubPreview(false);if(had)renderStatusPulse();if(announce&&reason)document.getElementById('scrub-status').textContent=reason;
+}
+function queueScrubPreview(index,source='pointer'){scrubState.pendingIndex=index;if(scrubState.raf)return;scrubState.raf=requestAnimationFrame(()=>{scrubState.raf=0;const next=scrubState.pendingIndex;scrubState.pendingIndex=null;if(next!=null)setScrubPreview(next,source,false,false);});}
+function commitScrub(period=scrubState.period,restoreBar=false){if(!period)return;clearScrub();toggleFocus(period,restoreBar);}
 function describeBar(el,focus=true){
-  const rows=selectedRows(true),i=Number(el.dataset.index||0),r=rows[i];if(!r)return;
-  barCursor=i;document.querySelectorAll('#bar .barstack').forEach((x,j)=>x.setAttribute('tabindex',j===i?'0':'-1'));
-  const dom=Object.entries(r.models||{}).sort((a,b)=>b[1]-a[1])[0],hint=fmtLabel(r.period,state.gran)+' · '+fmt(r.total)+' Token'+(dom?' · 主力 '+pretty(dom[0])+' '+pct(dom[1],r.total):'')+' · Enter 回看';
-  document.getElementById('bar-hint').textContent=hint;if(focus)el.focus();
+  const i=Number(el.dataset.index||0);setScrubPreview(i,'keyboard',focus,true);
 }
 function periodForMoment(day,gran){return projectPeriod(day,gran);}
 function momentEventsForRows(rows,events=buildMomentEvents()){const grouped={};events.forEach(event=>{const period=periodForMoment(event.day,state.gran);if(!rows.some(row=>row.period===period))return;(grouped[period]||(grouped[period]=[])).push(event);});return Object.entries(grouped).map(([period,events])=>({period,day:events[events.length-1].day,events,label:events.map(event=>event.label).join(' · '),description:events.map(event=>event.description).join('；')})).sort((a,b)=>a.period.localeCompare(b.period));}
@@ -177,7 +394,7 @@ function renderBar(){
   const labelPad = ang===0 ? 40 : ang===-90 ? 48 : 56;
   const railH=moments.length?20:0,padB=labelPad+railH;
   const plotH=H-padT-padB;
-  const compared=state.compare?rows.map((r,i)=>i?rows[i-1].total:0):[];
+  const compared=compareActive()?rows.map((r,i)=>i?rows[i-1].total:0):[];
   const vmax=Math.max(1, ...rows.map(r=>r.total), ...compared);
   // 整图锁定单一单位，避免 y 轴/标签 万与亿混用造成「629→7.5」歧义
   const U = vmax>=1e8?['亿',1e8]:vmax>=1e4?['万',1e4]:['',1];
@@ -198,28 +415,28 @@ function renderBar(){
   rows.forEach((r,i)=>{
     const x=padL+step*i+(step-bw)/2;
     p.push('<rect class="bar-track" x="'+x.toFixed(1)+'" y="'+padT.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+plotH.toFixed(1)+'" rx="4"/>');
-    if(state.compare&&i>0){
+    if(compareActive()&&i>0){
       const pv=rows[i-1].total, gh=(pv/vmax)*plotH, gy=padT+plotH-gh;
       p.push('<rect class="ghostbar" x="'+(x-3).toFixed(1)+'" y="'+gy.toFixed(1)+'" width="'+(bw+6).toFixed(1)+'" height="'+gh.toFixed(1)+'" rx="5"><title>上一期 '+esc(rows[i-1].period)+' · '+fmt(pv)+' tk</title></rect>');
     }
     let segs=''; let y0=padT+plotH;
     state.models.forEach(m=>{ const v=r.models[m]||0; if(v<=0) return;
       const h=(v/vmax)*plotH, y=y0-h;
-      segs+='<rect class="seg model-mark" data-model="'+esc(m)+'" x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="2" fill="'+DATA.colors[m]+'"><title>'+esc(r.period)+' · '+esc(pretty(m))+': '+fmt(v)+' ('+pct(v,r.total)+')</title></rect>';
+      segs+='<rect class="seg model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'trend',false)+' x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="2" fill="'+DATA.colors[m]+'"><title>'+esc(r.period)+' · '+esc(pretty(m))+': '+fmt(v)+' ('+pct(v,r.total)+')</title></rect>';
       y0-=h;
     });
     const barTop=padT+plotH-r.total/vmax*plotH;
-    const annotation=barAnnotationLayout(barTop,state.compare&&i>0?padT+plotH-Math.max(r.total,rows[i-1].total)/vmax*plotH:barTop);
+    const annotation=barAnnotationLayout(barTop,compareActive()&&i>0?padT+plotH-Math.max(r.total,rows[i-1].total)/vmax*plotH:barTop);
     const isPeak = rows.length>1 && i===peakI;
     const isFocus=state.focusPeriod===r.period;
     const aria=fmtLabel(r.period,state.gran)+'，'+fmt(r.total)+' Token'+(isPeak?'，峰值':'')+(isFocus?'，当前时光探针':'')+'，按 Enter 回看';
-    p.push('<g class="barstack'+(isPeak?' peak':'')+(isFocus?' focused':'')+(state.focusPeriod&&!isFocus?' muted':'')+'" data-period="'+esc(r.period)+'" data-index="'+i+'" tabindex="'+(i===Math.min(barCursor,rows.length-1)?'0':'-1')+'" role="button" aria-label="'+esc(aria)+'"><rect class="bar-focus" x="'+(padL+step*i+2).toFixed(1)+'" y="'+(padT+1).toFixed(1)+'" width="'+Math.max(1,step-4).toFixed(1)+'" height="'+(plotH+padB-2).toFixed(1)+'" rx="6"/>'+segs+'</g>');
+    p.push('<g class="barstack'+(isPeak?' peak':'')+(isFocus?' focused':'')+(state.focusPeriod&&!isFocus?' muted':'')+'" data-period="'+esc(r.period)+'" data-index="'+i+'"'+dataSignalAttrs('period',r.period,fmtLabel(r.period,state.gran),r.total,'trend',false)+' tabindex="'+(i===Math.min(barCursor,rows.length-1)?'0':'-1')+'" role="button" aria-label="'+esc(aria)+'"><rect class="bar-focus" x="'+(padL+step*i+2).toFixed(1)+'" y="'+(padT+1).toFixed(1)+'" width="'+Math.max(1,step-4).toFixed(1)+'" height="'+(plotH+padB-2).toFixed(1)+'" rx="6"/>'+segs+'</g>');
     if(isPeak&&!state.focusPeriod){
       p.push('<text class="peak-flag" x="'+(x+bw/2).toFixed(1)+'" y="'+annotation.peak.toFixed(1)+'" text-anchor="middle">▲峰值 '+vfmt(r.total)+'</text>');
     } else if(showVal){
       p.push('<text class="vlabel" x="'+(x+bw/2).toFixed(1)+'" y="'+annotation.value.toFixed(1)+'" text-anchor="middle">'+vfmt(r.total)+'</text>');
     }
-    if(state.compare&&i>0&&rows[i-1].total>0&&n<=18){
+    if(compareActive()&&i>0&&rows[i-1].total>0&&n<=18){
       const d=(r.total-rows[i-1].total)/rows[i-1].total*100;
       p.push('<text class="delta-tag" x="'+(x+bw/2).toFixed(1)+'" y="'+annotation.delta.toFixed(1)+'" text-anchor="middle">'+(d>=0?'+':'')+d.toFixed(0)+'%</text>');
     }
@@ -230,7 +447,7 @@ function renderBar(){
     else if(ang===-45){ ly=H-labelPad+30; anchor='end'; tr='transform="rotate(-45 '+lx.toFixed(1)+' '+ly.toFixed(1)+')"'; }
     else { ly=H-8; anchor='start'; tr='transform="rotate(-90 '+lx.toFixed(1)+' '+ly.toFixed(1)+')"'; }
     p.push('<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="'+anchor+'" class="xlabel" '+tr+'>'+esc(fmtLabel(r.period,state.gran))+'</text>');
-    p.push('<rect class="bar-hit" data-period="'+esc(r.period)+'" x="'+(padL+step*i).toFixed(1)+'" y="'+padT+'" width="'+step.toFixed(1)+'" height="'+(plotH+padB).toFixed(1)+'"><title>点击回看 '+esc(r.period)+'</title></rect>');
+    p.push('<rect class="bar-hit" data-period="'+esc(r.period)+'" data-index="'+i+'" x="'+(padL+step*i).toFixed(1)+'" y="'+padT+'" width="'+step.toFixed(1)+'" height="'+(plotH+padB).toFixed(1)+'"><title>点击提交回看 '+esc(r.period)+'</title></rect>');
     if(moment){const mi=moments.indexOf(moment),hitW=Math.min(step,44),hitX=lx-hitW/2; p.push('<rect class="moment-target" data-moment-day="'+esc(moment.day)+'" x="'+hitX.toFixed(1)+'" y="'+(padT+plotH).toFixed(1)+'" width="'+hitW.toFixed(1)+'" height="20" rx="6"/><g class="moment-marker'+(moment.events.length>1?' merged':'')+'" data-moment-period="'+esc(r.period)+'" data-moment-day="'+esc(moment.day)+'" tabindex="'+(mi===Math.min(momentCursor,moments.length-1)?'0':'-1')+'" role="button" aria-label="数据时刻，'+esc(moment.label)+'，按 Enter 回看 '+esc(moment.day)+'"><line x1="'+lx.toFixed(1)+'" y1="'+(padT+plotH+4).toFixed(1)+'" x2="'+lx.toFixed(1)+'" y2="'+(padT+plotH+12).toFixed(1)+'"/><circle cx="'+lx.toFixed(1)+'" cy="'+(padT+plotH+8).toFixed(1)+'" r="'+(moment.events.length>1?'4':'3')+'"><title>'+esc(moment.description)+'</title></circle></g>');}
   });
   if(rows.length>1 && mean>0){
@@ -239,16 +456,17 @@ function renderBar(){
     p.push('<text class="mean-lab" x="'+(W-padR-2)+'" y="'+(my-4).toFixed(1)+'" text-anchor="end">μ '+vfmt(mean)+'</text>');
   }
   p.push('</svg>');
-  const box=document.getElementById('bar'); box.innerHTML=p.join('');
-  const stacks=[...box.querySelectorAll('.barstack')];
-  stacks.forEach(el=>{
-    el.addEventListener('click',()=>toggleFocus(el.dataset.period));
-    el.addEventListener('focus',()=>describeBar(el,false));
-    el.addEventListener('keydown',e=>{const i=Number(el.dataset.index||0);if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const next=Math.max(0,Math.min(stacks.length-1,i+(e.key==='ArrowRight'?1:-1)));describeBar(stacks[next]);}else if(e.key==='Home'||e.key==='End'){e.preventDefault();describeBar(stacks[e.key==='Home'?0:stacks.length-1]);}else if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleFocus(el.dataset.period,true);}});
-  });
-  box.onclick=e=>{const marker=e.target.closest('.moment-marker'),target=e.target.closest('.moment-target');if(marker||target){e.stopPropagation();focusMomentDay((marker||target).dataset.momentDay);return;}const hit=e.target.closest('.bar-hit');if(hit)toggleFocus(hit.dataset.period);};
-  const markers=[...box.querySelectorAll('.moment-marker')];markers.forEach((el,i)=>{el.__moment=moments[i];el.addEventListener('focus',()=>describeMoment(el,false));el.addEventListener('keydown',e=>handleMomentKey(e,markers,i));});
-  box.querySelectorAll('.model-mark').forEach(el=>{el.addEventListener('mouseenter',e=>{modelHover(el.dataset.model,true);e.stopPropagation();});el.addEventListener('mouseleave',e=>{modelHover(el.dataset.model,false);e.stopPropagation();});});
+  const box=document.getElementById('bar');box.innerHTML=p.join('');renderScrubPreview(false);
+  const trendTarget=target=>target?.closest?.('.barstack,.bar-hit'),periodFromTarget=target=>trendTarget(target)?.dataset.period||null,indexFromTarget=target=>{const el=trendTarget(target);if(!el)return -1;if(el.dataset.index!=null)return Number(el.dataset.index);return rows.findIndex(row=>row.period===el.dataset.period);};
+  box.onfocusin=e=>{const stack=e.target.closest('.barstack');if(stack)setScrubPreview(Number(stack.dataset.index||0),'keyboard',false,true);};
+  box.onfocusout=e=>{if(e.relatedTarget&&!box.contains(e.relatedTarget))clearScrub('预览已清除',true);};
+  box.onkeydown=e=>{const stack=e.target.closest('.barstack');if(!stack)return;const current=scrubState.index>=0?scrubState.index:Number(stack.dataset.index||0);if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();setScrubPreview(current+(e.key==='ArrowRight'?1:-1),'keyboard',true,true);}else if(e.key==='Home'||e.key==='End'){e.preventDefault();setScrubPreview(e.key==='Home'?0:rows.length-1,'keyboard',true,true);}else if(e.key==='Enter'||e.key===' '){e.preventDefault();commitScrub(scrubState.period||stack.dataset.period,true);}};
+  box.onclick=e=>{const marker=e.target.closest('.moment-marker'),target=e.target.closest('.moment-target');if(marker||target){e.stopPropagation();clearScrub();focusMomentDay((marker||target).dataset.momentDay);return;}const period=periodFromTarget(e.target);if(!period)return;if(performance.now()<scrubState.suppressClickUntil){e.preventDefault();e.stopPropagation();return;}e.preventDefault();commitScrub(period);};
+  box.onpointerdown=e=>{const target=trendTarget(e.target);if(!target||e.button!==0)return;const index=indexFromTarget(target);if(index<0)return;scrubState.pointerId=e.pointerId;scrubState.startX=e.clientX;scrubState.startY=e.clientY;scrubState.intent=null;scrubState.dragged=false;setScrubPreview(index,e.pointerType==='touch'?'touch':'pointer',false,false);try{box.setPointerCapture(e.pointerId);}catch(error){}};
+  box.onpointermove=e=>{if(scrubState.pointerId!==e.pointerId)return;const dx=e.clientX-scrubState.startX,dy=e.clientY-scrubState.startY;if(!scrubState.intent&&Math.max(Math.abs(dx),Math.abs(dy))>=8)scrubState.intent=Math.abs(dx)>Math.abs(dy)*1.15?'horizontal':'vertical';if(scrubState.intent!=='horizontal')return;e.preventDefault();scrubState.dragged=scrubState.dragged||Math.abs(dx)>=10;const rect=box.getBoundingClientRect(),index=trendPeriodIndex(e.clientX,rect.left,rect.width,rows.length);if(index>=0)queueScrubPreview(index,e.pointerType==='touch'?'touch':'pointer');};
+  const finishPointer=e=>{if(scrubState.pointerId!==e.pointerId)return;const dragged=scrubState.intent==='horizontal'&&scrubState.dragged;scrubState.pointerId=null;scrubState.intent=null;scrubState.dragged=false;if(dragged)scrubState.suppressClickUntil=performance.now()+450;try{if(box.hasPointerCapture(e.pointerId))box.releasePointerCapture(e.pointerId);}catch(error){}};
+  box.onpointerup=finishPointer;box.onpointercancel=e=>{if(scrubState.pointerId===e.pointerId){scrubState.suppressClickUntil=performance.now()+450;clearScrub('预览已取消',true);}};box.onlostpointercapture=e=>{if(scrubState.pointerId===e.pointerId)clearScrub('预览已取消',true);};
+  const markers=[...box.querySelectorAll('.moment-marker')];markers.forEach((el,i)=>{el.__moment=moments[i];el.addEventListener('focus',()=>{clearScrub();describeMoment(el,false);});el.addEventListener('keydown',e=>handleMomentKey(e,markers,i));});
 }
 
 function renderDonut(){
@@ -264,11 +482,11 @@ function renderDonut(){
   entries.forEach(([m,v])=>{
     const frac=v/total, a0=angle, a1=angle+frac*2*Math.PI;
     if(frac>=0.999){
-      p.push('<circle class="slice model-mark" data-model="'+esc(m)+'" cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+DATA.colors[m]+'"><title>'+esc(pretty(m))+' '+pct(v,total)+'</title></circle>');
+      p.push('<circle class="slice model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'composition')+' cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+DATA.colors[m]+'"><title>'+esc(pretty(m))+' '+pct(v,total)+'</title></circle>');
     }else{
       const large=frac>0.5?1:0;
       const x0=cx+r*Math.cos(a0), y0=cy+r*Math.sin(a0), x1=cx+r*Math.cos(a1), y1=cy+r*Math.sin(a1);
-      p.push('<path class="slice model-mark" data-model="'+esc(m)+'" d="M '+cx+' '+cy+' L '+x0.toFixed(2)+' '+y0.toFixed(2)+' A '+r+' '+r+' 0 '+large+' 1 '+x1.toFixed(2)+' '+y1.toFixed(2)+' Z" fill="'+DATA.colors[m]+'"><title>'+esc(pretty(m))+' '+pct(v,total)+'</title></path>');
+      p.push('<path class="slice model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'composition')+' d="M '+cx+' '+cy+' L '+x0.toFixed(2)+' '+y0.toFixed(2)+' A '+r+' '+r+' 0 '+large+' 1 '+x1.toFixed(2)+' '+y1.toFixed(2)+' Z" fill="'+DATA.colors[m]+'"><title>'+esc(pretty(m))+' '+pct(v,total)+'</title></path>');
     }
     angle=a1;
   });
@@ -277,7 +495,7 @@ function renderDonut(){
   p.push('<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="pie-sub">TOKENS</text></svg>');
   box.innerHTML=p.join('');
   document.getElementById('donut-legend').innerHTML=entries.map(([m,v])=>
-    '<li class="model-mark" data-model="'+esc(m)+'"><span class="ldot" style="background:'+DATA.colors[m]+'"></span>'+esc(pretty(m))+' <em>'+pct(v,total)+'</em></li>').join('');
+    '<li class="model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'composition')+'><span class="ldot" style="background:'+DATA.colors[m]+'"></span>'+esc(pretty(m))+' <em>'+pct(v,total)+'</em></li>').join('');
 }
 
 function renderTable(){
@@ -298,7 +516,19 @@ function announceViewChange(message,targets=[]){
   targets.forEach(id=>{const card=document.getElementById(id);if(!card||card.offsetParent===null)return;card.classList.remove('state-changed');void card.offsetWidth;card.classList.add('state-changed');});
   const label=document.getElementById('view-label');label.setAttribute('aria-live','polite');if(message)toast(message);
 }
-function setModels(next,label){previousModels=new Set(state.models);state.models=new Set(next);invalidateDerived();renderFilters();renderDataViews();announceViewChange(label||('模型筛选已更新 · '+state.models.size+'/'+DATA.models.length+' 个模型'),['section-overview','section-trend','section-top']);}
+function signalVisible(signal){
+  if(!signal)return false;
+  if(signal.type==='model')return DATA.models.includes(signal.id)&&state.models.has(signal.id);
+  if(signal.type==='period')return validFocus(signal.id,state.gran);
+  if(signal.type==='project')return scopedEntities('project').some(item=>item[2]===signal.id);
+  if(signal.type==='session')return scopedEntities('session').some(item=>item[2]===signal.id);
+  return false;
+}
+function reconcileSignalState(){
+  if(signalState.peek&&!signalVisible(signalState.peek)){signalState.peek=null;signalState.peekSource=null;}
+  if(signalState.pinnedSignal&&!signalVisible(signalState.pinnedSignal))signalState.pinnedSignal=null;
+}
+function setModels(next,label){clearScrub();previousModels=new Set(state.models);state.models=new Set(next);reconcileTrailState();invalidateDerived();reconcileSignalState();renderFilters();renderDataViews();announceViewChange(label||('模型筛选已更新 · '+state.models.size+'/'+DATA.models.length+' 个模型'),['section-overview','section-trend','section-top']);}
 function renderFilterLedger(){
   const rows=DATA[state.gran]||[],all=rows.reduce((a,r)=>a+(r.total||0),0),selected=rows.reduce((a,r)=>a+Object.entries(r.models||{}).reduce((s,[m,v])=>s+(state.models.has(m)?v:0),0),0);
   document.getElementById('filter-summary').innerHTML='已选 <b>'+state.models.size+'/'+DATA.models.length+'</b> 个模型 · 覆盖 <b>'+pct(selected,all)+'</b> Token';document.getElementById('filter-undo').disabled=!previousModels;
@@ -308,21 +538,17 @@ function renderFilters(){
   if(DATA.models.length===0){ box.innerHTML='<span class=hint>无模型数据</span>'; return; }
   box.innerHTML=DATA.models.map(m=>{
     const on=state.models.has(m);
-    return '<label class="chip'+(on?'':' off')+'"><input type=checkbox value="'+esc(m)+'" '+(on?'checked':'')+'><span class=cdot style="background:'+DATA.colors[m]+'"></span>'+esc(pretty(m))+'</label>';
+    return '<label class="chip'+(on?'':' off')+'"'+dataSignalAttrs('model',m,pretty(m),0,'filters',false)+'><input type=checkbox value="'+esc(m)+'" '+(on?'checked':'')+'><span class=cdot style="background:'+DATA.colors[m]+'"></span>'+esc(pretty(m))+'</label>';
   }).join('');
   box.querySelectorAll('input').forEach(cb=>{
     cb.addEventListener('change',e=>{const next=new Set(state.models);e.target.checked?next.add(e.target.value):next.delete(e.target.value);setModels(next);});
-    const chip=cb.closest('.chip');
-    chip.title='点击切换 · 双击独看 · Alt 点击全选/清空 · 右键反选';
-    chip.addEventListener('dblclick',e=>{e.preventDefault();setModels([cb.value],'Solo · '+pretty(cb.value));});
-    chip.addEventListener('click',e=>{if(!e.altKey)return;e.preventDefault();setModels(state.models.size===DATA.models.length?[]:DATA.models);});
-    chip.addEventListener('contextmenu',e=>{e.preventDefault();const next=new Set(state.models);next.has(cb.value)?next.delete(cb.value):next.add(cb.value);setModels(next);});
+    cb.closest('.chip').title='点击切换模型筛选';
   });
   renderFilterLedger();
 }
 document.getElementById('filter-all').addEventListener('click',()=>setModels(DATA.models,'已选择全部模型'));
 document.getElementById('filter-none').addEventListener('click',()=>setModels([],'已清空模型筛选'));
-document.getElementById('filter-undo').addEventListener('click',()=>{if(!previousModels)return;state.models=new Set(previousModels);previousModels=null;invalidateDerived();renderFilters();renderDataViews();announceViewChange('已撤销上一次模型筛选',['section-overview','section-trend','section-top']);});
+document.getElementById('filter-undo').addEventListener('click',()=>{if(!previousModels)return;clearScrub();state.models=new Set(previousModels);previousModels=null;reconcileTrailState();invalidateDerived();reconcileSignalState();renderFilters();renderDataViews();announceViewChange('已撤销上一次模型筛选',['section-overview','section-trend','section-top']);});
 
 function lbRows(items,sessionRows=false,kind='project'){
   if(!items || !items.length) return contextEmptyHTML(kind);
@@ -331,7 +557,7 @@ function lbRows(items,sessionRows=false,kind='project'){
   const max=Math.max(1,...filtered.map(x=>x.total));
   return filtered.map(({it,parts,total},i)=>{
     const w=total/max*100,full=it[2]||it[0],dom=parts[0],comp=parts.map(([m,v])=>'<i style="width:'+(v/total*100).toFixed(1)+'%;background:'+DATA.colors[m]+'" title="'+esc(pretty(m))+' '+pct(v,total)+'"></i>').join('');
-    const attrs=sessionRows?' role="button" tabindex="0" data-session="'+esc(it[2]||it[0])+'" data-session-label="'+esc(it[0])+'" aria-label="会话 '+esc(it[0])+'，'+fmt(total)+' Token，按 Enter 回放"':'';
+    const attrs=sessionRows?' role="button" tabindex="0" data-session="'+esc(it[2]||it[0])+'" data-session-label="'+esc(it[0])+'"'+dataSignalAttrs('session',it[2]||it[0],it[0],total,'top')+' aria-label="会话 '+esc(it[0])+'，'+fmt(total)+' Token，点击或按 Enter Pin 到 Signal Dock"':' role="button" tabindex="0"'+dataSignalAttrs('project',it[2]||it[0],it[0],total,'top')+' aria-label="项目 '+esc(it[0])+'，'+fmt(total)+' Token，点击或按 Enter Pin 到 Signal Dock"';
     return '<div class=lb-row'+attrs+'><span class=rk>'+String(i+1).padStart(2,'0')+'</span>'
       +'<span class=lb-name title="'+esc(full)+'">'+esc(it[0])+'</span>'
       +'<span class=lb-bar><i style="width:'+w.toFixed(1)+'%"></i></span>'
@@ -342,11 +568,7 @@ function renderTop(){
   const detail=focusDetail(), cwds=detail?detail.top_cwds:selectedTopEntities('project'), sessions=detail?detail.top_sessions:selectedTopEntities('session');
   document.getElementById('top-cwd').innerHTML = lbRows(cwds,false,'project');
   document.getElementById('top-sess').innerHTML = lbRows(sessions,true,'session');
-  document.getElementById('top-hint').textContent=(state.focusPeriod?'当前回看期 · ':'')+'按当前模型筛选重新计算 Top · 回放展示完整会话 Token 序列，最多保留最近 200 轮';
-  Array.from(document.getElementById('top-sess').querySelectorAll('.lb-row')).forEach(row=>{
-    row.style.cursor='pointer';row.title='点击或按 Enter 回放完整会话逐轮 token';
-    const activate=()=>openReplay(row.dataset.session,row.dataset.sessionLabel);row.addEventListener('click',activate);row.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});
-  });
+  document.getElementById('top-hint').textContent=(state.focusPeriod?'当前回看期 · ':'')+'按当前模型筛选重新计算 Top · 悬停 Peek，点击 Pin 后从 Signal Dock 深入';
 }
 
 function renderClock(){
@@ -427,7 +649,7 @@ function shareStats(){
 function openShare(type){
   const x=shareStats(), content=document.getElementById('share-content');
   if(type==='passport')content.innerHTML='<div class=passport id=share-card><div class=pass-head><div><div class=pass-k>LOCAL DEVELOPER IDENTITY</div><h3>TOKEN PASSPORT</h3></div><div class=pass-id>ISSUED '+esc(DATA.generated)+'<br>NO DATA UPLOADED</div></div><div class=pass-grid><div><div class=pass-k>DEVELOPER TYPE</div><div class=pass-hero>'+(x.peak<6||x.peak>=22?'MIDNIGHT<br>NAVIGATOR':'DAYLIGHT<br>BUILDER')+'</div><div class=pass-sub>'+esc(x.creature)+' · 本地数据宇宙居民</div></div><div class=pass-fields><div class=pass-field><span>TOTAL TOKENS</span><b>'+fmt(x.total)+'</b></div><div class=pass-field><span>PRIMARY MODEL</span><b>'+esc(x.dom)+'</b></div><div class=pass-field><span>PEAK GATE</span><b>'+String(Math.max(0,x.peak)).padStart(2,'0')+':00</b></div><div class=pass-field><span>CACHE</span><b>'+Math.round(x.cache*100)+'%</b></div><div class=pass-field><span>CALLS</span><b>'+fmt(x.calls)+'</b></div><div class=pass-field><span>ACHIEVEMENTS</span><b>'+fmt(x.ach.got)+' / '+fmt(x.ach.all.length)+'</b></div></div></div><div class=pass-foot><span>VALID IN ALL LOCAL TERMINALS<br>PRIVACY CLASS: OFFLINE</span><span class=barcode>||| || ||| | |||| || |</span></div></div>';
-  else content.innerHTML='<div class=receipt id=share-card><h3>TOKEN STORE</h3><div class=receipt-center>LOCAL TERMINAL · '+esc(DATA.generated.slice(0,10))+'<br>ORDER #'+String(x.total%100000).padStart(5,'0')+'</div><hr>'+(DATA.models||[]).map(m=>{const v=(DATA.day||[]).reduce((a,d)=>a+(d.models[m]||0),0);return '<div class=receipt-row><span>'+esc(pretty(m)).slice(0,18)+'</span><b>'+fmt(v)+'</b></div>';}).join('')+'<hr><div class=receipt-row><span>CALLS</span><b>'+fmt(x.calls)+'</b></div><div class=receipt-row><span>CACHE SAVED</span><b>'+fmt(DATA.cache_read||0)+'</b></div><div class=receipt-row><span>ACHIEVEMENTS</span><b>'+fmt(x.ach.got)+'</b></div><hr><div class="receipt-row receipt-total"><span>TOTAL</span><b>'+fmt(x.total)+' TK</b></div><div class=receipt-code>|||| || ||||| | ||| ||</div><div class=receipt-note>THANK YOU FOR CODING<br>OPEN 24 HOURS · NO DATA UPLOADED</div></div>';
+  else content.innerHTML='<div class=receipt id=share-card><h3>TOKEN STORE</h3><div class=receipt-center>LOCAL TERMINAL · '+esc(DATA.generated.slice(0,10))+'<br>ORDER #'+String(x.total%100000).padStart(5,'0')+'</div><hr>'+(DATA.models||[]).map(m=>{const v=(DATA.day||[]).reduce((a,d)=>a+(d.models[m]||0),0);return '<div class=receipt-row><span>'+esc(pretty(m)).slice(0,18)+'</span><b>'+fmt(v)+'</b></div>';}).join('')+'<hr><div class=receipt-row><span>CALLS</span><b>'+fmt(x.calls)+'</b></div><div class=receipt-row><span>CACHE READ</span><b>'+fmt(DATA.cache_read||0)+'</b></div><div class=receipt-row><span>ACHIEVEMENTS</span><b>'+fmt(x.ach.got)+'</b></div><hr><div class="receipt-row receipt-total"><span>TOTAL</span><b>'+fmt(x.total)+' TK</b></div><div class=receipt-code>|||| || ||||| | ||| ||</div><div class=receipt-note>THANK YOU FOR CODING<br>OPEN 24 HOURS · NO DATA UPLOADED</div></div>';
   openModal(document.getElementById('share-modal'),document.getElementById('share-close'));document.getElementById('share-modal').dataset.type=type;
 }
 function closeShare(){closeModal(document.getElementById('share-modal'));}
@@ -448,14 +670,143 @@ function renderWeather(){
   document.getElementById('w-icon').textContent=w.i; document.getElementById('w-title').textContent=w.t; document.getElementById('w-copy').textContent=w.c; document.getElementById('w-metric').textContent=w.m; document.getElementById('w-metric-label').textContent=state.focusPeriod?'局部气候':'相对近况'; document.getElementById('weather-card').style.setProperty('--weather-glow',w.g);
 }
 function renderProbe(){
-  const el=document.getElementById('time-probe');
-  if(!state.focusPeriod){el.classList.remove('on');return;}
+  const el=document.getElementById('time-probe'),trailButton=document.getElementById('trail-open');
+  if(scrubState.period){const row=scrubRow();if(row){document.getElementById('probe-copy').innerHTML='<b>正在预览 '+esc(fmtLabel(row.period,state.gran))+'</b> · '+human(row.total)+' tk · 点击或按 Enter 提交';el.classList.add('scrubbing');}return;}
+  el.classList.remove('scrubbing');delete el.dataset.scrubPeriod;
+  if(!state.focusPeriod){el.classList.remove('on');trailButton.setAttribute('aria-expanded',String(trailState.open));return;}
   const row=selectedRows()[0], dom=row?Object.entries(row.models).sort((a,b)=>b[1]-a[1])[0]:null;
   document.getElementById('probe-copy').innerHTML='<b>正在回看 '+esc(fmtLabel(state.focusPeriod,state.gran))+'</b> · '+human(row?row.total:0)+' tk'+(dom?' · 主力 '+esc(pretty(dom[0])):'')+' · Esc 返回全景';
+  trailButton.innerHTML=trailState.open?'⌁ 返回寻迹 <kbd>I</kbd>':'⌁ 开始寻迹 <kbd>I</kbd>';trailButton.setAttribute('aria-expanded',String(trailState.open));
   el.classList.add('on');
 }
-function toggleFocus(period,restoreBar=false){const entering=state.focusPeriod!==period;state.focusPeriod=entering?period:null;invalidateDerived();renderDataViews();announceViewChange(entering?'时光探针已锁定 '+fmtLabel(period,state.gran):'已返回当前粒度全景',['section-trend','section-overview','section-top']);if(restoreBar){const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===period);if(el){barCursor=Number(el.dataset.index||0);el.focus();}} }
-function clearFocus(restoreBar=false){if(!state.focusPeriod)return;const period=state.focusPeriod;state.focusPeriod=null;invalidateDerived();renderDataViews();announceViewChange('已退出时光探针',['section-trend','section-overview','section-top']);if(restoreBar){const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===period);if(el){barCursor=Number(el.dataset.index||0);el.focus();}} }
+
+const TRAIL_STEPS=['scope','model','evidence','destination'],TRAIL_LABELS={scope:'当前范围',model:'模型线索',evidence:'证据分支',destination:'深入模块'};
+function trailScope(){
+  const rows=selectedRows(),allRows=selectedRows(true),sourceByPeriod=Object.fromEntries((DATA[state.gran]||[]).map(row=>[row.period,row])),current=rows.reduce((out,row)=>{out.total+=row.total;out.calls+=row.calls;Object.entries(row.models).forEach(([model,value])=>{const item=out.models[model]||(out.models[model]={model,total:0,calls:0});item.total+=value;item.calls+=(sourceByPeriod[row.period]?.model_calls||{})[model]||0;});return out;},{total:0,calls:0,models:{}}),period=state.focusPeriod||null,index=period?allRows.findIndex(row=>row.period===period):-1,previous=index>0?allRows[index-1]:null;
+  const days=period?periodDays(period,state.gran).filter(day=>DATA.day_details?.[day]):Object.keys(DATA.day_details||{}).sort(),first=days[0]||null,last=days[days.length-1]||null;
+  return {period,days,first,last,total:current.total,calls:current.calls,models:Object.values(current.models).sort((a,b)=>b.total-a.total||pretty(a.model).localeCompare(pretty(b.model))),previous,delta:previous?current.total-previous.total:null};
+}
+function trailScopeLabel(scope=trailScope()){if(scope.period)return fmtLabel(scope.period,state.gran);if(scope.first&&scope.last)return scope.first===scope.last?scope.first:scope.first+' → '+scope.last;return '当前全景';}
+function trailDeltaText(value,previous){if(!previous)return '无可比较上一期';if(value===0)return '与上一可用期持平';return '较上一可用期 '+(value>0?'增加 ':'减少 ')+human(Math.abs(value))+' tk';}
+function trailModelPrevious(model,scope=trailScope()){if(!scope.previous)return null;return {period:scope.previous.period,total:scope.previous.models[model]||0,calls:(DATA[state.gran].find(row=>row.period===scope.previous.period)?.model_calls||{})[model]||0};}
+function trailEntityEvidence(kind,model=trailState.model,scope=trailScope()){
+  if(!model)return [];
+  const buckets={};scope.days.forEach(day=>{const detail=DATA.day_details?.[day];if(!detail)return;const rows=kind==='session'?(detail.sessions||detail.top_sessions||[]):(detail.cwds||detail.top_cwds||[]);rows.forEach(row=>{const value=(row[3]||{})[model]||0;if(!value)return;const id=row[2]||row[0],item=buckets[id]||(buckets[id]={id,label:row[0],total:0});item.total+=value;});});
+  return Object.values(buckets).sort((a,b)=>b.total-a.total||a.label.localeCompare(b.label));
+}
+function trailReuseEvidence(model=trailState.model,scope=trailScope()){
+  const rows=(DATA.reuse||{})[state.gran]||[],parts=[0,0,0,0,0];let matched=0;
+  rows.forEach(([period,byModel])=>{if(scope.period&&period!==scope.period)return;const values=(byModel||{})[model];if(!values)return;matched++;values.forEach((value,index)=>parts[index]+=value||0);});
+  return {period:scope.period,matched,parts,total:parts.reduce((sum,value)=>sum+value,0)};
+}
+function trailEvidenceAvailability(kind){
+  if(!trailState.model)return {available:false,reason:'先选择一个模型线索。'};
+  if(kind==='project'){const items=trailEntityEvidence('project');return {available:items.length>0,items,reason:items.length?'':capabilityReason('project')};}
+  if(kind==='session'){const items=trailEntityEvidence('session');return {available:items.length>0,items,reason:items.length?'':capabilityReason('session')};}
+  const reuse=trailReuseEvidence();return {available:reuse.total>0,reuse,reason:reuse.total?'':capabilityReason('reuse')};
+}
+function reconcileTrailState(message=''){
+  if(trailState.model&&!state.models.has(trailState.model)){trailState.model=null;trailState.branch=null;trailState.destination=null;trailState.step='model';trailState.reached=1;message=message||'原寻迹模型已不在全局筛选中，已返回模型线索。';}
+  if(!TRAIL_STEPS.includes(trailState.step))trailState.step='scope';
+  if(!trailState.model&&['evidence','destination'].includes(trailState.step)){trailState.step='model';trailState.reached=Math.min(trailState.reached,1);}
+  if(!trailState.branch&&trailState.step==='destination'){trailState.step='evidence';trailState.reached=Math.min(trailState.reached,2);}
+  trailState.reached=Math.max(trailState.reached,TRAIL_STEPS.indexOf(trailState.step));
+  if(message)trailAnnounce(message);
+}
+function trailAnnounce(message){const node=document.getElementById('trail-status');if(node)node.textContent=message||'';}
+function setTrailStep(step,focus=true){const index=TRAIL_STEPS.indexOf(step);if(index<0||index>trailState.reached)return;trailState.step=step;if(step!=='destination')trailState.destination=null;renderDataTrail();if(focus)setTimeout(()=>document.querySelector('#trail-body [data-trail-roving="0"],#trail-body button')?.focus(),0);}
+function openDataTrail(opener=document.activeElement){if(!trailState.open||!trailState.opener)trailState.opener=opener&&document.contains(opener)?opener:trailState.opener;trailState.open=true;reconcileTrailState();renderProbe();renderDataTrail();setTimeout(()=>{document.getElementById('trail-title')?.focus();document.getElementById('data-trail')?.scrollIntoView({behavior:trailScrollBehavior(),block:'nearest'});},0);}
+function closeDataTrail(restore=true){const opener=trailState.opener;trailState.open=false;trailState.destination=null;renderProbe();renderDataTrail();if(restore)setTimeout(()=>{if(opener&&document.contains(opener))opener.focus();else document.getElementById('trail-open')?.focus();},0);}
+function trailBack(){const index=TRAIL_STEPS.indexOf(trailState.step);if(index<=0){closeDataTrail();return;}trailState.step=TRAIL_STEPS[index-1];if(trailState.step==='model'){trailState.branch=null;trailState.destination=null;}else if(trailState.step==='evidence')trailState.destination=null;renderDataTrail();trailAnnounce('已返回'+TRAIL_LABELS[trailState.step]+'。');}
+function trailStepHTML(){const current=TRAIL_STEPS.indexOf(trailState.step);return TRAIL_STEPS.map((step,index)=>'<li class="trail-step '+(index<current?'done ':index===current?'on ':'')+'"><button type=button data-trail-step="'+step+'"'+(index>trailState.reached?' disabled':'')+(index===current?' aria-current="step"':'')+'><i>'+(index<current?'✓':index+1)+'</i><span>'+TRAIL_LABELS[step]+'</span></button></li>').join('');}
+function trailScopeHTML(scope){const selected=state.models.size+'/'+DATA.models.length,delta=trailDeltaText(scope.delta,scope.previous);return '<div class=trail-scope-grid><div class=trail-metric><span>范围</span><b>'+esc(trailScopeLabel(scope))+'</b></div><div class=trail-metric><span>粒度</span><b>'+esc({day:'日',week:'周',month:'月'}[state.gran])+'</b></div><div class=trail-metric><span>模型覆盖</span><b>'+selected+'</b></div><div class=trail-metric><span>Token</span><b>'+fmt(scope.total)+'</b></div><div class=trail-metric><span>调用记录</span><b>'+fmt(scope.calls)+'</b></div></div><div class=trail-note><b>'+esc(delta)+'</b>。上一期指同一粒度中紧邻的上一条可用聚合记录；Token 增减不代表更好或更差。</div><div class=trail-controls><p>下一步会选择临时模型线索，不会偷偷修改页面筛选。</p><button class=ghostbtn type=button data-trail-action="models">查看模型线索 →</button></div>';}
+function trailModelHTML(scope){
+  if(!scope.models.length)return '<div class=trail-note><b>当前范围没有已选模型数据。</b> 恢复模型后才能继续寻迹。 <button class=ghostbtn type=button data-trail-action="restore-models">恢复全部模型</button></div>';
+  const options=scope.models.map((item,index)=>{const previous=trailModelPrevious(item.model,scope),delta=previous?item.total-previous.total:null,on=trailState.model===item.model;return '<button type=button class="trail-option '+(on?'on':'')+'" data-trail-model="'+esc(item.model)+'" data-trail-roving="'+(index===0?'0':'-1')+'" tabindex="'+(index===0?'0':'-1')+'" style="--trail-color:'+(DATA.colors[item.model]||'var(--accent)')+'"><i class=trail-dot></i><b>'+esc(pretty(item.model))+'</b><strong>'+human(item.total)+' tk</strong><small>'+fmt(item.calls)+' 条调用记录 · '+esc(trailDeltaText(delta,previous))+'</small></button>';}).join('');
+  return '<div class=trail-note>选择模型只决定这条证据线；点击“只看此模型”才会修改全局筛选。</div><div class=trail-list role=listbox aria-label="模型线索，使用上下方向键浏览">'+options+'</div>'+(trailState.model?'<div class=trail-controls><p>已选择 '+esc(pretty(trailState.model))+'</p><div><button class=ghostbtn type=button data-trail-action="solo-model">只看此模型</button> <button class=ghostbtn type=button data-trail-action="evidence">展开证据 →</button></div></div>':'');
+}
+function trailEvidenceHTML(){const project=trailEvidenceAvailability('project'),session=trailEvidenceAvailability('session'),reuse=trailEvidenceAvailability('reuse'),branch=(key,icon,title,summary,item,index)=>'<button type=button class="trail-branch '+(trailState.branch===key?'on':'')+'" data-trail-branch="'+key+'" data-trail-roving="'+(index===0?'0':'-1')+'" tabindex="'+(index===0?'0':'-1')+'"'+(item.available?'':' disabled title="'+esc(item.reason)+'"')+'><span class=trail-icon>'+icon+'</span><b>'+title+'</b><span>'+esc(summary)+'</span><small>'+(item.available?'Enter 查看证据':esc(item.reason))+'</small></button>';
+  return '<div class=trail-note><b>'+esc(pretty(trailState.model))+'</b> 的三类证据是同范围、同模型的平行聚合；项目与会话之间不构造配对关系。</div><div class=trail-branches role=listbox aria-label="证据分支，使用上下方向键浏览">'+branch('project','▣','项目证据',project.available?project.items.length+' 个项目，按 Token 排序':'当前不可用',project,0)+branch('session','◉','会话证据',session.available?session.items.length+' 个会话，按 Token 排序':'当前不可用',session,1)+branch('reuse','≈','Context 证据',reuse.available?human(reuse.reuse.total)+' tk 标准化构成':'当前不可用',reuse,2)+'</div>';
+}
+function trailDestinationHTML(){
+  const branch=trailState.branch;if(branch==='project'||branch==='session'){const data=trailEvidenceAvailability(branch),items=data.items||[],noun=branch==='project'?'项目':'会话',rows=items.slice(0,6).map(item=>'<button type=button class=trail-evidence-item data-trail-'+branch+'="'+esc(item.id)+'" data-trail-label="'+esc(item.label)+'"><b>'+esc(item.label)+'</b><strong>'+human(item.total)+' tk</strong><small>'+(branch==='project'?'打开项目透镜':'打开报告内实际保留的完整会话序列')+'</small></button>').join('');const caveat=branch==='project'?'项目证据遵守当前范围与寻迹模型。':'回放不会按寻迹模型或时光探针周期裁剪；每会话最多保留最近 200 轮。';return '<div class=trail-evidence><div class=trail-evidence-list>'+rows+'</div><div class=trail-note><b>'+noun+'证据边界</b><br>'+esc(caveat)+'<br><br>项目和会话是平行聚合，不是已证明的关联。</div></div>';}
+  const data=trailEvidenceAvailability('reuse').reuse,labels=['Fresh Input','Output','Cache Read','Cache Write','Other'],colors=['#5b8def','#f472b6','#14b8a6','#a78bfa','#94a3b8'],max=Math.max(1,...data.parts),parts=data.parts.map((value,index)=>'<div class=trail-part><span>'+labels[index]+'</span><i style="width:'+Math.max(2,value/max*100).toFixed(1)+'%;--trail-color:'+colors[index]+'"></i><b>'+fmt(value)+'</b></div>').join('');return '<div class=trail-evidence><div class=trail-composition>'+parts+'</div><div class=trail-note><b>合计 '+fmt(data.total)+' Token</b><br>Cache Read 是缓存 Token 读取量，不等于已确认的货币节省。Other 是标准化分量与来源 total 对齐后的剩余量，非零时不会隐藏。<br><br><button class=ghostbtn type=button data-trail-reuse>前往复用之河 →</button></div></div>';
+}
+function renderDataTrail(){
+  const rail=document.getElementById('data-trail');if(!rail)return;reconcileTrailState();document.getElementById('trail-open').setAttribute('aria-expanded',String(trailState.open));if(!trailState.open){rail.hidden=true;rail.setAttribute('aria-hidden','true');rail.classList.remove('open');return;}rail.hidden=false;rail.setAttribute('aria-hidden','false');rail.classList.add('open');rail.classList.toggle('motion-static',motionDisabled()||document.documentElement.dataset.motion==='low');document.getElementById('trail-steps').innerHTML=trailStepHTML();document.getElementById('trail-back').disabled=trailState.step==='scope';const scope=trailScope(),body=document.getElementById('trail-body');body.innerHTML=trailState.step==='scope'?trailScopeHTML(scope):trailState.step==='model'?trailModelHTML(scope):trailState.step==='evidence'?trailEvidenceHTML():trailDestinationHTML();
+}
+function trailScrollBehavior(){return motionDisabled()||document.documentElement.dataset.motion==='low'?'auto':'smooth';}
+function activateTrailDestination(card,focusTarget){if(!card)return;card.classList.remove('trail-destination');void card.offsetWidth;card.classList.add('trail-destination');setTimeout(()=>card.classList.remove('trail-destination'),700);setTimeout(()=>focusTarget?.focus(),80);}
+function openTrailProject(id){selectedProject=id;trailState.destination='project';renderLazy('project',true);scrollToSection('section-project');activateTrailDestination(document.getElementById('section-project'),document.getElementById('project-select'));trailAnnounce('已前往项目透镜。');}
+function openTrailSession(id,label){trailState.destination='session';trailAnnounce('正在打开会话回放；回放不按寻迹模型或周期裁剪。');openReplay(id,label);}
+function openTrailReuse(){trailState.destination='reuse';renderLazy('reuse',true);scrollToSection('section-reuse');setTimeout(()=>{const period=trailScope().period,hit=period?[...document.querySelectorAll('#reuse-chart .reuse-hit')].find((node,index)=>selectedReuseRows().filter(row=>!state.focusPeriod||row[0]===state.focusPeriod)[index]?.[0]===period):document.querySelector('#reuse-chart .reuse-hit[tabindex="0"]');activateTrailDestination(document.getElementById('section-reuse'),hit||document.getElementById('reuse-chart'));},40);trailAnnounce('已前往 Context Reuse River。');}
+function trailRoving(event){const item=event.target.closest('[data-trail-roving]');if(!item)return false;const root=item.parentElement,items=[...root.querySelectorAll('[data-trail-roving]:not([disabled])')];if(!items.length)return false;let index=items.indexOf(item),next=null;if(event.key==='ArrowDown'||event.key==='ArrowRight')next=Math.min(items.length-1,index+1);else if(event.key==='ArrowUp'||event.key==='ArrowLeft')next=Math.max(0,index-1);else if(event.key==='Home')next=0;else if(event.key==='End')next=items.length-1;if(next==null)return false;event.preventDefault();items.forEach((node,i)=>{node.tabIndex=i===next?0:-1;node.dataset.trailRoving=i===next?'0':'-1';});items[next].focus();return true;}
+function editableTarget(target){const tag=(target?.tagName||'').toUpperCase();return tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||target?.isContentEditable;}
+
+function dataSignalAttrs(type,id,label,value,scope='',pin=true){return ' data-signal-type="'+type+'" data-signal-id="'+esc(id)+'" data-signal-label="'+esc(label)+'" data-signal-value="'+Number(value||0)+'" data-signal-scope="'+esc(scope)+'"'+(pin?' data-signal-pin="true"':'');}
+
+function signalKey(signal){return signal?signal.type+':'+signal.id:'';}
+function sameSignal(a,b){return !!a&&!!b&&a.type===b.type&&a.id===b.id;}
+function signalFromElement(element){if(!element)return null;const type=element.dataset.signalType,id=element.dataset.signalId;if(!type||!id)return null;return {type,id,label:element.dataset.signalLabel||id,value:Number(element.dataset.signalValue||0),meta:{scope:element.dataset.signalScope||''}};}
+function focusedPeriodSignal(){if(!state.focusPeriod)return null;const row=selectedRows(true).find(item=>item.period===state.focusPeriod);return {type:'period',id:state.focusPeriod,label:fmtLabel(state.focusPeriod,state.gran),value:row?.total||0,meta:{scope:'trend'}};}
+function pinnedSignal(){return signalState.pinnedSignal;}
+function currentPinnedSignal(){return pinnedSignal()||focusedPeriodSignal();}
+function signalPair(){const pin=currentPinnedSignal(),peek=signalState.peek;return {pin,peek:peek&&!sameSignal(peek,pin)?peek:null};}
+const SIGNAL_COMPATIBILITY={model:new Set(['model']),period:new Set(['period']),project:new Set(['project']),session:new Set(['session'])};
+function signalCompatibility(pin,peek){if(!pin||!peek)return {compatible:false,reason:'需要 Pin 与 Peek 两个信号'};if(!SIGNAL_COMPATIBILITY[pin.type]?.has(peek.type))return {compatible:false,reason:'混合类型仅并排查看，不计算 Delta'};return {compatible:true,reason:'同类型本地聚合可比较'};}
+function effectiveSignal(){return signalState.peek||currentPinnedSignal();}
+function signalTypeLabel(type){return {model:'模型',period:'周期',project:'项目',session:'会话'}[type]||'信号';}
+function resolveSignalEvidence(signal){
+  if(!signal){const rows=selectedDailyRows(),end=snapshotEndDate(),quiet=trailingQuietDays(rows,end),events=buildMomentEvents();return {copy:'数据时刻已并入趋势注释轨道；悬停、聚焦或固定一个信号，可查看跨模块上下文。',stamps:[(DATA.range?.since||'起始')+' → '+(DATA.range?.until||'至今'),state.models.size+'/'+DATA.models.length+' 模型',events.length+' 个可回看时刻',quiet.kind==='quiet'?'末端静默 '+quiet.days+' 天':quiet.kind==='active'?'范围末端仍活跃':'当前筛选无观察值']};}
+  if(signal.type==='model'){
+    const rows=selectedRows(),sourceByPeriod=Object.fromEntries((DATA[state.gran]||[]).map(row=>[row.period,row])),total=rows.reduce((sum,row)=>sum+(row.models[signal.id]||0),0),calls=rows.reduce((sum,row)=>sum+((sourceByPeriod[row.period]?.model_calls||{})[signal.id]||0),0),all=rows.reduce((sum,row)=>sum+row.total,0);
+    return {total,calls,copy:'当前范围与时光探针下的完整模型聚合；Pin 不会修改模型筛选。',stamps:[human(total)+' tk',pct(total,all)+' 当前占比',fmt(calls)+' 条调用记录',state.focusPeriod?'时光探针 '+fmtLabel(state.focusPeriod,state.gran):'当前全景'],exact:[fmt(total)+' Token','分子 '+fmt(total)+' / 分母 '+fmt(all),fmt(calls)+' 条调用记录',state.focusPeriod?'周期 '+state.focusPeriod:'报告范围']};
+  }
+  if(signal.type==='period'){
+    const rows=selectedRows(true),index=rows.findIndex(row=>row.period===signal.id),row=rows[index],previous=index>0?rows[index-1]:null,delta=row&&previous&&previous.total?((row.total-previous.total)/previous.total*100):null;
+    return {total:row?.total||0,calls:row?.calls||0,copy:'周期 Pin 继续使用 state.focusPeriod；上一期是同粒度中紧邻的上一条聚合记录。',stamps:[human(row?.total||0)+' tk',fmt(row?.calls||0)+' 条调用记录',row&&previous?((row.total-previous.total)>=0?'+':'')+human(row.total-previous.total)+' tk':'无上一期',delta==null?'无百分比变化':(delta>=0?'+':'')+delta.toFixed(1)+'%'],exact:[fmt(row?.total||0)+' Token',fmt(row?.calls||0)+' 条调用记录',row&&previous?((row.total-previous.total)>=0?'+':'')+fmt(row.total-previous.total)+' Token':'无上一期绝对变化',delta==null?'无上一期百分比变化':(delta>=0?'+':'')+delta.toFixed(1)+'%']};
+  }
+  if(signal.type==='project'){
+    const item=scopedEntities('project').find(row=>row[2]===signal.id),models=item?.[3]||{},dominant=Object.entries(models).sort((a,b)=>b[1]-a[1])[0],total=item?.[1]||0,all=selectedRows().reduce((sum,row)=>sum+row.total,0);
+    return {total,calls:null,copy:'项目信号来自完整筛选项目聚合及真实项目→模型流向，不会推断项目与会话的配对关系。',stamps:[human(total)+' tk',pct(total,all)+' 当前占比',dominant?'主力 '+pretty(dominant[0]):'无模型构成',state.focusPeriod?'当前探针范围':'当前报告范围'],exact:[fmt(total)+' Token','分子 '+fmt(total)+' / 当前范围 '+fmt(all),Object.keys(models).length+' 个模型分量',dominant?'主力 '+pretty(dominant[0])+' '+fmt(dominant[1])+' Token':'无模型构成']};
+  }
+  const series=DATA.session_series?.[signal.id]||[],item=scopedEntities('session').find(row=>row[2]===signal.id),total=item?.[1]||0;
+  return {total,calls:null,copy:'会话信号来自完整筛选会话聚合及真实模型→会话流向；它与项目证据保持平行，不构造配对关系。',stamps:[human(total)+' tk',series.length+' 轮已保留',series.length>=200?'最多最近 200 轮':'完整保留序列','横轴是轮次，不代表耗时'],exact:[fmt(total)+' Token',fmt(series.length)+' 轮已保留',series.length>=200?'保留边界：最近 200 轮':'未触及 200 轮边界','回放不按模型或时光探针裁剪']};
+}
+function signalEvidence(signal){return resolveSignalEvidence(signal);}
+function signalComparison(pair=signalPair()){const compatibility=signalCompatibility(pair.pin,pair.peek);if(!pair.pin||!pair.peek)return {compatible:false,label:'固定后再 Peek 一个兼容信号',reason:compatibility.reason};if(!compatibility.compatible)return {compatible:false,mixed:true,label:compatibility.reason,reason:compatibility.reason};const pin=resolveSignalEvidence(pair.pin),peek=resolveSignalEvidence(pair.peek);if(!Number.isFinite(pin.total)||!Number.isFinite(peek.total))return {compatible:false,label:'当前信号没有可比较 Token 聚合',reason:'缺少可比较聚合'};const delta=peek.total-pin.total,ratio=pin.total?delta/pin.total:null;return {compatible:true,delta,ratio,label:(delta>=0?'+':'')+human(delta)+' tk'+(ratio==null?'':(' · '+(ratio>=0?'+':'')+(ratio*100).toFixed(1)+'%')),reason:'Peek 相对 Pin'};}
+function signalActions(signal){if(!signal)return {label:'选择一个信号',disabled:true};if(signal.type==='model')return {label:'只看此模型',run:()=>setModels([signal.id],'只看 '+signal.label)};if(signal.type==='period')return {label:state.focusPeriod===signal.id?'退出时光探针':'进入时光探针',run:()=>toggleFocus(signal.id,true)};if(signal.type==='project')return {label:'打开项目透镜',run:()=>{selectedProject=signal.id;renderLazy('project',true);scrollToSection('section-project');setTimeout(()=>document.getElementById('project-select')?.focus(),60);}};return {label:'打开会话回放',run:()=>openReplay(signal.id,signal.label)};}
+function renderSignalDock(){
+  const pair=signalPair(),signal=effectiveSignal(),evidence=resolveSignalEvidence(signal),comparison=signalComparison(pair),action=signalActions(signal),pinned=!!pair.pin,dock=document.getElementById('signal-dock');if(!dock)return;
+  dock.classList.toggle('has-signal',!!signal);dock.classList.toggle('is-pinned',pinned);document.getElementById('signal-label').textContent=pair.peek?'Peek · '+pair.peek.label:pair.pin?'Pin · '+pair.pin.label:'Signal Dock';document.getElementById('signal-detail').textContent=signal?signalTypeLabel(signal.type)+' · '+(Number.isFinite(evidence.total)?human(evidence.total)+' tk':'本地上下文'):'悬停或聚焦数据以 Peek';document.getElementById('signal-pop-title').textContent=signal?signalTypeLabel(signal.type)+' · '+signal.label:'当前范围信号';document.getElementById('signal-pop-copy').textContent=evidence.copy;const summary=(item,empty)=>item?signalTypeLabel(item.type)+' · '+item.label+' · '+human(resolveSignalEvidence(item).total||0)+' tk':empty;document.getElementById('signal-pin-copy').textContent=summary(pair.pin,'未固定信号');document.getElementById('signal-peek-copy').textContent=summary(pair.peek,'悬停或聚焦以查看');const delta=document.getElementById('signal-delta-summary');delta.classList.toggle('compatible',comparison.compatible);delta.classList.toggle('mixed',!!comparison.mixed);document.getElementById('signal-delta-copy').textContent=comparison.label;const stamps=exactnessActive()&&evidence.exact?evidence.exact:evidence.stamps;document.getElementById('signal-stamps').innerHTML=(stamps||[]).map(stamp=>'<span>'+esc(stamp)+'</span>').join('');const clear=document.getElementById('signal-clear');clear.disabled=!pinned;clear.setAttribute('aria-label',pair.pin?.type==='period'&&state.focusPeriod===pair.pin.id?'退出时光探针':'清除固定信号');const button=document.getElementById('signal-action');button.textContent=action.label;button.disabled=!!action.disabled;button.__signalRun=action.run||null;
+}
+function signalScopeRoot(source){if(!source)return null;const scope=source.dataset?.signalScope;if(!scope||scope==='filters')return null;if(scope==='flow')return document.getElementById('flow-map');if(scope==='top')return source.closest('#section-top');if(scope==='trend')return source.closest('#section-trend');if(scope==='composition')return source.closest('.card');if(scope==='project')return source.closest('#section-project');if(scope==='multiples')return source.closest('[data-module="multiples"]');return source.closest('.card,section');}
+function applySignalClasses(){
+  const signal=effectiveSignal(),pair=signalPair();document.querySelectorAll('.signal-hot,.signal-related,.signal-dim,.signal-pinned').forEach(el=>el.classList.remove('signal-hot','signal-related','signal-dim','signal-pinned'));if(!signal)return;
+  const source=signalState.peek?signalState.peekSource:signalState.opener,root=signalScopeRoot(source),scope=source?.dataset?.signalScope||signal.meta?.scope||'',canDim=!!root&&scope!=='filters'&&(!pair.pin||!pair.peek||pair.pin.type===pair.peek.type),peers=root?[...root.querySelectorAll('[data-signal-type="'+signal.type+'"]')]:[...document.querySelectorAll('[data-signal-type="'+signal.type+'"]')];peers.forEach(el=>{const direct=el.dataset.signalId===signal.id;el.classList.toggle('signal-hot',direct);if(canDim)el.classList.toggle('signal-dim',!direct);if(direct&&sameSignal(signal,pair.pin))el.classList.add('signal-pinned');});
+  const links=[...document.querySelectorAll('#flow-map .flow-link')],nodes=[...document.querySelectorAll('#flow-map .flow-node')],related=new Set();if(signal.type==='model'){links.forEach(link=>{if(link.dataset.flowModel===signal.id){link.classList.add('signal-related');if(link.dataset.flowFrom)related.add(link.dataset.flowFrom);if(link.dataset.flowTo)related.add(link.dataset.flowTo);}});}if(signal.type==='project'){const key='project:'+signal.id;links.forEach(link=>{if(link.dataset.flowFrom===key){link.classList.add('signal-related');related.add('model:'+link.dataset.flowModel);}});}if(signal.type==='session'){const key='session:'+signal.id;links.forEach(link=>{if(link.dataset.flowTo===key){link.classList.add('signal-related');related.add('model:'+link.dataset.flowModel);}});}nodes.forEach(node=>{if(related.has(node.dataset.flowType+':'+node.dataset.flowId))node.classList.add('signal-related');});
+}
+function applySignalLens(){applySignalClasses();renderSignalDock();}
+function setSignalPeek(signal,source=null){if(sameSignal(signal,signalState.peek)&&signalState.peekSource===source)return;signalState.peek=signal;signalState.peekSource=source;applySignalLens();}
+function clearSignalPeek(signal){if(signal&&!sameSignal(signal,signalState.peek))return;signalState.peek=null;signalState.peekSource=null;applySignalLens();}
+function setSignalPreview(signal,source=null){setSignalPeek(signal,source);}
+function clearSignalPreview(signal){clearSignalPeek(signal);}
+function toggleSignalPin(signal){if(!signal)return;clearScrub();signalState.pinnedSignal=sameSignal(signalState.pinnedSignal,signal)?null:signal;signalState.peek=null;signalState.peekSource=null;if(signal.type==='period'){const entering=state.focusPeriod!==signal.id;state.focusPeriod=entering?signal.id:null;if(!entering){trailState.step='scope';trailState.reached=0;trailState.branch=null;trailState.destination=null;}invalidateDerived();renderDataViews();announceViewChange(entering?'时光探针已锁定 '+fmtLabel(signal.id,state.gran):'已返回当前粒度全景',['section-trend','section-overview','section-top']);}document.getElementById('signal-status').textContent=signalState.pinnedSignal?'已 Pin '+signalTypeLabel(signal.type)+' '+signal.label:'已清除 Pin';applySignalLens();}
+function clearSignal(restore=true){const opener=signalState.opener,pin=currentPinnedSignal(),period=pin?.type==='period'&&state.focusPeriod===pin.id?state.focusPeriod:null;signalState.peek=null;signalState.peekSource=null;signalState.pinnedSignal=null;if(period){state.focusPeriod=null;trailState.step='scope';trailState.reached=0;trailState.branch=null;trailState.destination=null;invalidateDerived();renderDataViews();announceViewChange('已退出时光探针',['section-trend','section-overview','section-top']);}else applySignalLens();if(restore&&opener&&document.contains(opener))opener.focus();}
+function bindSignalLens(){
+  if(document.body.dataset.signalDelegated)return;document.body.dataset.signalDelegated='1';
+  document.addEventListener('pointerover',event=>{const el=event.target.closest('[data-signal-type]');if(el)setSignalPeek(signalFromElement(el),el);});
+  document.addEventListener('pointerout',event=>{const el=event.target.closest('[data-signal-type]');if(el&&!el.contains(event.relatedTarget)){const next=event.relatedTarget?.closest?.('[data-signal-type]');if(!next||signalKey(signalFromElement(next))!==signalKey(signalFromElement(el)))clearSignalPeek(signalFromElement(el));}});
+  document.addEventListener('focusin',event=>{const el=event.target.closest('[data-signal-type]');if(el)setSignalPeek(signalFromElement(el),el);});
+  document.addEventListener('focusout',event=>{const el=event.target.closest('[data-signal-type]');if(el&&!el.contains(event.relatedTarget)){const next=event.relatedTarget?.closest?.('[data-signal-type]');if(!next||signalKey(signalFromElement(next))!==signalKey(signalFromElement(el)))clearSignalPeek(signalFromElement(el));}});
+  document.addEventListener('click',event=>{const el=event.target.closest('[data-signal-pin="true"]');if(!el)return;if(el.matches('select,input,textarea,option'))return;event.preventDefault();event.stopPropagation();signalState.opener=el;toggleSignalPin(signalFromElement(el));});
+  document.addEventListener('keydown',event=>{const el=event.target.closest('[data-signal-pin="true"]');if(!el||(event.key!=='Enter'&&event.key!==' '))return;if(el.matches('select,input,textarea,option'))return;event.preventDefault();event.stopPropagation();signalState.opener=el;toggleSignalPin(signalFromElement(el));});
+}
+
+document.getElementById('trail-open').addEventListener('click',e=>openDataTrail(e.currentTarget));document.getElementById('trail-close').addEventListener('click',()=>closeDataTrail());document.getElementById('trail-back').addEventListener('click',trailBack);document.getElementById('data-trail').addEventListener('click',event=>{const step=event.target.closest('[data-trail-step]');if(step){setTrailStep(step.dataset.trailStep,false);return;}const action=event.target.closest('[data-trail-action]');if(action){const key=action.dataset.trailAction;if(key==='models'){trailState.reached=Math.max(trailState.reached,1);setTrailStep('model');}else if(key==='restore-models')setModels(DATA.models,'已恢复全部模型');else if(key==='solo-model'&&trailState.model)setModels([trailState.model],'Solo · '+pretty(trailState.model));else if(key==='evidence'){trailState.reached=Math.max(trailState.reached,2);setTrailStep('evidence');}return;}const model=event.target.closest('[data-trail-model]');if(model){trailState.model=model.dataset.trailModel;trailState.branch=null;trailState.destination=null;trailState.reached=Math.max(trailState.reached,1);renderDataTrail();trailAnnounce('模型线索已选择：'+pretty(trailState.model)+'。');return;}const branch=event.target.closest('[data-trail-branch]');if(branch){trailState.branch=branch.dataset.trailBranch;trailState.step='destination';trailState.reached=3;renderDataTrail();trailAnnounce('已展开'+({project:'项目',session:'会话',reuse:'Context'}[trailState.branch])+'证据。');return;}const project=event.target.closest('[data-trail-project]');if(project)openTrailProject(project.dataset.trailProject);const session=event.target.closest('[data-trail-session]');if(session)openTrailSession(session.dataset.trailSession,session.dataset.trailLabel);if(event.target.closest('[data-trail-reuse]'))openTrailReuse();});document.getElementById('data-trail').addEventListener('keydown',event=>{if(trailRoving(event))return;if((event.key==='Enter'||event.key===' ')&&event.target.matches('[data-trail-model],[data-trail-branch]')){event.preventDefault();event.target.click();}});
+
+function toggleFocus(period,restoreBar=false){clearScrub();const entering=state.focusPeriod!==period;state.focusPeriod=entering?period:null;if(signalState.pinnedSignal?.type==='period'&&signalState.pinnedSignal.id!==state.focusPeriod)signalState.pinnedSignal=null;if(!entering){trailState.step='scope';trailState.reached=0;trailState.branch=null;trailState.destination=null;}invalidateDerived();renderDataViews();announceViewChange(entering?'时光探针已锁定 '+fmtLabel(period,state.gran):'已返回当前粒度全景',['section-trend','section-overview','section-top']);if(restoreBar){const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===period);if(el){barCursor=Number(el.dataset.index||0);el.focus();}} }
+function clearFocus(restoreBar=false){clearScrub();if(!state.focusPeriod)return;const period=state.focusPeriod;state.focusPeriod=null;if(signalState.pinnedSignal?.type==='period')signalState.pinnedSignal=null;trailState.step='scope';trailState.reached=0;trailState.branch=null;trailState.destination=null;invalidateDerived();renderDataViews();announceViewChange('已退出时光探针',['section-trend','section-overview','section-top']);if(restoreBar){const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===period);if(el){barCursor=Number(el.dataset.index||0);el.focus();}} }
 
 document.getElementById('probe-close').addEventListener('click',clearFocus);
 
@@ -481,23 +832,29 @@ function restoreViewFromURL(){
   const focus=p.get('focus');state.focusPeriod=validFocus(focus,state.gran)?focus:null;state.compare=p.get('compare')==='1';
   const theme=(p.get('t')||'').toLowerCase();if(['auto','light','dark'].includes(theme))applyTheme(theme);
 }
-function viewDescription(){const gran={day:'按日',week:'按周',month:'按月'}[state.gran],modelCount=state.models.size,focus=state.focusPeriod?fmtLabel(state.focusPeriod,state.gran):'全景',compare=state.compare?'已开启':'关闭';return {gran,modelCount,focus,compare};}
+function viewDescription(){const gran={day:'按日',week:'按周',month:'按月'}[state.gran],modelCount=state.models.size,focus=state.focusPeriod?fmtLabel(state.focusPeriod,state.gran):'全景',compare=state.compare?'已固定':signalState.compareHeld?'临时预览':'关闭';return {gran,modelCount,focus,compare};}
 function syncGranControls(){document.querySelectorAll('#tabs button').forEach(x=>{const on=x.dataset.gran===state.gran;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});}
 function renderViewCapsule(){
   const d=viewDescription(),label=document.getElementById('view-label'),capsule=document.getElementById('view-capsule');
   label.textContent=d.gran.replace('按','')+' · '+(d.modelCount===DATA.models.length?'全部模型':d.modelCount+'/'+DATA.models.length+' 模型')+' · '+d.focus;
   capsule.classList.toggle('dirty',!!state.focusPeriod||state.models.size!==DATA.models.length||state.compare);
   document.getElementById('view-summary').innerHTML='<b>'+d.gran+'</b> · '+d.modelCount+' / '+DATA.models.length+' 个模型<br><b>'+(state.focusPeriod?'时光探针':'时间范围')+'</b> · '+esc(d.focus)+'<br><b>幻影对比</b> · '+d.compare;
-  syncGranControls();const compare=document.getElementById('compare-btn');compare.classList.toggle('on',state.compare);compare.setAttribute('aria-pressed',String(state.compare));
+  syncGranControls();const compare=document.getElementById('compare-btn');compare.classList.toggle('on',compareActive());compare.classList.toggle('held',signalState.compareHeld&&!state.compare);compare.setAttribute('aria-pressed',String(state.compare));
 }
-function resetView(){state.gran='month';state.models=new Set(DATA.models);state.focusPeriod=null;state.compare=false;previousModels=null;invalidateDerived();renderFilters();renderDataViews();announceViewChange('已恢复月度全景',['section-overview','section-trend','section-top']);}
+function resetView(){clearScrub();state.gran='month';state.models=new Set(DATA.models);state.focusPeriod=null;state.compare=false;signalState.peek=null;signalState.pinnedSignal=null;signalState.compareHeld=false;previousModels=null;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();renderFilters();renderDataViews();announceViewChange('已恢复月度全景',['section-overview','section-trend','section-top']);}
 async function copyText(text){try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return true;}}catch(e){}const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}ta.remove();return ok;}
 function copyViewLink(){copyText(portableViewURL()).then(ok=>toast(ok?'当前视图链接已复制':'复制失败，请从地址栏复制'));}
 document.getElementById('view-capsule').addEventListener('click',e=>{e.stopPropagation();const pop=document.getElementById('view-pop'),open=!pop.classList.contains('open');pop.classList.toggle('open',open);e.currentTarget.setAttribute('aria-expanded',String(open));});
-document.getElementById('view-copy').addEventListener('click',copyViewLink);document.getElementById('view-reset').addEventListener('click',resetView);document.addEventListener('click',e=>{if(!e.target.closest('.view-wrap')){document.getElementById('view-pop').classList.remove('open');document.getElementById('view-capsule').setAttribute('aria-expanded','false');}});
-window.addEventListener('popstate',()=>{restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderDataViews();restoringView=false;});
+document.getElementById('view-copy').addEventListener('click',copyViewLink);document.getElementById('view-reset').addEventListener('click',resetView);document.addEventListener('click',e=>{if(!e.target.closest('.view-wrap')){document.getElementById('view-pop').classList.remove('open');document.getElementById('view-capsule').setAttribute('aria-expanded','false');}if(!e.target.closest('#signal-dock')){document.getElementById('signal-pop').classList.remove('open');document.getElementById('signal-main').setAttribute('aria-expanded','false');}});
+document.getElementById('signal-main').addEventListener('click',event=>{event.stopPropagation();const pop=document.getElementById('signal-pop'),open=!pop.classList.contains('open');pop.classList.toggle('open',open);event.currentTarget.setAttribute('aria-expanded',String(open));if(open){renderSignalDock();setTimeout(()=>{const action=document.getElementById('signal-action');(action&&!action.disabled?action:document.getElementById('exact-btn'))?.focus();},0);}});
+document.getElementById('signal-pop').addEventListener('click',event=>event.stopPropagation());document.getElementById('signal-clear').addEventListener('click',()=>clearSignal());document.getElementById('signal-action').addEventListener('click',event=>{const run=event.currentTarget.__signalRun;if(run)run();});document.getElementById('exact-btn').addEventListener('click',()=>{signalState.exactPinned=!signalState.exactPinned;syncExactness();renderSignalDock();document.getElementById('signal-status').textContent=signalState.exactPinned?'精确层已固定':'精确层已取消固定';});
+window.addEventListener('popstate',()=>{clearScrub();restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderDataViews();restoringView=false;});
 
-document.getElementById('compare-btn').addEventListener('click',()=>{state.compare=!state.compare;renderBar();renderViewCapsule();syncViewURL();announceViewChange(state.compare?'幻影对比已开启':'幻影对比已关闭',['section-trend']);});
+const compareButton=document.getElementById('compare-btn');let compareHoldTimer=null,compareHoldReached=false;
+function togglePinnedCompare(){state.compare=!state.compare;setCompareHeld(false);renderBar();renderViewCapsule();syncViewURL();announceViewChange(state.compare?'幻影对比已固定':'幻影对比已取消',['section-trend']);}
+compareButton.addEventListener('pointerdown',event=>{if(event.button!==0)return;compareHoldReached=false;clearTimeout(compareHoldTimer);compareHoldTimer=setTimeout(()=>{compareHoldReached=true;setCompareHeld(true);document.getElementById('signal-status').textContent='正在临时预览上一期轮廓';},240);});
+function releaseCompareHold(){clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){setCompareHeld(false);compareHoldReached=false;}}
+compareButton.addEventListener('pointerup',event=>{clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){event.preventDefault();setCompareHeld(false);compareHoldReached=false;return;}togglePinnedCompare();});compareButton.addEventListener('pointercancel',releaseCompareHold);compareButton.addEventListener('pointerleave',()=>{if(compareHoldReached)releaseCompareHold();});compareButton.addEventListener('click',event=>event.preventDefault());compareButton.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!event.repeat){event.preventDefault();togglePinnedCompare();}});
 
 const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,creature:renderCreature,race:renderRace,almanac:renderAlmanac,badges:renderBadges,dna:renderDNA};
 const lazyState={};
@@ -510,10 +867,10 @@ function initLazyRendering(){
   const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{const name=entry.target.dataset.lazy;lazyState[name]=Object.assign({},lazyState[name],{visible:entry.isIntersecting});if(entry.isIntersecting&&(lazyState[name].dirty||!lazyState[name].rendered))renderLazy(name,true);}),{rootMargin:'500px 0px'});
   document.querySelectorAll('[data-lazy]').forEach(card=>observer.observe(card));
 }
-function renderCoreViews(){renderKPI();const n=DATA[state.gran].length;document.getElementById('bar-hint').textContent=n+' 期 · 点击柱子进入时光探针';renderBar();renderDonut();renderTable();renderTop();renderStatusPulse();renderViewCapsule();}
+function renderCoreViews(){renderKPI();renderBar();renderDonut();renderTable();renderTop();renderStatusPulse();renderViewCapsule();}
 function renderTimeViews(){renderClock();renderWeather();renderProbe();renderRhythm();renderBlock();renderDaily();}
 function renderModelViews(){renderMultiples();markLazyDirty();markStaticLazyDirty();}
-function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderDataMoments();renderFunFacts();renderFortune();renderDiscovery();renderFooter();bindModelLinks();syncViewURL();}
+function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderFunFacts();renderFortune();renderDiscovery();renderFooter();renderDataTrail();applySignalLens();syncViewURL();}
 function render(){renderDataViews();}
 
 
@@ -523,7 +880,7 @@ document.getElementById('tabs').addEventListener('click',e=>{
 });
 function setGran(g){
   if(!['day','week','month'].includes(g)||g===state.gran)return;
-  state.gran=g;state.focusPeriod=null;invalidateDerived();renderDataViews();announceViewChange('统计粒度已切换为 '+({day:'按日',week:'按周',month:'按月'}[g]),['section-trend','section-overview']);
+  clearScrub();state.gran=g;state.focusPeriod=null;if(signalState.pinnedSignal?.type==='period')signalState.pinnedSignal=null;if(signalState.peek?.type==='period')signalState.peek=null;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();reconcileSignalState();renderDataViews();announceViewChange('统计粒度已切换为 '+({day:'按日',week:'按周',month:'按月'}[g]),['section-trend','section-overview']);
 }
 
 document.getElementById('meta').textContent =
@@ -589,17 +946,26 @@ document.getElementById('md-btn').addEventListener('click',exportMarkdown);
 function openHelp(){const modal=document.getElementById('help-modal');openModal(modal,document.getElementById('help-close'));}
 function closeHelp(){closeModal(document.getElementById('help-modal'));}
 document.getElementById('help-close').addEventListener('click',closeHelp);document.getElementById('help-modal').addEventListener('click',e=>{if(e.target.id==='help-modal')closeHelp();});document.getElementById('help-modal').addEventListener('keydown',e=>trapModalFocus(e,e.currentTarget));
-// 键盘：1/2/3 切粒度，T 切主题，E 导出 CSV，? 查看帮助
+// 键盘：1/2/3 切粒度，T 切主题，E 导出 CSV，I 打开寻迹，? 查看帮助
+function globalShortcutBlocked(event){return event.defaultPrevented||editableTarget(event.target)||!!activeModal()||document.getElementById('scrim').classList.contains('open');}
 document.addEventListener('keydown',e=>{
-  const tag=(e.target.tagName||'').toUpperCase();
-  if(tag==='INPUT'||tag==='TEXTAREA') return;
-  if(e.key==='1') setGran('day');
+  if(globalShortcutBlocked(e))return;
+  if(e.key==='i'||e.key==='I'){e.preventDefault();openDataTrail(e.target);}
+  else if(e.key==='1') setGran('day');
   else if(e.key==='2') setGran('week');
   else if(e.key==='3') setGran('month');
   else if(e.key==='t'||e.key==='T'){ const o=['auto','light','dark'],c=localStorage.getItem('tk-theme')||'auto'; applyTheme(o[(o.indexOf(c)+1)%3]); }
   else if(e.key==='e'||e.key==='E') exportCSV();
   else if(e.key==='?') openHelp();
 });
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Alt'&&!signalState.exactHeld){signalState.exactHeld=true;syncExactness();renderSignalDock();}
+  if((e.key==='c'||e.key==='C')&&!e.repeat&&!globalShortcutBlocked(e)){e.preventDefault();setCompareHeld(true);}
+});
+document.addEventListener('keyup',e=>{if(e.key==='Alt'){signalState.exactHeld=false;syncExactness();renderSignalDock();}if(e.key==='c'||e.key==='C')setCompareHeld(false);});
+function clearHeldSignals(){if(signalState.exactHeld){signalState.exactHeld=false;syncExactness();}if(signalState.compareHeld)setCompareHeld(false);}
+window.addEventListener('blur',()=>{clearHeldSignals();clearScrub('预览已清除');});document.addEventListener('visibilitychange',()=>{if(document.hidden){clearHeldSignals();clearScrub('预览已清除');}});
 
 /* ---- 趣味 / 意想不到的交互 ---- */
 function toast(msg, ms=2600){
@@ -635,7 +1001,7 @@ document.getElementById('logo').addEventListener('click',()=>{
   const top=(DATA.top_cwds&&DATA.top_cwds[0])?DATA.top_cwds[0][0]:'—';
   const calls=(DATA.day||[]).reduce((a,r)=>a+r.calls,0);
   const F=[
-    '缓存帮你省了 '+human(DATA.cache_read||0)+' token，钱包松了口气',
+    '缓存读取量为 '+human(DATA.cache_read||0)+' token，代表复用体量而非已确认费用',
     '峰值在 '+(pi>=0?String(pi).padStart(2,'0')+':00':'?')+'，夜猫子实锤',
     human(lastTotal)+' token ≈ '+fmt(Math.max(0,Math.round(lastTotal/27000)))+' 篇毕业论文',
     '最肝的项目：'+top,
@@ -645,13 +1011,7 @@ document.getElementById('logo').addEventListener('click',()=>{
   ];
   toast(F[Math.floor(Math.random()*F.length)]);
 });
-// 点 Hero 数字：短按切换表达方式；双击复制精确值
-const heroValue=document.querySelector('.kpi.is-primary .v');
-heroValue.addEventListener('click',()=>{
-  state.numberMode=(state.numberMode+1)%3;
-  document.getElementById('k-total').textContent=displayNumber(lastTotal);
-  toast(['精确数字','中文数量级','国际缩写'][state.numberMode]);
-});
+// Hero 总量保留稳定的紧凑表达；精确值通过复制按钮与 Exactness Key 暴露
 document.getElementById('k-total-copy').addEventListener('click',e=>{e.stopPropagation();copyExactValue('总 Token',lastTotal);});
 
 // Hero 跟手光斑
@@ -747,7 +1107,7 @@ function rhythmLevel(value,positiveValues){
 
 function activateRhythmCell(cell){
   if(!DATA.day.some(d=>d.period===cell.dataset.day)){toast(cell.dataset.day+' 无 Token 记录');return;}
-  state.gran='day';state.focusPeriod=cell.dataset.day;invalidateDerived();hideRhythmTip();renderDataViews();
+  clearScrub();state.gran='day';state.focusPeriod=cell.dataset.day;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();hideRhythmTip();renderDataViews();
 }
 function focusRhythmCell(cells,index){const next=Math.max(0,Math.min(cells.length-1,index));cells.forEach((cell,i)=>cell.tabIndex=i===next?0:-1);cells[next].focus();}
 
@@ -800,14 +1160,8 @@ function dominantModel(row){let best=null,bestValue=0,tied=false;DATA.models.for
 function latestModelRelay(rows){let previous=null,previousDay=null,latest=null;[...rows].sort((a,b)=>a.period.localeCompare(b.period)).forEach(row=>{const current=dominantModel(row),p=row.period.split('-').map(Number),day=new Date(p[0],p[1]-1,p[2]);let consecutive=false;if(previousDay){const next=new Date(previousDay);next.setDate(next.getDate()+1);consecutive=localISO(next)===row.period;}if(current&&previous&&consecutive&&previous!==current)latest={day:row.period,from:previous,to:current};previous=current;previousDay=day;if(!current){previous=null;previousDay=day;}});return latest;}
 function projectFirstSeenInRange(projectId){let first=null;Object.entries(DATA.day_details||{}).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([day,detail])=>{const row=(detail.cwds||detail.top_cwds||[]).find(x=>(x[2]||x[0])===projectId);if(!row)return;const total=Object.entries(row[3]||{}).reduce((sum,[m,v])=>sum+(state.models.has(m)?v||0:0),0);if(total>0&&!first)first={day,label:row[0]};});return first;}
 function newestProjectMoment(){const seen={};Object.entries(DATA.day_details||{}).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([day,detail])=>(detail.cwds||detail.top_cwds||[]).forEach(row=>{const id=row[2]||row[0],total=Object.entries(row[3]||{}).reduce((sum,[m,v])=>sum+(state.models.has(m)?v||0:0),0);if(total>0&&!seen[id])seen[id]={day,id,label:row[0]};}));return Object.values(seen).sort((a,b)=>b.day.localeCompare(a.day))[0]||null;}
-function focusMomentDay(day){if(!day)return;state.gran='day';state.focusPeriod=day;invalidateDerived();renderDataViews();setTimeout(()=>{scrollToSection('section-trend');const marker=[...document.querySelectorAll('#bar .moment-marker')].find(x=>x.dataset.momentDay===day);if(marker){marker.classList.add('moment-active');marker.focus();setTimeout(()=>marker.classList.remove('moment-active'),900);return;}const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===day);if(el)el.focus();},0);}
+function focusMomentDay(day){if(!day)return;clearScrub();state.gran='day';state.focusPeriod=day;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();renderDataViews();setTimeout(()=>{scrollToSection('section-trend');const marker=[...document.querySelectorAll('#bar .moment-marker')].find(x=>x.dataset.momentDay===day);if(marker){marker.classList.add('moment-active');marker.focus();setTimeout(()=>marker.classList.remove('moment-active'),900);return;}const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===day);if(el)el.focus();},0);}
 function buildMomentEvents(){const rows=selectedDailyRows(),milestone=latestMilestone(rows),relay=latestModelRelay(rows),project=newestProjectMoment(),events=[];if(milestone)events.push({kind:'milestone',day:milestone.day,label:'达到 '+human(milestone.value),description:milestone.day+' 在本报告范围、当前模型筛选的累计中首次达到 '+human(milestone.value)+' Token。',icon:'◆'});if(project)events.push({kind:'project',day:project.day,label:'新观察项目 '+project.label,description:project.day+' 在本报告范围、当前模型筛选中首次观察到项目 '+project.label+'。',icon:'◇'});if(relay)events.push({kind:'relay',day:relay.day,label:pretty(relay.from)+' → '+pretty(relay.to),description:relay.day+' 与前一自然日连续，且每日唯一主力模型由 '+pretty(relay.from)+' 变为 '+pretty(relay.to)+'。',icon:'↗'});return events.sort((a,b)=>a.day.localeCompare(b.day)||a.kind.localeCompare(b.kind));}
-function renderDataMoments(){const rows=selectedDailyRows(),end=snapshotEndDate(),quiet=trailingQuietDays(rows,end),current=currentActiveStreak(rows,end),events=buildMomentEvents(),byKind=Object.fromEntries(events.map(event=>[event.kind,event])),milestone=byKind.milestone,relay=byKind.relay,project=byKind.project,items=[];
-  items.push(quiet.kind==='no-observation'?{k:'QUIET WINDOW',title:'当前筛选没有观察值',copy:'本报告范围内没有所选模型的正 Token 记录。'}:quiet.kind==='quiet'?{k:'QUIET WINDOW',title:'范围末端静默 '+quiet.days+' 个自然日',copy:'截止 '+end+'，最后一次所选模型活动之后保持静默。'}:{k:'ACTIVE STREAK',title:'当前连续活跃 '+current+' 个自然日',copy:'截止 '+end+'，所选模型在范围末端仍有活动。',day:end});
-  items.push(milestone?{k:'RANGE MILESTONE',title:milestone.label+' Token',copy:milestone.description,day:milestone.day}:{k:'RANGE MILESTONE',title:'范围里程碑尚未出现',copy:'当前模型筛选在本报告范围内累计尚未达到 1K Token。'});
-  items.push(project?{k:'RANGE PROJECT',title:project.label,copy:project.description,day:project.day}:{k:'RANGE PROJECT',title:'没有范围内新观察项目',copy:capabilityReason('project')});
-  items.push(relay?{k:'MODEL RELAY',title:relay.label,copy:relay.description,day:relay.day}:{k:'MODEL RELAY',title:'没有连续日主力变化',copy:'安静日、日期缺口或并列主力都会打断接力。'});
-  document.getElementById('moments-meta').textContent=(DATA.range?.until?'范围快照':'当前快照')+' · '+items.filter(x=>x.day).length+' 个可回看时刻';document.getElementById('moments').innerHTML=items.map((x,i)=>'<button type=button class=moment data-i="'+i+'"'+(x.day?' data-day="'+x.day+'"':' disabled')+'><span class=mo-k>'+x.k+'</span><b>'+esc(x.title)+'</b><span>'+esc(x.copy)+'</span></button>').join('');}
 
 const SOURCE_NOTES={claude:'Claude total 由 input、output、cache read/write 组成；通常保留 cwd 与 session。',gemini:'Gemini total 以日志报告值为准；通常有 session，但缺少 cwd。',codex:'Codex input 通常包含 cached input；当前记录通常缺少 cwd 与 session。'};
 function coverageRatio(value,total){return total?value/total:0;}
@@ -824,7 +1178,7 @@ function capabilityInfo(){const p=DATA.provenance||{},n=p.records||1,ratio=k=>co
 function capabilityReason(key){const item=capabilityInfo().find(x=>x.key===key);if(!item)return '当前范围缺少所需数据。';const sources=Object.keys((DATA.provenance||{}).sources||{});return item.reason+(sources.length?'；当前来源：'+sources.join(' / '):'')+'。';}
 function renderProvenance(){const p=DATA.provenance||{},n=p.records||0,health=provenanceHealth(),fresh=freshnessInfo(),percent=v=>coverageRatio(v,n)*100;
   document.getElementById('prov-stamp').innerHTML='<div><span>PARSED RECORD CHECK</span><b>'+health.label+'</b><small>'+fresh.label+'</small></div>';
-  document.getElementById('prov-copy').innerHTML='<b>'+health.detail+'</b><br>'+fresh.detail+'。分母仅包含读取器已经接受并标准化的记录；被解析器拒绝的原始事件不在其中。本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证。';
+  document.getElementById('prov-copy').innerHTML='<b>'+health.detail+'</b><br>'+fresh.detail+'。分母仅包含读取器已经接受并标准化的记录；被解析器拒绝的原始事件不在其中。本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证。<span class=exact-inline> 精确语义：时间戳 '+fmt(p.valid_ts||0)+' / '+fmt(n)+'；项目 '+fmt(p.with_cwd||0)+' / '+fmt(n)+'；会话 '+fmt(p.with_session||0)+' / '+fmt(n)+'；标准化组成 '+fmt(standardizedComponentCount(p))+' / '+fmt(n)+'；回放保留 '+fmt(p.replay_retained||0)+' / 可归属 '+fmt(p.replay_eligible||0)+'。</span>';
   const meters=[['时间戳',p.valid_ts],['项目字段',p.with_cwd],['会话字段',p.with_session],['标准化组成字段',standardizedComponentCount(p)]];document.getElementById('prov-meters').innerHTML=meters.map(([label,value])=>{const pc=percent(value);return '<div class=prov-meter><div class=pm-head><span>'+label+'</span><b>'+pc.toFixed(1)+'%</b></div><div class=pm-track><i style="width:'+Math.min(100,pc).toFixed(1)+'%"></i></div><small>'+fmt(value||0)+' / '+fmt(n)+' 已解析记录</small></div>';}).join('')+'<div class=prov-meter><div class=pm-head><span>回放保留</span><b>'+fmt(p.replay_retained||0)+' / '+fmt(p.replay_eligible||0)+'</b></div><div class=pm-track><i style="width:'+Math.min(100,coverageRatio(p.replay_retained||0,p.replay_eligible||0)*100).toFixed(1)+'%"></i></div><small>每个会话最多保留最近 200 轮</small></div>';
   const sources=Object.entries(p.sources||{}).sort((a,b)=>b[1].total-a[1].total);document.getElementById('prov-sources').innerHTML=sources.map(([source,x])=>'<article class=prov-source><h3>'+esc(source)+'</h3><p>'+esc(SOURCE_NOTES[source]||'该来源按统一 record 进入趋势；具体字段能力取决于本地日志版本。')+'</p><div class=ps-meta><span>'+fmt(x.records)+' parsed records</span><span>'+human(x.total)+' tk</span><span>项目 '+(coverageRatio(x.with_cwd,x.records)*100).toFixed(0)+'%</span><span>会话 '+(coverageRatio(x.with_session,x.records)*100).toFixed(0)+'%</span></div></article>').join('');
   document.getElementById('prov-capabilities').innerHTML=capabilityInfo().map(x=>'<button type=button class="prov-cap '+x.status+'" data-cap="'+x.key+'" data-target="'+x.target+'" title="'+esc(capabilityReason(x.key))+'">'+(x.status==='ok'?'●':x.status==='partial'?'◐':'○')+' '+x.label+' · '+(x.ratio*100).toFixed(0)+'%</button>').join('');
@@ -832,8 +1186,6 @@ function renderProvenance(){const p=DATA.provenance||{},n=p.records||0,health=pr
 function provenanceSummary(){const p=DATA.provenance||{},n=p.records||0,line=(label,value)=>label+'：'+fmt(value||0)+' / '+fmt(n)+'（'+(coverageRatio(value,n)*100).toFixed(1)+'%）';return ['tokens 已解析记录体检',provenanceHealth().label+' · '+freshnessInfo().label,'范围：'+(p.first_day||'—')+' ~ '+(p.last_day||'—'),'来源：'+Object.keys(p.sources||{}).join(' / '),'已解析 Records：'+fmt(n),'Token：'+fmt(p.total||0),line('时间戳',p.valid_ts),line('项目字段',p.with_cwd),line('会话字段',p.with_session),line('标准化组成字段',standardizedComponentCount(p)),'回放保留：'+fmt(p.replay_retained||0)+' / 可归属 '+fmt(p.replay_eligible||0)+'（每会话最多最近 200 轮）','说明：解析器拒绝的原始事件不在分母；不包含 cwd、session 或逐轮 Token 明细。'].join('\n');}
 
 document.addEventListener('click',e=>{const b=e.target.closest('[data-empty-action]');if(b)handleEmptyAction(b.dataset.emptyAction);});
-
-document.getElementById('moments').addEventListener('click',e=>{const b=e.target.closest('[data-day]');if(b)focusMomentDay(b.dataset.day);});
 
 function projectPeriod(day,gran){
   if(gran==='day')return day;if(gran==='month')return day.slice(0,7)+'-01';
@@ -851,36 +1203,26 @@ function projectRows(projectId){
 }
 function renderProjectLens(){
   const select=document.getElementById('project-select'),catalog=projectCatalog();
-  if(!catalog.length){selectedProject=null;select.innerHTML='<option>当前筛选下无项目</option>';select.disabled=true;document.getElementById('project-kpis').innerHTML='';document.getElementById('project-chart').innerHTML='';document.getElementById('project-panel').innerHTML=contextEmptyHTML('project');document.getElementById('project-thead').innerHTML='';document.getElementById('project-tbody').innerHTML='';return;}
+  if(!catalog.length){selectedProject=null;select.innerHTML='<option>当前筛选下无项目</option>';select.disabled=true;select.removeAttribute('data-signal-type');select.removeAttribute('data-signal-id');select.removeAttribute('data-signal-label');select.removeAttribute('data-signal-value');select.removeAttribute('data-signal-scope');select.removeAttribute('data-signal-pin');document.getElementById('project-kpis').innerHTML='';document.getElementById('project-chart').innerHTML='';document.getElementById('project-panel').innerHTML=contextEmptyHTML('project');document.getElementById('project-thead').innerHTML='';document.getElementById('project-tbody').innerHTML='';return;}
   select.disabled=false;if(!selectedProject||!catalog.some(x=>x.id===selectedProject))selectedProject=catalog[0].id;
   select.innerHTML=catalog.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===selectedProject?' selected':'')+'>'+esc(x.label)+' · '+human(x.total)+'</option>').join('');
   const chosen=catalog.find(x=>x.id===selectedProject),rows=projectRows(selectedProject),total=rows.reduce((a,r)=>a+r.total,0),overall=selectedRows().reduce((a,r)=>a+r.total,0),peak=rows.reduce((a,r)=>!a||r.total>a.total?r:a,null),mt={};rows.forEach(r=>Object.entries(r.models).forEach(([m,v])=>mt[m]=(mt[m]||0)+v));const dom=Object.entries(mt).sort((a,b)=>b[1]-a[1])[0];
+  select.dataset.signalType='project';select.dataset.signalId=selectedProject;select.dataset.signalLabel=chosen?.label||selectedProject;select.dataset.signalValue=String(total);select.dataset.signalScope='project';select.removeAttribute('data-signal-pin');
   const firstSeen=projectFirstSeenInRange(selectedProject);document.getElementById('project-kpis').innerHTML=[['项目 Token',human(total)],['当前占比',pct(total,overall)],['活跃期',rows.length],['峰值期',peak?fmtLabel(peak.period,state.gran):'—'],['范围内首次观察',firstSeen?firstSeen.day:'—'],['主力模型',dom?pretty(dom[0]):'—']].map((x,index)=>'<div><b>'+esc(x[1])+(index===0?' <button class="k-copy project-copy" type=button aria-label="复制项目 Token 精确值">⧉</button>':'')+'</b>'+x[0]+'</div>').join('');
   const svg=document.getElementById('project-chart'),W=1080,H=280,pad=38,plotH=190,max=Math.max(1,...rows.map(r=>r.total)),step=(W-pad*2)/Math.max(1,rows.length),parts=[];for(let g=0;g<=3;g++){const y=24+plotH*g/3;parts.push('<line class="project-grid" x1="'+pad+'" y1="'+y+'" x2="'+(W-pad)+'" y2="'+y+'"/>');}
-  rows.forEach((r,i)=>{const x=pad+i*step+step*.16,w=Math.max(3,step*.68);let y=24+plotH;Object.entries(r.models).sort((a,b)=>b[1]-a[1]).forEach(([m,v])=>{const h=v/max*plotH;y-=h;parts.push('<rect class="project-bar" x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(.5,h).toFixed(1)+'" fill="'+DATA.colors[m]+'"><title>'+esc(pretty(m))+' · '+fmt(v)+' Token</title></rect>');});parts.push('<rect class="project-hit" data-i="'+i+'" tabindex="'+(i===rows.length-1?'0':'-1')+'" role="button" aria-label="'+esc(fmtLabel(r.period,state.gran))+'，'+fmt(r.total)+' Token" x="'+(pad+i*step).toFixed(1)+'" y="20" width="'+step.toFixed(1)+'" height="'+(plotH+12)+'"/>');if(rows.length<=16||i%Math.ceil(rows.length/12)===0)parts.push('<text class="reuse-label" x="'+(x+w/2).toFixed(1)+'" y="242" text-anchor="middle">'+esc(fmtLabel(r.period,state.gran))+'</text>');});svg.innerHTML=parts.join('');
+  rows.forEach((r,i)=>{const x=pad+i*step+step*.16,w=Math.max(3,step*.68);let y=24+plotH;Object.entries(r.models).sort((a,b)=>b[1]-a[1]).forEach(([m,v])=>{const h=v/max*plotH;y-=h;parts.push('<rect class="project-bar model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'project',false)+' x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(.5,h).toFixed(1)+'" fill="'+DATA.colors[m]+'"><title>'+esc(pretty(m))+' · '+fmt(v)+' Token</title></rect>');});parts.push('<rect class="project-hit" data-i="'+i+'" tabindex="'+(i===rows.length-1?'0':'-1')+'" role="button" aria-label="'+esc(fmtLabel(r.period,state.gran))+'，'+fmt(r.total)+' Token" x="'+(pad+i*step).toFixed(1)+'" y="20" width="'+step.toFixed(1)+'" height="'+(plotH+12)+'"/>');if(rows.length<=16||i%Math.ceil(rows.length/12)===0)parts.push('<text class="reuse-label" x="'+(x+w/2).toFixed(1)+'" y="242" text-anchor="middle">'+esc(fmtLabel(r.period,state.gran))+'</text>');});svg.innerHTML=parts.join('');
   const panel=document.getElementById('project-panel'),hits=[...svg.querySelectorAll('.project-hit')],inspect=i=>{const r=rows[i];if(!r)return;hits.forEach((h,j)=>h.tabIndex=j===i?0:-1);const mix=Object.entries(r.models).sort((a,b)=>b[1]-a[1]).map(([m,v])=>pretty(m)+' '+human(v)).join(' · ');panel.textContent=fmtLabel(r.period,state.gran)+' · '+human(r.total)+' tk'+(mix?' · '+mix:'');};hits.forEach((hit,i)=>{hit.addEventListener('pointerenter',()=>inspect(i));hit.addEventListener('focus',()=>inspect(i));hit.addEventListener('click',()=>inspect(i));hit.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const n=Math.max(0,Math.min(hits.length-1,i+(e.key==='ArrowRight'?1:-1)));inspect(n);hits[n].focus();}});});if(rows.length)inspect(rows.length-1);
   const models=DATA.models.filter(m=>rows.some(r=>r.models[m]));document.getElementById('project-thead').innerHTML='<tr><th>'+LABEL[state.gran]+'</th><th class=num>总 Token</th>'+models.map(m=>'<th class=num>'+esc(pretty(m))+'</th>').join('')+'</tr>';document.getElementById('project-tbody').innerHTML=rows.map(r=>'<tr><td>'+esc(fmtLabel(r.period,state.gran))+'</td><td class=num>'+fmt(r.total)+'</td>'+models.map(m=>'<td class=num>'+fmt(r.models[m]||0)+'</td>').join('')+'</tr>').join('');
   document.querySelector('#project-kpis .project-copy')?.addEventListener('click',()=>copyExactValue('项目 Token',total));
   select.title=chosen?chosen.id:'';
 }
-document.getElementById('project-select').addEventListener('change',e=>{selectedProject=e.target.value;renderProjectLens();});
-
-function modelHover(model,on){
-  document.querySelectorAll('[data-model]').forEach(el=>{const same=el.dataset.model===model;el.classList.toggle('model-hot',on&&same);el.classList.toggle('model-dim',on&&!same);});
-}
-function bindModelLinks(){
-  if(document.body.dataset.modelDelegated)return;document.body.dataset.modelDelegated='1';
-  document.addEventListener('pointerover',e=>{const el=e.target.closest('[data-model]');if(el)modelHover(el.dataset.model,true);});
-  document.addEventListener('pointerout',e=>{const el=e.target.closest('[data-model]');if(el&&!el.contains(e.relatedTarget))modelHover(el.dataset.model,false);});
-}
+document.getElementById('project-select').addEventListener('change',e=>{selectedProject=e.target.value;renderProjectLens();document.activeElement===e.target?setSignalPeek(signalFromElement(e.target),e.target):applySignalLens();});
 
 function currentFlow(){
-  if(!state.focusPeriod)return DATA.flow||{project_model:[],model_session:[]};
   const fd=focusDays(),pm={},ms={};
-  (fd||[]).forEach(day=>{const f=DATA.day_details[day]?.flow;if(!f)return;(f.project_model||[]).forEach(x=>{const k=x[1]+'::'+x[2],v=pm[k]||[x[0],x[1],x[2],0];v[3]+=x[3]||0;pm[k]=v;});(f.model_session||[]).forEach(x=>{const k=x[0]+'::'+x[2],v=ms[k]||[x[0],x[1],x[2],0];v[3]+=x[3]||0;ms[k]=v;});});
+  (fd||Object.keys(DATA.day_details||{})).forEach(day=>{const f=DATA.day_details[day]?.flow;if(!f)return;(f.project_model||[]).forEach(x=>{if(!state.models.has(x[2]))return;const k=x[1]+'::'+x[2],v=pm[k]||[x[0],x[1],x[2],0];v[3]+=x[3]||0;pm[k]=v;});(f.model_session||[]).forEach(x=>{if(!state.models.has(x[0]))return;const k=x[0]+'::'+x[2],v=ms[k]||[x[0],x[1],x[2],0];v[3]+=x[3]||0;ms[k]=v;});});
   return {project_model:Object.values(pm),model_session:Object.values(ms)};
 }
-let flowLocked=null;
 function selectedReuseRows(){
   const rows=(DATA.reuse||{})[state.gran]||[];
   return rows.map(([period,byModel])=>{const parts=[0,0,0,0,0];Object.entries(byModel||{}).forEach(([m,v])=>{if(state.models.has(m))v.forEach((n,i)=>parts[i]+=n||0);});return [period,...parts];});
@@ -915,16 +1257,13 @@ function renderFlow(){
   const path=(a,b)=>'M '+a.x+' '+a.y+' C '+(a.x+150)+' '+a.y+' '+(b.x-150)+' '+b.y+' '+b.x+' '+b.y;
   linksPM.forEach(x=>{const mi=modelIds.indexOf(x[2]),w=2+Math.sqrt(x[3]/maxLink)*17;p.push('<path class="flow-link motion" data-flow-from="project:'+esc(x[1])+'" data-flow-model="'+esc(x[2])+'" d="'+path(P[x[1]],M[x[2]])+'" stroke="url(#flow-g-'+mi+')" stroke-width="'+w.toFixed(1)+'"><title>'+esc(x[0])+' → '+esc(pretty(x[2]))+' · '+fmt(x[3])+' Token</title></path>');});
   linksMS.forEach(x=>{const mi=modelIds.indexOf(x[0]),w=2+Math.sqrt(x[3]/maxLink)*17;p.push('<path class="flow-link motion" data-flow-model="'+esc(x[0])+'" data-flow-to="session:'+esc(x[2])+'" d="'+path(M[x[0]],S[x[2]])+'" stroke="url(#flow-g-'+mi+')" stroke-width="'+w.toFixed(1)+'"><title>'+esc(pretty(x[0]))+' → '+esc(x[1])+' · '+fmt(x[3])+' Token</title></path>');});
-  const node=(type,id,pos,label,total,color)=>{const share=Math.min(100,selectedTotal?total/selectedTotal*100:0),boxX=pos.x-80,boxY=pos.y-20,canLock=type!=='session';return '<g class="flow-node '+type+'" data-flow-type="'+type+'" data-flow-id="'+esc(id)+'" data-flow-name="'+esc(label)+'" data-flow-total="'+total+'" data-flow-share="'+share.toFixed(2)+'" tabindex="0" role="button" aria-label="'+(type==='project'?'项目 ':type==='model'?'模型 ':'会话 ')+esc(label)+'，'+fmt(total)+' Token，占比 '+share.toFixed(1)+'%"><rect class="flow-hit" x="'+(boxX-6)+'" y="'+(boxY-4)+'" width="172" height="48" rx="12"/><rect class="flow-box" x="'+boxX+'" y="'+boxY+'" width="160" height="40" rx="10" fill="'+color+'" fill-opacity=".22"/><text x="'+pos.x+'" y="'+(pos.y-2)+'" text-anchor="middle">'+esc(label.length>20?label.slice(0,19)+'…':label)+'</text><text class="flow-value" x="'+pos.x+'" y="'+(pos.y+13)+'" text-anchor="middle">'+human(total)+' tk</text><title>'+(canLock?'点击锁定链路':'点击回放会话')+'</title></g>';};
+  const node=(type,id,pos,label,total,color)=>{const share=Math.min(100,selectedTotal?total/selectedTotal*100:0),boxX=pos.x-80,boxY=pos.y-20;return '<g class="flow-node '+type+'" data-flow-type="'+type+'" data-flow-id="'+esc(id)+'" data-flow-name="'+esc(label)+'" data-flow-total="'+total+'" data-flow-share="'+share.toFixed(2)+'"'+dataSignalAttrs(type,id,label,total,'flow')+' tabindex="0" role="button" aria-label="'+(type==='project'?'项目 ':type==='model'?'模型 ':'会话 ')+esc(label)+'，'+fmt(total)+' Token，占比 '+share.toFixed(1)+'%"><rect class="flow-hit" x="'+(boxX-6)+'" y="'+(boxY-4)+'" width="172" height="48" rx="12"/><rect class="flow-box" x="'+boxX+'" y="'+boxY+'" width="160" height="40" rx="10" fill="'+color+'" fill-opacity=".22"/><text x="'+pos.x+'" y="'+(pos.y-2)+'" text-anchor="middle">'+esc(label.length>20?label.slice(0,19)+'…':label)+'</text><text class="flow-value" x="'+pos.x+'" y="'+(pos.y+13)+'" text-anchor="middle">'+human(total)+' tk</text><title>悬停 Peek · 点击 Pin 信号</title></g>';};
   projectIds.forEach((id,i)=>p.push(node('project',id,P[id],projectLabels[id]||id,pt[id],['#5b8def','#14b8a6','#a78bfa','#38bdf8'][i%4])));modelIds.forEach(m=>p.push(node('model',m,M[m],pretty(m),mt[m],DATA.colors[m]||'#7aa2f7')));sessionIds.forEach((id,i)=>p.push(node('session',id,S[id],sessionLabels[id]||id,st[id],['#f472b6','#f59e0b','#a78bfa','#38bdf8'][i%4])));
   svg.innerHTML=p.join('');document.getElementById('flow-stats').innerHTML='<span>'+projectIds.length+' 个项目</span><span>'+modelIds.length+' 个模型</span><span>'+sessionIds.length+' 个会话</span><span>'+(linksPM.length+linksMS.length)+' 条真实流向</span>';
-  const nodes=[...svg.querySelectorAll('.flow-node')],links=[...svg.querySelectorAll('.flow-link')],keyFor=n=>n.dataset.flowType+':'+n.dataset.flowId,dataFor=n=>({type:n.dataset.flowType,id:n.dataset.flowId,name:n.dataset.flowName,total:Number(n.dataset.flowTotal),share:Number(n.dataset.flowShare)});
-  const illuminate=n=>{const key=keyFor(n),type=n.dataset.flowType,id=n.dataset.flowId,models=new Set();if(type==='model')models.add(id);if(type==='project')links.filter(l=>l.dataset.flowFrom===key).forEach(l=>models.add(l.dataset.flowModel));if(type==='session')links.filter(l=>l.dataset.flowTo===key).forEach(l=>models.add(l.dataset.flowModel));links.forEach(l=>{const hot=type==='model'?l.dataset.flowModel===id:type==='project'?(l.dataset.flowFrom===key||models.has(l.dataset.flowModel)):type==='session'?(l.dataset.flowTo===key||models.has(l.dataset.flowModel)):false;l.classList.toggle('hot',hot);l.classList.toggle('dim',!hot);});const active=new Set([key]);links.filter(l=>l.classList.contains('hot')).forEach(l=>{if(l.dataset.flowFrom)active.add(l.dataset.flowFrom);if(l.dataset.flowTo)active.add(l.dataset.flowTo);if(l.dataset.flowModel)active.add('model:'+l.dataset.flowModel);});nodes.forEach(x=>x.classList.toggle('dim',!active.has(keyFor(x))));};
-  const clear=()=>{links.forEach(l=>l.classList.remove('hot','dim'));nodes.forEach(n=>n.classList.remove('dim'));};
-  nodes.forEach(n=>{n.addEventListener('mouseenter',()=>{illuminate(n);showFlowPanel(dataFor(n));});n.addEventListener('focus',()=>{illuminate(n);showFlowPanel(dataFor(n));});n.addEventListener('mouseleave',()=>{if(!flowLocked){clear();showFlowPanel(null);}});n.addEventListener('blur',()=>{if(!flowLocked){clear();showFlowPanel(null);}});const activate=()=>{const d=dataFor(n);if(d.type==='session'){openReplay(d.id,d.name);return;}const k=keyFor(n);flowLocked=flowLocked===k?null:k;nodes.forEach(x=>x.classList.toggle('locked',keyFor(x)===flowLocked));if(flowLocked){illuminate(n);showFlowPanel(d,true);}else{clear();showFlowPanel(null);}};n.addEventListener('click',activate);n.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});});
-  if(flowLocked){const locked=nodes.find(n=>keyFor(n)===flowLocked);if(locked){locked.classList.add('locked');illuminate(locked);showFlowPanel(dataFor(locked),true);}else flowLocked=null;}else showFlowPanel(null);
+  const nodes=[...svg.querySelectorAll('.flow-node')];
+  nodes.forEach(node=>{node.addEventListener('pointerenter',()=>showFlowPanel({type:node.dataset.flowType,id:node.dataset.flowId,name:node.dataset.flowName,total:Number(node.dataset.flowTotal),share:Number(node.dataset.flowShare)}));node.addEventListener('focus',()=>showFlowPanel({type:node.dataset.flowType,id:node.dataset.flowId,name:node.dataset.flowName,total:Number(node.dataset.flowTotal),share:Number(node.dataset.flowShare)}));node.addEventListener('pointerleave',()=>{if(!signalState.pinnedSignal)showFlowPanel(null);});node.addEventListener('blur',()=>{if(!signalState.pinnedSignal)showFlowPanel(null);});});showFlowPanel(signalState.pinnedSignal&&['project','model','session'].includes(signalState.pinnedSignal.type)?{type:signalState.pinnedSignal.type,id:signalState.pinnedSignal.id,name:signalState.pinnedSignal.label,total:signalState.pinnedSignal.value||0,share:selectedTotal?(signalState.pinnedSignal.value||0)/selectedTotal*100:0}:null);
 }
-function showFlowPanel(d,locked=false){const panel=document.getElementById('flow-panel');if(!d){panel.innerHTML='<b>Token 流光图</b><span>① 悬停追踪链路　② 点击项目或模型锁定　③ 点击会话回放</span>';return;}const type=d.type==='project'?'项目':d.type==='model'?'模型':'会话';panel.innerHTML='<b>'+type+' · '+esc(d.name)+'</b><span>'+fmt(d.total)+' Token · 占当前筛选总量 '+d.share.toFixed(1)+'%'+(locked?' · 已锁定，再点取消':d.type==='session'?' · 点击回放':' · 点击锁定链路')+'</span>';}
+function showFlowPanel(d){const panel=document.getElementById('flow-panel');if(!d){panel.innerHTML='<b>Token 流光图</b><span>① 悬停或聚焦 Peek　② 点击 Pin 到 Signal Dock　③ 在信号坞中选择深入动作</span>';return;}const type=d.type==='project'?'项目':d.type==='model'?'模型':'会话';panel.innerHTML='<b>'+type+' · '+esc(d.name)+'</b><span>'+fmt(d.total)+' Token · 占当前筛选总量 '+d.share.toFixed(1)+'% · 点击 Pin 到 Signal Dock</span>';}
 function saveFlowSVG(){const source=document.getElementById('flow-map');if(!source.querySelector('.flow-node')){toast('当前筛选没有可导出的流向');return;}const svg=source.cloneNode(true);svg.setAttribute('xmlns','http://www.w3.org/2000/svg');svg.setAttribute('width','1120');svg.setAttribute('height','470');const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');bg.setAttribute('width','1120');bg.setAttribute('height','470');bg.setAttribute('fill','#0b1120');svg.insertBefore(bg,svg.firstChild);const style=document.createElementNS('http://www.w3.org/2000/svg','style');style.textContent='.flow-col{fill:#8fa3c0;font:800 10px sans-serif;letter-spacing:.14em}.flow-link{fill:none;stroke-linecap:round;opacity:.58}.flow-box{stroke:rgba(255,255,255,.7);stroke-width:1}.flow-node text{fill:#e1ecfb;font:700 10px sans-serif}.flow-node .flow-value{fill:#9badc7;font:600 8.5px sans-serif}.flow-hit{display:none}';svg.insertBefore(style,bg.nextSibling);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['<?xml version="1.0"?>\n'+svg.outerHTML],{type:'image/svg+xml'}));a.download='token-flow-'+state.gran+(state.focusPeriod?'-'+state.focusPeriod:'')+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('当前流光图已保存为 SVG');}
 document.getElementById('flow-save').addEventListener('click',saveFlowSVG);
 
@@ -954,7 +1293,7 @@ function renderMultiples(){
     const s=days.map(d=>d.models[m]||0), total=s.reduce((a,b)=>a+b,0), max=Math.max(1,...s), W=120,H=32,c=DATA.colors[m];
     let path=''; s.forEach((v,i)=>{ const x=i/Math.max(1,s.length-1)*W, y=H-3-(v/max)*(H-6); path+=(i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' '; });
     const area=path+'L '+W+' '+H+' L 0 '+H+' Z';
-    return '<div class=mp data-model="'+esc(m)+'"><div class=nm><i style="background:'+c+'"></i>'+esc(pretty(m))+'</div><div class=vt>'+human(total)+'</div>'
+    return '<div class="mp model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),total,'multiples')+' tabindex="0" role="button" aria-label="模型 '+esc(pretty(m))+'，'+fmt(total)+' Token，点击或按 Enter Pin 到 Signal Dock"><div class=nm><i style="background:'+c+'"></i>'+esc(pretty(m))+'</div><div class=vt>'+human(total)+'</div>'
       +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"><path d="'+area+'" fill="'+c+'" fill-opacity="0.16"/><path d="'+path+'" fill="none" stroke="'+c+'" stroke-width="1.5" stroke-linejoin="round"/></svg></div>';
   }).join('');
 }
@@ -1022,10 +1361,11 @@ document.getElementById('status-pulse').addEventListener('click',()=>scrollToSec
 document.getElementById('provenance-copy').addEventListener('click',()=>copyText(provenanceSummary()).then(ok=>toast(ok?'数据体检摘要已复制':'复制失败')));
 document.getElementById('prov-capabilities').addEventListener('click',e=>{const b=e.target.closest('[data-cap]');if(!b)return;const item=capabilityInfo().find(x=>x.key===b.dataset.cap);if(!item)return;if(item.status==='off'){toast(capabilityReason(item.key));return;}scrollToSection(item.target);});
 function usageStatus(rows){if(rows.length<2)return {label:'—',cls:'',last:rows.length?rows[rows.length-1].total:0,avg:null,delta:null,detail:'至少需要两期数据才能计算状态'};const last=rows[rows.length-1].total,prior=rows.slice(Math.max(0,rows.length-5),-1),avg=prior.reduce((a,r)=>a+r.total,0)/Math.max(1,prior.length);if(avg===0){if(last>0)return {label:'升温',cls:'warming',last,avg,delta:null,detail:'此前均值为 0，本期出现新活动'};return {label:'平稳',cls:'steady',last,avg,delta:0,detail:'本期与此前均值均为 0'};}const delta=last/avg-1,label=delta>.12?'升温':delta<-.12?'降温':'平稳',cls=delta>.12?'warming':delta<-.12?'cooling':'steady';return {label,cls,last,avg,delta,detail:'变化 '+(delta>=0?'+':'')+(delta*100).toFixed(1)+'%'};}
-function renderStatusPulse(){const el=document.getElementById('status-pulse'),text=document.getElementById('status-text'),s=usageStatus(selectedRows(true));el.classList.remove('warming','steady','cooling');if(s.cls)el.classList.add(s.cls);text.textContent='状态 '+s.label;el.title=s.avg===null?s.detail+' · 点击查看趋势':'最后一期 '+fmt(s.last)+' Token；此前均值 '+fmt(s.avg)+'；'+s.detail+' · 点击查看趋势';}
+function renderStatusPulse(){const el=document.getElementById('status-pulse'),text=document.getElementById('status-text'),preview=scrubRow(),s=usageStatus(preview?[preview]:selectedRows(true));el.classList.remove('warming','steady','cooling','scrub-preview');if(preview){el.classList.add('scrub-preview');text.textContent='预览 '+fmtLabel(preview.period,state.gran);el.title=trendPreviewCopy(preview)+' · 尚未提交';return;}if(s.cls)el.classList.add(s.cls);text.textContent='状态 '+s.label;el.title=s.avg===null?s.detail+' · 点击查看趋势':'最后一期 '+fmt(s.last)+' Token；此前均值 '+fmt(s.avg)+'；'+s.detail+' · 点击查看趋势';}
 
 /* ---- 命令面板 Cmd+K ---- */
 function cmdActions(){ return [
+  {ic:'⌁',t:(trailState.open?'继续':'开始')+' · 数据寻迹',k:'I',run:()=>openDataTrail(document.getElementById('trail-open'))},
   {ic:'◎',t:'跳转 · 总览',k:'',run:()=>scrollToSection('section-overview')},
   {ic:'↗',t:'跳转 · 趋势',k:'',run:()=>scrollToSection('section-trend')},
   {ic:'⌁',t:'跳转 · 数据可信度实验室',k:'',run:()=>scrollToSection('section-provenance')},
@@ -1046,9 +1386,9 @@ function cmdActions(){ return [
   {ic:'⤓',t:'导出 CSV',k:'E',run:exportCSV},
   {ic:'◇',t:'导出 Markdown',k:'',run:exportMarkdown},
   {ic:'◆',t:'下一个数据时刻',k:'',run:()=>{const events=buildMomentEvents();if(!events.length){toast('当前筛选没有可回看的数据时刻');return;}const current=state.focusPeriod||'';focusMomentDay(events.find(event=>event.day>current)?.day||events[0].day);}},
-  {ic:'◫',t:'切换幻影对比',k:'',run:()=>document.getElementById('compare-btn').click()},
+  {ic:'◫',t:'切换幻影对比',k:'',run:togglePinnedCompare},
   {ic:'⧉',t:'复制当前视图链接',k:'',run:copyViewLink},
-  {ic:'?',t:'查看快捷键与隐藏操作',k:'?',run:openHelp},
+  {ic:'?',t:'查看快捷键与交互说明',k:'?',run:openHelp},
   {ic:'🎲',t:'换一组趣味换算',k:'',run:renderFunFacts},
   {ic:'▶',t:'播放柱图竞赛',k:'',run:()=>{ if(!document.getElementById('race').closest('[data-module]')||document.getElementById('race').closest('[data-module]').style.display!=='none') document.getElementById('race-play').click(); }},
   {ic:'⚙️',t:'打开模块开关',k:'',run:()=>document.getElementById('mods-btn').click()},
@@ -1072,13 +1412,11 @@ function syncPal(){const input=document.getElementById('palette-q');document.que
 document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); document.getElementById('scrim').classList.contains('open')?closePalette():openPalette(); return; }
   if(e.key==='Escape'){const modal=activeModal();if(modal){e.preventDefault();if(modal.id==='replay-modal')closeReplay();else if(modal.id==='help-modal')closeHelp();else if(modal.id==='share-modal')closeShare();else if(modal.id==='almanac-modal')closeAlmanacCapsule();else if(modal.id==='ach-modal')closeAchievements();return;}}
-  if(e.key==='Escape' && state.focusPeriod){ e.preventDefault(); clearFocus(true); return; }
-  if(!document.getElementById('scrim').classList.contains('open')) return;
-  if(e.key==='Tab'){e.preventDefault();document.getElementById('palette-q').focus();}
-  else if(e.key==='Escape'){ e.preventDefault(); closePalette(); }
-  else if(e.key==='ArrowDown'){ e.preventDefault(); pal.i=(pal.i+1)%Math.max(1,pal.items.length); syncPal(); }
-  else if(e.key==='ArrowUp'){ e.preventDefault(); pal.i=(pal.i-1+Math.max(1,pal.items.length))%Math.max(1,pal.items.length); syncPal(); }
-  else if(e.key==='Enter'){ e.preventDefault(); runPalette(pal.i); }
+  const palette=document.getElementById('scrim');if(palette.classList.contains('open')){if(e.key==='Tab'){e.preventDefault();document.getElementById('palette-q').focus();}else if(e.key==='Escape'){e.preventDefault();closePalette();}else if(e.key==='ArrowDown'){e.preventDefault();pal.i=(pal.i+1)%Math.max(1,pal.items.length);syncPal();}else if(e.key==='ArrowUp'){e.preventDefault();pal.i=(pal.i-1+Math.max(1,pal.items.length))%Math.max(1,pal.items.length);syncPal();}else if(e.key==='Enter'){e.preventDefault();runPalette(pal.i);}return;}
+  if(e.key==='Escape'&&scrubState.period){e.preventDefault();clearScrub('预览已清除',true);return;}
+  if(trailState.open){if(e.key==='Escape'){e.preventDefault();closeDataTrail();return;}if(e.key==='Backspace'&&!editableTarget(e.target)){e.preventDefault();trailBack();return;}if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&!e.target.closest('[data-trail-roving]')){const index=TRAIL_STEPS.indexOf(trailState.step),next=Math.max(0,Math.min(trailState.reached,index+(e.key==='ArrowRight'?1:-1)));if(next!==index){e.preventDefault();setTrailStep(TRAIL_STEPS[next]);}return;}}
+  if(e.key==='Escape'&&signalState.pinnedSignal){e.preventDefault();clearSignal();return;}
+  if(e.key==='Escape'&&state.focusPeriod){e.preventDefault();clearFocus(true);return;}
 });
 
 /* ---- Token Almanac：跨快照赛季、个人纪录与时间胶囊 ---- */
@@ -1185,7 +1523,7 @@ function mk(emoji, value, thresholds, unit, fmt, pool, secret){
   // 阶梯名称带序号，结构化字段让主页可显示当前值、目标与剩余量。
   return thresholds.map((v,i)=>({e:emoji,n:pool[i%pool.length]+' · '+String(i+1).padStart(2,'0'),d:fmt(v)+unit,tier:tierFor(i,thresholds.length),ok:value>=v,secret:!!secret,current:value,target:v,progress:v>0?Math.max(0,Math.min(1,value/v)):Number(value>=v),remaining:Math.max(0,v-value),direction:'at_least',thresholdIndex:i,thresholdCount:thresholds.length}));
 }
-const ACH_TRACKED=new Set(['累计 token','单日峰值','连续天数','累计活跃天','活跃小时数','模型种类','项目足迹','会话数量','调用次数','缓存省量','单会话轮数','累计输入','累计输出','缓存写入']);
+const ACH_TRACKED=new Set(['累计 token','单日峰值','连续天数','累计活跃天','活跃小时数','模型种类','项目足迹','会话数量','调用次数','缓存读取量','单会话轮数','累计输入','累计输出','缓存写入']);
 function generatedDate(){const raw=String(DATA.generated||'').slice(0,10),d=new Date(raw+'T12:00:00');return Number.isNaN(d.getTime())?new Date(0):d;}
 function achievementSnapshots(){
   const daily=Object.fromEntries((DATA.achievement_daily||[]).map(x=>[x.day,x])),days=[...(DATA.day||[])].sort((a,b)=>a.period.localeCompare(b.period));
@@ -1201,7 +1539,7 @@ function achievementSnapshots(){
 }
 function achievementMetric(snapshot,category){
   if(!snapshot)return null;
-  const map={'累计 token':'total','单日峰值':'maxDay','连续天数':'longestStreak','累计活跃天':'activeDays','活跃小时数':'hours','模型种类':'models','项目足迹':'projects','会话数量':'sessions','调用次数':'calls','缓存省量':'cache','单会话轮数':'maxTurns','累计输入':'input','累计输出':'output','缓存写入':'cacheWrite'};
+  const map={'累计 token':'total','单日峰值':'maxDay','连续天数':'longestStreak','累计活跃天':'activeDays','活跃小时数':'hours','模型种类':'models','项目足迹':'projects','会话数量':'sessions','调用次数':'calls','缓存读取量':'cache','单会话轮数':'maxTurns','累计输入':'input','累计输出':'output','缓存写入':'cacheWrite'};
   if(map[category])return snapshot[map[category]];
   if(category.startsWith('来源 · '))return snapshot.sources[category.slice(5)]||0;
   return null;
@@ -1281,7 +1619,7 @@ function getBadgeData(){
   cats.push({name:'会话数量',e:'💬',items:mk('💬',nSess,sessList,' 会话',v=>v,POOL_DAYS)});
   cats.push({name:'调用次数',e:'🔔',items:mk('🔔',calls,callList,' 次',fmtT,POOL_BIG)});
   cats.push({name:'缓存命中',e:'💎',items:mk('💎',cRatio,ratioList,'% 量',v=>(v*100).toFixed(0),POOL_RATIO)});
-  cats.push({name:'缓存省量',e:'🧊',items:mk('🧊',cr,cacheAbs,' tk',fmtT,POOL_BIG)});
+  cats.push({name:'缓存读取量',e:'🧊',items:mk('🧊',cr,cacheAbs,' tk',fmtT,POOL_BIG)});
   cats.push({name:'单会话轮数',e:'🦠',items:mk('🦠',maxTurns,turnsList,' 轮',v=>v,POOL_STREAK)});
   cats.push({name:'日均 token',e:'⚖️',items:mk('⚖️',avgPerDay,avgList,' /日均',fmtT,POOL_BIG)});
   pushLadder('累计输入','📥',inputTotal,denseLog(1e3,1e14,54),' 输入',fmtT);
@@ -1606,6 +1944,9 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){if(raceTim
 (function(){const r=document.getElementById('rocket');window.addEventListener('scroll',()=>r.classList.toggle('on',scrollY>innerHeight*.9),{passive:true});r.addEventListener('click',()=>{if(motionDisabled()){scrollTo({top:0,behavior:'auto'});return;}r.classList.remove('launch');void r.offsetWidth;r.classList.add('launch');setTimeout(()=>{scrollTo({top:0,behavior:scrollBehavior()});r.classList.remove('launch');},360);});})();
 
 /* URL 可恢复当前视图；旧版 #day/#week/#month 仍兼容 */
+document.getElementById('lang-btn').addEventListener('click',toggleLanguage);
+applyLanguage(dashboardLanguage,false);
+bindSignalLens();
 applyMods();
 initLazyRendering();
 restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();render();restoringView=false;syncViewURL();

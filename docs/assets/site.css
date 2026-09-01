@@ -128,6 +128,11 @@ img, svg { max-width: 100%; }
 }
 .desktop-nav a:hover, .desktop-nav a[aria-current="page"] { color: var(--text); background: var(--surface-2); }
 .header-actions { display: flex; align-items: center; gap: 8px; }
+.language-link {
+  padding: 7px 9px; border: 1px solid transparent; border-radius: 9px;
+  color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 700;
+}
+.language-link:hover { border-color: var(--line); color: var(--text); background: var(--surface-2); }
 .icon-button, .search-button, .copy-button, .demo-button, .theme-option {
   border: 1px solid var(--line); background: var(--surface); box-shadow: none; cursor: pointer;
 }

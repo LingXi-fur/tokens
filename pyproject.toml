@@ -1,49 +1,57 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tokens"
-version = "0.1.0"
-description = "Local token-usage stats for Claude Code / Gemini / Codex — daily, weekly, monthly, by model."
+name = "ai-cli-tokens"
+version = "0.2.0"
+description = "Local-first token usage analytics for Claude Code, Gemini CLI, and Codex."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
-authors = [{ name = "a123" }]
-keywords = ["claude", "claude-code", "tokens", "usage", "analytics", "dashboard"]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "LingXi-fur" }]
+keywords = [
+    "claude-code",
+    "gemini-cli",
+    "codex",
+    "tokens",
+    "usage-analytics",
+    "dashboard",
+    "local-first",
+]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: MacOS",
-    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
     "Topic :: Utilities",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/a123/tokens"
+Homepage = "https://github.com/LingXi-fur/tokens"
+Documentation = "https://lingxi-fur.github.io/tokens/"
+Issues = "https://github.com/LingXi-fur/tokens/issues"
+Source = "https://github.com/LingXi-fur/tokens"
 
-# flat 布局：7 个顶层模块。后续重构为 tokens/ 包（见 README roadmap）。
 [project.scripts]
-tokens = "cli:main"
+tokens = "tokens_cli.cli:main"
 
 [tool.setuptools]
-py-modules = [
-    "config",
-    "readers",
-    "aggregate",
-    "report_term",
-    "report_html",
-    "report_dashboard",
-    "dashboard_payload",
-    "dashboard_wire",
-    "cli",
-]
+package-dir = { "" = "src" }
 include-package-data = true
 
-[tool.setuptools.data-files]
-"lib/dashboard_assets" = [
-    "dashboard_assets/template.html",
-    "dashboard_assets/dashboard.css",
-    "dashboard_assets/dashboard.js",
-]
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tokens_cli = ["dashboard_assets/*.html", "dashboard_assets/*.css", "dashboard_assets/*.js"]

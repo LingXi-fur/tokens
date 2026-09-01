@@ -16,12 +16,10 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+sys.path.insert(0, str(SRC))
 
-import config
-import dashboard_wire
-import readers
-import report_dashboard
+from tokens_cli import config, dashboard_wire, readers, report_dashboard
 
 
 def synthetic_records(count, days=365, models=6, sessions=500, projects=100):
@@ -49,7 +47,7 @@ def synthetic_records(count, days=365, models=6, sessions=500, projects=100):
 
 def measure_payload(records, suppress_titles=True):
     title_patch = mock.patch(
-        "dashboard_payload.readers.session_title", return_value=""
+        "tokens_cli.dashboard_payload.readers.session_title", return_value=""
     ) if suppress_titles else nullcontext()
     with title_patch:
         tracemalloc.start()

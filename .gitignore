@@ -3,6 +3,17 @@ out/
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 本地 Claude Code 状态
+.claude/
+
+# 本地环境与凭据
+.env
+.env.*
+!.env.example
 
 # 打包产物
 build/

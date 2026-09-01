@@ -9,10 +9,13 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
-import sys
-sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
 
-import readers
+import sys
+sys.path.insert(0, str(SRC))
+
+import tokens_cli
+from tokens_cli import readers
 
 
 class ReadersTests(unittest.TestCase):
@@ -26,8 +29,8 @@ class ReadersTests(unittest.TestCase):
                 }) + "\n",
                 encoding="utf-8",
             )
-            with mock.patch("readers.glob.glob") as glob_fn:
-                title = readers.session_title(
+            with mock.patch("tokens_cli.readers.glob.glob") as glob_fn:
+                title = tokens_cli.readers.session_title(
                     "session-a",
                     session_index={"session-a": str(path)},
                 )
@@ -43,8 +46,8 @@ class ReadersTests(unittest.TestCase):
             second.parent.mkdir()
             first.write_text("", encoding="utf-8")
             second.write_text("", encoding="utf-8")
-            with mock.patch.object(readers.config, "CLAUDE_PROJECTS", tmp):
-                index = readers.build_session_index()
+            with mock.patch.object(tokens_cli.readers.config, "CLAUDE_PROJECTS", tmp):
+                index = tokens_cli.readers.build_session_index()
             self.assertEqual(str(first), index["session-a"])
             self.assertEqual(str(second), index["session-b"])
 
@@ -55,20 +58,21 @@ class ReadersTests(unittest.TestCase):
             target.write_text("{}\n", encoding="utf-8")
             link = root / "link.jsonl"
             link.symlink_to(target)
-            self.assertFalse(readers._safe_to_parse(str(link), os.stat(link)))
-            fake = mock.Mock(st_mode=stat.S_IFREG, st_size=readers.MAX_FILE_BYTES + 1)
-            self.assertFalse(readers._safe_to_parse(str(target), fake))
+            self.assertFalse(tokens_cli.readers._safe_to_parse(str(link), os.stat(link)))
+            fake = mock.Mock(st_mode=stat.S_IFREG, st_size=tokens_cli.readers.MAX_FILE_BYTES + 1)
+            self.assertFalse(tokens_cli.readers._safe_to_parse(str(target), fake))
 
-    def test_cache_writer_uses_compact_json(self):
+    def test_cache_writer_uses_private_compact_json(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cache_file = Path(tmp) / "cache.json"
-            with mock.patch.object(readers.config, "OUT_DIR", tmp), \
+            cache_file = Path(tmp) / "records-v3.json"
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
                     mock.patch.object(readers.config, "CACHE_FILE", str(cache_file)):
                 readers._save_cache({"claude::x": {"key": "1|2", "records": []}})
             text = cache_file.read_text(encoding="utf-8")
             self.assertNotIn(": ", text)
             self.assertNotIn(", ", text)
             self.assertEqual(readers.CACHE_VERSION, json.loads(text)["_v"])
+            self.assertEqual(0o600, stat.S_IMODE(cache_file.stat().st_mode))
 
 
 if __name__ == "__main__":

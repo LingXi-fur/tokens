@@ -2,7 +2,7 @@
 
 默认只看 claude（GLM-5.2 / DeepSeek），所以趋势表按「模型」拆列，而非按来源。
 """
-import config
+from . import config
 
 BOLD = "\033[1m"
 DIM = "\033[2m"

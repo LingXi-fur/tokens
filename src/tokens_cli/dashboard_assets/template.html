@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang=zh><head><meta charset=utf-8>
+<html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>Token 用量 Dashboard</title>
+<title>Token Usage Dashboard</title>
 <style>__STYLE__</style>
-<script>/* 防 FOUC：渲染前先套用手动主题 */
+<script>/* Apply persisted display preferences before rendering. */
 try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}
+try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.lang='zh-CN';}catch(e){}
 </script></head><body>
 <div class=wrap>
 
@@ -17,6 +18,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
     </div>
   </div>
   <div class=head-tools>
+    <button class=langbtn id=lang-btn type=button data-i18n-skip aria-label="切换语言" title="切换到中文">中文</button>
     <button class="seg freshness-beacon" id=freshness-beacon type=button title="查看数据可信度"><span class=led></span><span id=freshness-text>数据体检 —</span></button>
     <button class="seg status-pulse" id=status-pulse type=button title="用量状态计算中"><span class=led></span><span id=status-text>状态 —</span></button>
     <div class=seg id=source-pill><span class=led></span><span id=source-txt>—</span></div>
@@ -51,6 +53,21 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 <nav class=section-dock id=section-dock aria-label="Dashboard 区域导航">
  <div class=section-links><button data-target=section-overview class=on>总览</button><button data-target=section-trend>趋势</button><button data-target=section-provenance>体检</button><button data-target=section-almanac>年鉴</button><button data-target=section-project>项目</button><button data-target=section-rhythm>节奏</button><button data-target=section-reuse>复用</button><button data-target=section-flow>流光</button><button data-target=section-achievements>成就</button><button data-target=section-top>Top</button></div>
  <div class=view-wrap><button class=view-capsule id=view-capsule type=button aria-controls=view-pop aria-expanded=false title="查看当前视图状态"><span id=view-label>月 · 全部模型 · 全景</span></button><div class=view-pop id=view-pop><h3>Current View · 当前视图</h3><div class=view-summary id=view-summary></div><div class=view-actions><button class=ghostbtn id=view-copy type=button>⧉ 复制视图链接</button><button class=ghostbtn id=view-reset type=button>↺ 恢复全景</button></div></div></div>
+ <div class=signal-dock id=signal-dock aria-label="Signal Dock 信号坞">
+  <button class=signal-main id=signal-main type=button aria-controls=signal-pop aria-expanded=false><span class=signal-orb></span><span><b id=signal-label>Signal Dock</b><small id=signal-detail>悬停或聚焦数据以 Peek</small></span></button>
+  <div class=signal-pop id=signal-pop>
+   <div class=signal-pop-head><div><span>SIGNAL DOCK · PIN + PEEK</span><h3 id=signal-pop-title>还没有选择信号</h3></div><button class=signal-x id=signal-clear type=button aria-label="清除固定信号" disabled>×</button></div>
+   <p id=signal-pop-copy>模型、周期、项目与会话可以先 Peek；固定 Pin 后，继续比较兼容的本地聚合证据。</p>
+   <div class=signal-summaries id=signal-summaries>
+    <section class=signal-summary id=signal-pin-summary><b>PIN</b><span id=signal-pin-copy>未固定信号</span></section>
+    <section class=signal-summary id=signal-peek-summary><b>PEEK</b><span id=signal-peek-copy>悬停或聚焦以查看</span></section>
+    <section class=signal-summary id=signal-delta-summary><b>DELTA</b><span id=signal-delta-copy>固定后再 Peek 一个兼容信号</span></section>
+   </div>
+   <div class=signal-stamps id=signal-stamps></div>
+   <div class=signal-actions><button class=ghostbtn id=signal-action type=button disabled>选择一个信号</button><button class=ghostbtn id=exact-btn type=button aria-pressed=false title="按住 Alt / Option 临时查看精确值">⌥ 精确层</button></div>
+  </div>
+  <div class=signal-status id=signal-status role=status aria-live=polite aria-atomic=true></div>
+ </div>
 </nav>
 
 <section class="card weather" id=weather-card>
@@ -69,19 +86,30 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 <div class=probe id=time-probe>
   <span class=probe-orb></span>
   <span class=probe-copy id=probe-copy></span>
-  <button id=probe-close title="退出回看（Esc）">×</button>
+  <button class=probe-trail id=trail-open type=button aria-controls=data-trail aria-expanded=false title="沿当前范围开始数据寻迹（I）">⌁ 开始寻迹 <kbd>I</kbd></button>
+  <button id=probe-close type=button title="退出回看（Esc）" aria-label="退出时光探针">×</button>
 </div>
+
+<aside class=data-trail id=data-trail aria-labelledby=trail-title aria-hidden=true hidden>
+ <div class=trail-head>
+  <div><div class=trail-k>DATA TRAIL · LOCAL EVIDENCE</div><h2 id=trail-title tabindex=-1>数据寻迹</h2><p>沿当前范围检查模型、项目、会话与 Context 证据；不会改变筛选，除非你明确选择。</p></div>
+  <div class=trail-actions><button class=ghostbtn id=trail-back type=button>← 上一步</button><button class=ghostbtn id=trail-close type=button aria-label="关闭数据寻迹">关闭</button></div>
+ </div>
+ <ol class=trail-steps id=trail-steps aria-label="数据寻迹步骤"></ol>
+ <div class=trail-body id=trail-body></div>
+ <div class=trail-status id=trail-status role=status aria-live=polite aria-atomic=true></div>
+</aside>
 
 <section class=card id=section-overview>
  <div class=kpis>
    <div class="kpi is-primary">
-     <div class=v><span class=grad id=k-total></span> <small id=k-total-u></small></div>
+     <div class=v><span class=grad id=k-total></span><span class=exact-inline id=k-total-exact></span> <small id=k-total-u></small></div>
      <div class=l>总 token <button class=k-copy id=k-total-copy type=button aria-label="复制总 Token 精确值" title="复制精确值">⧉</button><span class=delta id=k-delta></span><span class=fc id=k-forecast></span></div>
      <svg class=spark id=spark aria-hidden=true></svg>
    </div>
    <div class=kpi>
      <div class=v><span id=k-cache-pct></span><small>%</small></div>
-     <div class=l>缓存命中 · 省 <span id=k-saved></span></div>
+     <div class=l>缓存命中 · Read <span id=k-saved></span></div>
      <div class=gauge aria-hidden=true><i id=gauge-fill style="width:0"></i></div>
    </div>
    <div class=kpi><div class=v><span id=k-calls></span></div><div class=l>调用次数</div></div>
@@ -106,9 +134,10 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 <section class=card id=section-trend>
  <div class=row-between>
    <h2 style=margin:0 id=bar-title>每期 token（按模型堆叠）</h2>
-   <div style="display:flex;align-items:center;gap:9px"><button class="ghostbtn comparebtn" id=compare-btn type=button aria-pressed=false title="叠加上一期轮廓">◫ 幻影对比</button><span class=sub id=bar-hint style=margin:0;color:var(--faint)></span></div>
+   <div class=trend-tools><button class="ghostbtn comparebtn" id=compare-btn type=button aria-pressed=false title="按住预览上一期轮廓；点击固定对比">◫ 按住对比</button><span class=sub id=bar-hint>拖动或用方向键预览 · Enter / Space / 点击提交</span></div>
  </div>
- <div id=bar style=margin-top:14px></div>
+ <div id=bar class=trend-chart style=margin-top:14px aria-describedby="bar-hint scrub-status"></div>
+ <div class=scrub-status id=scrub-status role=status aria-live=polite aria-atomic=true></div>
 </section>
 
 <section class=card data-module=provenance id=section-provenance>
@@ -120,11 +149,6 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
  <div class=prov-meters id=prov-meters></div>
  <div class=prov-sources id=prov-sources></div>
  <div class=prov-capabilities id=prov-capabilities></div>
-</section>
-
-<section class=card id=section-moments>
- <div class=row-between><div><h2 style=margin:0>Data Moments · 数据时刻</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">从当前模型筛选中提取范围限定事件，并复用到趋势注释轨道</p></div><span class=sub id=moments-meta style="margin:0;color:var(--faint)"></span></div>
- <div class=moments id=moments></div>
 </section>
 
 <section class="card token-almanac" data-module=almanac data-lazy=almanac id=section-almanac>
@@ -224,7 +248,7 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 </section>
 
 <section class=card data-module=flow data-lazy=flow id=section-flow>
- <div class=row-between><h2 style=margin:0>Token 流光图 · 项目 → 模型 → 会话</h2><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class=sub style="margin:0;color:var(--faint)">光带宽度对应真实 Token 流量；点击项目或模型锁定链路，点击会话回放</span><button class=ghostbtn id=flow-save type=button title="保存当前流光图为 SVG">保存 SVG</button></div></div>
+ <div class=row-between><h2 style=margin:0>Token 流光图 · 项目 → 模型 → 会话</h2><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class=sub style="margin:0;color:var(--faint)">光带宽度对应真实 Token 流量；悬停或聚焦 Peek，点击 Pin 到 Signal Dock</span><button class=ghostbtn id=flow-save type=button title="保存当前流光图为 SVG">保存 SVG</button></div></div>
  <div class=flow-shell style=margin-top:14px><svg class=flow-map id=flow-map viewBox="0 0 1120 470" preserveAspectRatio="xMidYMid meet" role=img aria-label="项目到模型再到会话的 Token 流光图"></svg><div class=flow-panel id=flow-panel aria-live=polite><b>Token 流光图</b><span>悬停或聚焦节点查看真实流向，点击项目或模型可锁定链路。</span></div></div>
  <div class=flow-stats id=flow-stats></div>
 </section>
@@ -330,15 +354,20 @@ try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.d
 
 <div class=help-modal id=help-modal aria-hidden=true>
  <div class=help-sheet role=dialog aria-modal=true aria-labelledby=help-title>
-  <div class=help-head><div><h3 id=help-title>快捷键与隐藏操作</h3><div class=sub>按 <b>?</b> 随时打开 · 所有操作都在本地完成</div></div><button class=help-close id=help-close type=button aria-label="关闭快捷键帮助">×</button></div>
+  <div class=help-head><div><h3 id=help-title>快捷键与交互说明</h3><div class=sub>按 <b>?</b> 随时打开 · 所有操作都在本地完成</div></div><button class=help-close id=help-close type=button aria-label="关闭快捷键帮助">×</button></div>
   <div class=help-grid>
    <div class=help-row><span>切换日 / 周 / 月</span><kbd>1 / 2 / 3</kbd></div><div class=help-row><span>打开命令面板</span><kbd>⌘/Ctrl K</kbd></div>
    <div class=help-row><span>切换主题</span><kbd>T</kbd></div><div class=help-row><span>导出当前 CSV</span><kbd>E</kbd></div>
    <div class=help-row><span>退出时光探针 / 关闭弹层</span><kbd>Esc</kbd></div><div class=help-row><span>打开本帮助</span><kbd>?</kbd></div>
    <div class=help-row><span>数据侦探前后切换</span><kbd>← / →</kbd></div><div class=help-row><span>流光节点锁定 / 回放</span><kbd>Enter / Space</kbd></div>
    <div class=help-row><span>浏览年鉴赛季 / 胶囊章节</span><kbd>← / →</kbd></div><div class=help-row><span>打开赛季 / 纪录详情</span><kbd>Enter / Space</kbd></div>
-   <div class=help-row><span>模型独看</span><kbd>双击模型</kbd></div><div class=help-row><span>全选 / 清空模型</span><kbd>Alt + 点击</kbd></div>
-   <div class=help-row><span>反选单个模型</span><kbd>右键模型</kbd></div><div class=help-row><span>总量表达切换 / 复制</span><kbd>单击 / 双击</kbd></div>
+   <div class=help-row><span>打开 / 返回数据寻迹</span><kbd>I</kbd></div><div class=help-row><span>寻迹步骤前后移动</span><kbd>← / →</kbd></div>
+   <div class=help-row><span>寻迹选项浏览</span><kbd>↑ / ↓ · Home / End</kbd></div><div class=help-row><span>选择线索 / 打开证据</span><kbd>Enter / Space</kbd></div>
+   <div class=help-row><span>寻迹返回上一步</span><kbd>Backspace</kbd></div><div class=help-row><span>先关闭寻迹，再退出时光探针</span><kbd>Esc</kbd></div>
+   <div class=help-row><span>Signal Dock Peek / Pin</span><kbd>悬停 / 聚焦 · 点击</kbd></div><div class=help-row><span>清除 Pin / 精确层</span><kbd>Esc</kbd></div>
+   <div class=help-row><span>临时显露精确值与分母</span><kbd>按住 ⌥ Alt</kbd></div><div class=help-row><span>临时查看上一期轮廓</span><kbd>按住 C</kbd></div>
+   <div class=help-row><span>固定 / 取消上一期对比</span><kbd>点击“按住对比”</kbd></div><div class=help-row><span>模型筛选</span><kbd>点击 · 全选 / 清空 / 撤销</kbd></div>
+   <div class=help-row><span>复制总 Token 精确值</span><kbd>⧉ 复制按钮</kbd></div>
   </div>
  </div>
 </div>

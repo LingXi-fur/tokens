@@ -12,9 +12,8 @@ import json
 import os
 import sys
 
-import config
-import dashboard_payload
-import dashboard_wire
+from . import config, dashboard_payload, dashboard_wire
+from .opener import open_path
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False):
     return dashboard_payload.build_payload(
@@ -27,8 +26,6 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
 
 
 _ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_assets")
-if not os.path.isdir(_ASSET_DIR):
-    _ASSET_DIR = os.path.join(sys.prefix, "lib", "dashboard_assets")
 _ASSET_CACHE = {}
 
 
@@ -73,8 +70,3 @@ def write_dashboard(records, since=None, until=None, sources=None, anonymize=Fal
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html_doc)
     return path
-
-
-def open_path(path):
-    import subprocess
-    subprocess.Popen(["open", path])

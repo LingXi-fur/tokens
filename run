@@ -3,4 +3,4 @@
 # 例：./run month --html --open
 set -e
 cd "$(dirname "$0")"
-python3 cli.py "${@:-day}"
+PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m tokens_cli "${@:-day}"

@@ -8,10 +8,7 @@ import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
-import aggregate
-import config
-import readers
-import report_term
+from . import aggregate, config, readers, report_term
 
 
 PALETTE = ["#5b8def", "#14b8a6", "#f59e0b", "#a78bfa",
