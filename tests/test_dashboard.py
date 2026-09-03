@@ -102,6 +102,9 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("tk-lang", script[view_start:view_end])
         self.assertNotIn("Project-", script[script.index("function applyLanguage("):script.index("const state =")])
         self.assertNotIn("Session-", script[script.index("function applyLanguage("):script.index("const state =")])
+        self.assertIn("Cumulative growth stage", script)
+        self.assertIn("cumulative Tokens", script)
+        self.assertIn("Static offline snapshot", script)
         self.assertIn("Token Usage", template)
         self.assertIn("Switch theme", template)
 
@@ -814,9 +817,19 @@ if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new 
             "id=creature-upload-status role=status aria-live=polite",
             "id=creature-reference-image alt=",
             "const CREATURE_PREFS_KEY='tk-creature-v1'",
+            "原创日系 Furry 半身角色，由本地 Token 聚合与角色设定共同塑形。",
+            "累计成长阶段",
+            "累计 Token",
             "function normalizeCreaturePrefs(",
             "function creatureMetrics(",
             "function defaultCreatureSpecies(",
+            "function creatureSpeciesParts(",
+            "creature-bangs",
+            "creature-cheek-fur",
+            "creature-muzzle",
+            "creature-chest-fur",
+            "creature-paw",
+            "creature-charm",
             "function creaturePaletteFromPixels(",
             "function applyCreatureReference(",
             "file.size>5*1024*1024",
@@ -842,6 +855,27 @@ if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new 
         self.assertNotIn("session", storage_code.lower())
         self.assertNotIn("cwd", storage_code.lower())
         self.assertNotIn("p.set('creature", template)
+        self.assertIn(
+            "creatureDataPalette(metrics,species)",
+            template,
+        )
+        self.assertIn(
+            "addEventListener('change',updateCreatureSpecies)",
+            template,
+        )
+        self.assertIn(
+            "addEventListener('input',updateCreatureColors)",
+            template,
+        )
+        species_handler_start = template.index(
+            "function updateCreatureSpecies("
+        )
+        species_handler_end = template.index(
+            "function clearCreatureReference(", species_handler_start
+        )
+        species_handler = template[species_handler_start:species_handler_end]
+        self.assertNotIn("currentCreaturePrefs()", species_handler)
+        self.assertIn("prefs.species=", species_handler)
 
     def test_furry_companion_helpers_validate_preferences_and_palette(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
@@ -868,7 +902,9 @@ if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new 
                 "creatureMetrics",
                 "defaultCreatureSpecies",
                 "hslCreatureColor",
+                "creatureTone",
                 "creatureDataPalette",
+                "creatureSpeciesParts",
                 "creaturePaletteFromPixels",
             )
         )
@@ -883,7 +919,9 @@ const species=defaultCreatureSpecies(base);
 if(!['wolf','fox','cat','rabbit','dragon'].includes(species)||defaultCreatureSpecies(base)!==species)throw new Error('species mapping');
 const metrics=creatureMetrics({day:[{total:1000},{total:2000},{total:0}],hourly:Array(24).fill(100),cache_read:600,models:['a','b'],n_cwds:4});
 if(metrics.total!==3000||metrics.models!==2||metrics.projects!==4||metrics.streak!==2||Math.abs(metrics.cache-.2)>.0001)throw new Error('metrics');
-const palette=creatureDataPalette(base);if(!Object.values(palette).every(validCreatureColor))throw new Error('data palette');
+const palettes=['wolf','fox','cat','rabbit','dragon'].map(name=>creatureDataPalette(base,name));
+if(!palettes.flatMap(Object.values).every(validCreatureColor))throw new Error('data palette');
+if(new Set(palettes.map(value=>JSON.stringify(value))).size!==5)throw new Error('species palettes');
 const pixels=new Uint8ClampedArray([
   220,40,60,255,220,40,60,255,35,120,210,255,35,120,210,255,80,210,120,255,
   0,0,0,255,255,255,255,255,200,100,50,0
@@ -972,6 +1010,108 @@ const empty=creaturePaletteFromPixels(new Uint8ClampedArray([0,0,0,0,255,255,255
         self.assertNotIn(".mrow input{display:none}", template)
         self.assertIn("activateRhythmCell(c)", template)
         self.assertIn("无 Token 记录", template)
+
+    def test_almanac_trends_exclude_the_incomplete_current_day(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+
+        def extract_function(name):
+            start = script.index(f"function {name}(")
+            brace = script.index("{", start)
+            depth = 0
+            for index in range(brace, len(script)):
+                if script[index] == "{":
+                    depth += 1
+                elif script[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return script[start:index + 1]
+            self.fail(name)
+
+        helper = extract_function("almanacTrendMetrics")
+        node_script = helper + r'''
+const open={generated:'2026-08-26 12:00',range:{until:null}};
+let result=almanacTrendMetrics([
+  {period:'2026-08-23',total:100},
+  {period:'2026-08-24',total:200},
+  {period:'2026-08-25',total:300},
+  {period:'2026-08-26',total:1}
+],open);
+if(result.completeDays!==3||result.growthStreak!==2||result.declineStreak!==0)throw new Error('current day polluted streak');
+if(result.avg7!==200||result.avg30!==200||result.momentum!==0)throw new Error('current day polluted averages');
+const days=[];
+for(let day=1;day<=7;day++)days.push({period:`2026-08-${String(day).padStart(2,'0')}`,total:100});
+for(let day=8;day<=14;day++)days.push({period:`2026-08-${String(day).padStart(2,'0')}`,total:200});
+days.push({period:'2026-08-26',total:1});
+result=almanacTrendMetrics(days,{generated:'2026-08-15 12:00',range:{since:'2026-08-01',until:null}});
+if(result.avg7!==200||Math.abs(result.momentum-1)>.0001)throw new Error('complete seven-day windows');
+result=almanacTrendMetrics([
+  {period:'2026-08-01',total:100},
+  {period:'2026-08-03',total:300}
+],{generated:'2026-08-04 12:00',range:{since:'2026-08-01',until:null}});
+if(result.completeDays!==3||Math.abs(result.avg7-(400/3))>.0001||result.growthStreak!==1)throw new Error('calendar gaps must be zero');
+const historical={generated:'2026-08-26 12:00',range:{until:'2026-08-25'}};
+result=almanacTrendMetrics([
+  {period:'2026-08-24',total:100},
+  {period:'2026-08-25',total:50}
+],historical);
+if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical range');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_kpi_period_delta_compares_equivalent_time_windows(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+
+        def extract_function(name):
+            start = script.index(f"function {name}(")
+            brace = script.index("{", start)
+            depth = 0
+            for index in range(brace, len(script)):
+                if script[index] == "{":
+                    depth += 1
+                elif script[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return script[start:index + 1]
+            self.fail(name)
+
+        helpers = "\n".join(extract_function(name) for name in (
+            "localISO",
+            "periodDays",
+            "selectedDayTotal",
+            "periodDelta",
+        ))
+        node_script = helpers + r'''
+let DATA, state;
+function detail(total){return {hourly_models:{a:[total,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}};}
+state={gran:'month',models:new Set(['a'])};
+DATA={generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
+for(let day=1;day<=25;day++){
+  const current=`2026-08-${String(day).padStart(2,'0')}`;
+  const previous=`2026-07-${String(day).padStart(2,'0')}`;
+  DATA.day_details[current]=detail(200);
+  DATA.day_details[previous]=detail(100);
+}
+let result=periodDelta([{period:'2026-07',total:3100},{period:'2026-08',total:5050}]);
+if(!result||result.label!=='较上期同期'||Math.abs(result.value-100)>.0001)throw new Error('open month comparison');
+DATA={generated:'2026-08-26 12:00',range:{until:'2026-07-31'},day_details:{}};
+result=periodDelta([{period:'2026-06',total:100},{period:'2026-07',total:125}]);
+if(!result||result.label!=='环比'||Math.abs(result.value-25)>.0001)throw new Error('complete period comparison');
+state.gran='day';DATA={generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
+if(periodDelta([{period:'2026-08-25',total:100},{period:'2026-08-26',total:50}])!==null)throw new Error('partial day should be hidden');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_compare_annotation_layout_separates_peak_value_and_delta(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")

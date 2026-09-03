@@ -3,6 +3,7 @@ import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 from . import dashboard_payload, dashboard_wire, readers, report_dashboard
 
@@ -132,12 +133,13 @@ class LiveDashboardHandler(BaseHTTPRequestHandler):
         if not self._allowed_request():
             self._headers(403, "text/plain; charset=utf-8")
             return
-        if self.path == "/":
+        path = urlsplit(self.path).path
+        if path == "/":
             body = self.server.dashboard.page(self.server.interval).encode("utf-8")
             self._headers(200, "text/html; charset=utf-8", len(body))
             self.wfile.write(body)
             return
-        if self.path == "/api/snapshot":
+        if path == "/api/snapshot":
             response = self.server.dashboard.response()
             etag = f'"{response["snapshot"]}"'
             if self.headers.get("If-None-Match") == etag and not response["error"]:
@@ -154,7 +156,7 @@ class LiveDashboardHandler(BaseHTTPRequestHandler):
 
 
 def create_server(port, sources, since=None, until=None, anonymize=False,
-                  use_cache=True, interval=5.0):
+                  use_cache=True, interval=300.0):
     dashboard = LiveDashboard(
         sources,
         since=since,

@@ -55,8 +55,8 @@ def build_parser():
     parser.add_argument("--output", metavar="DIR", help="output directory (default: ./out)")
     parser.add_argument("--timezone", metavar="ZONE", help="IANA timezone, for example Europe/Berlin")
     parser.add_argument("--no-cache", action="store_true", help="ignore the file cache and re-read logs")
-    parser.add_argument("--interval", type=_positive_float, default=5.0,
-                        help="live Dashboard check interval in seconds (default: 5)")
+    parser.add_argument("--interval", type=_positive_float, default=300.0,
+                        help="live Dashboard check interval in seconds (default: 300)")
     parser.add_argument("--port", type=_port, default=8765,
                         help="live Dashboard loopback port; 0 chooses a free port (default: 8765)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")

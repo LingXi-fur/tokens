@@ -19,6 +19,7 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
   </div>
   <div class=head-tools>
     <div class="seg live-beacon static" id=live-beacon role=status aria-live=polite aria-atomic=true title="静态离线快照"><span class=led></span><span id=live-text>静态快照</span></div>
+    <select class=live-refresh id=live-refresh hidden aria-label="实时刷新频率" title="实时刷新频率"><option value=60>刷新 · 1 分钟</option><option value=300 selected>刷新 · 5 分钟</option><option value=900>刷新 · 15 分钟</option><option value=1800>刷新 · 30 分钟</option><option value=0>刷新 · 暂停</option></select>
     <button class=langbtn id=lang-btn type=button data-i18n-skip aria-label="切换语言" title="切换到中文">中文</button>
     <button class="seg freshness-beacon" id=freshness-beacon type=button title="查看数据可信度"><span class=led></span><span id=freshness-text>数据体检 —</span></button>
     <button class="seg status-pulse" id=status-pulse type=button title="用量状态计算中"><span class=led></span><span id=status-text>状态 —</span></button>
@@ -271,25 +272,29 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
   <div>
    <div class=creature-k>FURRY TOKEN COMPANION · LOCAL SVG</div>
    <h2 style=margin:0>Furry Token 伙伴 · 你的数字兽设</h2>
-   <p class=creature-lead>原创日系兽人伙伴，由本地 Token 聚合与角色设定共同塑形。</p>
+   <p class=creature-lead>原创日系 Furry 半身角色，由本地 Token 聚合与角色设定共同塑形。</p>
   </div>
-  <button class=ghostbtn id=creature-save type=button>保存 SVG</button>
+  <button class=ghostbtn id=creature-save type=button>保存角色 SVG</button>
  </div>
  <div class=creature-lab-grid>
-  <div>
+  <div class=creature-showcase>
    <div class=creature-stage id=creature-stage>
-    <svg class=creature id=creature viewBox="0 0 300 320" role=img aria-label="数据驱动的 Furry Token 伙伴"></svg>
+    <div class=creature-stage-label>LOCAL CHARACTER PORTRAIT</div>
+    <svg class=creature id=creature viewBox="0 0 360 420" role=img aria-label="数据驱动的日系 Furry Token 半身伙伴"></svg>
     <div class=creature-reference id=creature-reference hidden>
      <img id=creature-reference-image alt="仅在当前页面显示的兽设参考图">
      <span>本地参考</span>
     </div>
    </div>
-   <div class=creature-name id=creature-name></div>
-   <div class=creature-desc id=creature-desc></div>
+   <div class=creature-plate>
+    <div class=creature-name id=creature-name></div>
+    <div class=creature-desc id=creature-desc></div>
+   </div>
   </div>
   <div class=creature-controls>
+   <div class=creature-control-k>CHARACTER CUSTOMIZE</div>
    <label class=creature-field>
-    <span>物种</span>
+    <span>伙伴物种</span>
     <select id=creature-species>
      <option value=auto>由数据选择</option>
      <option value=wolf>狼</option>
@@ -301,11 +306,11 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
    </label>
    <div class=creature-palette role=group aria-label="伙伴配色">
     <label><span>主毛色</span><input id=creature-primary type=color></label>
-    <label><span>辅毛色</span><input id=creature-secondary type=color></label>
-    <label><span>强调色</span><input id=creature-accent type=color></label>
+    <label><span>脸胸毛</span><input id=creature-secondary type=color></label>
+    <label><span>虹膜与饰品</span><input id=creature-accent type=color></label>
    </div>
    <div class=creature-actions>
-    <label class="ghostbtn creature-upload" for=creature-file>导入兽设参考</label>
+    <label class="ghostbtn creature-upload" for=creature-file>导入兽设配色</label>
     <input id=creature-file type=file accept="image/png,image/jpeg,image/webp" hidden>
     <button class=ghostbtn id=creature-remove type=button disabled>移除参考图</button>
     <button class=ghostbtn id=creature-reset type=button>恢复数据外观</button>

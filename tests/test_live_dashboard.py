@@ -44,7 +44,7 @@ class LiveDashboardTests(unittest.TestCase):
 
     def start_server(self):
         dashboard = _FakeDashboard()
-        server = live_dashboard.LiveDashboardServer(0, dashboard, 5)
+        server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
@@ -71,6 +71,19 @@ class LiveDashboardTests(unittest.TestCase):
         self.assertEqual("no-referrer", response.getheader("Referrer-Policy"))
         self.assertEqual("same-origin", response.getheader("Cross-Origin-Resource-Policy"))
         self.assertEqual("frame-ancestors 'none'", response.getheader("Content-Security-Policy"))
+
+    def test_page_allows_view_query_without_expanding_route_surface(self):
+        server, _ = self.start_server()
+        response, body = self.request(
+            server,
+            "/?gran=month&models=model-a&focus=2026-08",
+        )
+        self.assertEqual(200, response.status)
+        self.assertEqual(b"<html>live</html>", body)
+        response, _ = self.request(server, "/unknown?gran=month")
+        self.assertEqual(404, response.status)
+        response, _ = self.request(server, "/api/snapshot/extra?gran=month")
+        self.assertEqual(404, response.status)
 
     def test_server_rejects_foreign_host_origin_and_unknown_paths(self):
         server, _ = self.start_server()
@@ -180,13 +193,26 @@ class LiveDashboardTests(unittest.TestCase):
         lock.__enter__.assert_called_once_with()
         lock.__exit__.assert_called_once()
 
+    def test_default_server_interval_is_five_minutes(self):
+        with mock.patch(
+            "tokens_cli.live_dashboard.LiveDashboardServer",
+            return_value=mock.sentinel.server,
+        ) as server_class:
+            server = live_dashboard.create_server(0, ["claude"])
+        self.assertIs(mock.sentinel.server, server)
+        self.assertEqual(300.0, server_class.call_args.args[2])
+
     def test_live_page_enables_polling_without_changing_static_page(self):
         dashboard = live_dashboard.LiveDashboard(["claude"])
         with mock.patch.object(dashboard, "refresh"), \
                 mock.patch.object(dashboard, "_wire", {"v": 1, "s": [], "d": {}}):
-            live = dashboard.page(5)
+            live = dashboard.page(300)
         self.assertIn('"enabled": true', live)
-        self.assertIn('"interval": 5', live)
+        self.assertIn('"interval": 300', live)
+        self.assertIn("id=live-refresh", live)
+        self.assertIn("刷新 · 5 分钟", live)
+        self.assertIn("refresh.addEventListener('change'", live)
+        self.assertIn("if(interval===0)liveStatus('paused','刷新已暂停')", live)
         self.assertIn("initLiveDashboard()", live)
 
 

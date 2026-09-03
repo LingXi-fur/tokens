@@ -59,7 +59,7 @@ Reports are written to `./out` by default. Use `--output DIR` to choose another 
 # A compact terminal report for the last 14 days
 tokens day
 
-# Keep a live dashboard open; it checks local logs every 5 seconds
+# Keep a live dashboard open; it checks local logs every 5 minutes by default
 tokens serve \
   --source claude \
   --source gemini \
