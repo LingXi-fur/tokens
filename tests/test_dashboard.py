@@ -340,6 +340,18 @@ class DashboardTests(unittest.TestCase):
         turns_payload = report_dashboard.build_payload(added_turn, sources=["claude"])
         self.assertNotEqual(first["snapshot"]["id"], turns_payload["snapshot"]["id"])
 
+        changed_entities = [dict(item) for item in records]
+        changed_entities[0]["cwd"] = "/synthetic-user-root/alice/Customer-Nova"
+        changed_entities[0]["session"] = "raw-session-different"
+        entities_payload = report_dashboard.build_payload(
+            changed_entities,
+            sources=["claude"],
+        )
+        self.assertNotEqual(
+            first["snapshot"]["id"],
+            entities_payload["snapshot"]["id"],
+        )
+
         snapshot = json.dumps(first["snapshot"], ensure_ascii=False)
         for sensitive in (
             "/synthetic-user-root/alice/Customer-Zephyr",
@@ -420,8 +432,10 @@ class DashboardTests(unittest.TestCase):
                 ))
             html = path.read_text(encoding="utf-8")
         self.assertNotIn("__DATA__", html)
+        self.assertNotIn("__LIVE__", html)
         self.assertIn("const WIRE = {", html)
-        self.assertIn("const DATA = decodeWire(WIRE)", html)
+        self.assertIn("const LIVE = {", html)
+        self.assertIn("let DATA = decodeWire(WIRE)", html)
         self.assertEqual("dashboard.html", path.name)
         ids = re.findall(r"\bid\s*=\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s>]+))", html)
         flat_ids = [next(part for part in match if part) for match in ids]
@@ -654,6 +668,229 @@ if(rhythmLevel(0,[100])!==0)throw new Error('zero level');
 if(rhythmLevel(100,[100])!==4)throw new Error('single peak must be hottest');
 if(rhythmLevel(100,[100,100])!==4)throw new Error('tied peaks must be hottest');
 if(rhythmLevel(4,[1,2,3,4])!==4)throw new Error('maximum must be hottest');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_live_replay_reconciles_changed_and_removed_sessions(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("function refreshedReplayState(")
+        brace = script.index("{", start)
+        depth = 0
+        end = None
+        for index in range(brace, len(script)):
+            if script[index] == "{":
+                depth += 1
+            elif script[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        self.assertIsNotNone(end)
+        helper = script[start:end]
+        node_script = helper + r'''
+const current={sid:'session-a',series:[10,20],i:1,timer:{},label:'A'};
+const updated=refreshedReplayState(current,{session_series:{'session-a':[10,20,30]}});
+if(!updated||updated.series.length!==3||updated.i!==1||updated.timer!==null)throw new Error('updated replay');
+const shortened=refreshedReplayState({...current,i:9},{session_series:{'session-a':[7]}});
+if(!shortened||shortened.i!==0||shortened.series[0]!==7)throw new Error('clamped replay');
+if(refreshedReplayState(current,{session_series:{}})!==null)throw new Error('removed replay');
+const closed={sid:null,series:[],i:0,timer:null,label:''};
+if(refreshedReplayState(closed,{session_series:{}})!==closed)throw new Error('closed replay');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("if(rp.sid){", script)
+        self.assertIn("else closeReplay();", script)
+
+    def test_work_mode_atlas_contracts_and_privacy_boundary(self):
+        template = report_dashboard._TEMPLATE
+        for marker in (
+            "data-module=modes",
+            "data-lazy=modes",
+            "id=section-modes",
+            "id=mode-timeline",
+            "role=listbox",
+            "modes:true",
+            "modes:renderWorkModes",
+            "function workModeDailyRows(",
+            "function classifyWorkMode(",
+            "function deriveWorkModes(",
+            "function renderWorkModes(",
+            "event.key==='Home'",
+            "event.key==='End'",
+            "class=mode-replay",
+            "回看这一天",
+        ):
+            self.assertIn(marker, template)
+        self.assertIn("['project','reuse','flow','modes','dna']", template)
+        self.assertNotIn("event.key==='Enter'||event.key===' '){event.preventDefault();focusMomentDay", template)
+        self.assertNotIn("localStorage.setItem('tk-modes", template)
+        self.assertNotIn("p.set('mode'", template)
+
+    def test_work_mode_classification_is_filtered_ordered_and_explainable(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("const WORK_MODE_RULES=")
+        end = script.index("let workModeCursor=", start)
+        helpers = script[start:end]
+        node_script = "const fmt=n=>String(n);\n" + helpers + r'''
+const hours=(pairs)=>{const out=Array(24).fill(0);for(const [hour,value] of pairs)out[hour]=value;return out;};
+const project=(id,models)=>[id,0,id,models];
+const DATA={
+  day:[
+    {period:'2026-07-01',models:{a:900},model_calls:{a:1}},
+    {period:'2026-07-02',models:{a:1000,b:1000,c:1000},model_calls:{a:1,b:1,c:1}},
+    {period:'2026-07-03',models:{a:2000},model_calls:{a:1}},
+    {period:'2026-07-04',models:{a:1200},model_calls:{a:1}},
+    {period:'2026-07-05',models:{a:6000},model_calls:{a:1}},
+    {period:'2026-07-06',models:{a:2000,b:1000,c:1000},model_calls:{a:1,b:1,c:1}},
+    {period:'2026-07-07',models:{a:800,b:2200},model_calls:{a:1,b:1}},
+  ],
+  day_details:{
+    '2026-07-01':{cache_read_models:{a:0},hourly_models:{a:hours([[10,900]])},cwds:[project('private-low',{a:900})]},
+    '2026-07-02':{cache_read_models:{a:0,b:0,c:0},hourly_models:{a:hours([[8,1000]]),b:hours([[12,1000]]),c:hours([[18,1000]])},cwds:[project('private-explore',{a:1000,b:1000,c:1000})]},
+    '2026-07-03':{cache_read_models:{a:0},hourly_models:{a:hours([[22,500],[23,500],[0,500],[1,500]])},cwds:[project('private-deep',{a:2000})]},
+    '2026-07-04':{cache_read_models:{a:0},hourly_models:{a:hours([[1,150],[4,150],[7,150],[10,150],[13,150],[16,150],[19,150],[22,150]])},cwds:[project('private-cruise',{a:1200})]},
+    '2026-07-05':{cache_read_models:{a:0},hourly_models:{a:hours([[1,600],[3,600],[5,600],[7,600],[9,600],[11,600],[13,600],[15,600],[17,600],[19,600]])},cwds:[project('private-sprint',{a:6000})]},
+    '2026-07-06':{cache_read_models:{a:1400,b:0,c:0},hourly_models:{a:hours([[8,2000]]),b:hours([[9,1000]]),c:hours([[10,1000]])},cwds:[project('private-priority',{a:2000,b:1000,c:1000})]},
+    '2026-07-07':{cache_read_models:{a:0,b:0},hourly_models:{a:hours([[8,800]]),b:hours([[9,2200]])},cwds:[project('private-filter',{a:800,b:2200})]},
+  }
+};
+const all=deriveWorkModes(DATA,new Set(['a','b','c']));
+const modes=Object.fromEntries(all.rows.map(row=>[row.day,row.key]));
+const expected={
+  '2026-07-01':'insufficient',
+  '2026-07-02':'explore',
+  '2026-07-03':'deep',
+  '2026-07-04':'cruise',
+  '2026-07-05':'sprint',
+  '2026-07-06':'cache',
+};
+for(const [day,want] of Object.entries(expected))if(modes[day]!==want)throw new Error(`${day}: ${modes[day]} !== ${want}`);
+const filtered=deriveWorkModes(DATA,new Set(['a']));
+const filterDay=filtered.rows.find(row=>row.day==='2026-07-07');
+if(filterDay.total!==800||filterDay.key!=='insufficient')throw new Error('model filter was not applied before classification');
+const focused=deriveWorkModes(DATA,new Set(['a','b','c']),new Set(['2026-07-03']));
+if(focused.rows.length!==1||focused.rows[0].day!=='2026-07-03')throw new Error('time probe was not applied');
+const serialized=JSON.stringify(all);
+for(const secret of ['private-low','private-explore','private-deep','private-cruise','private-sprint','private-priority','private-filter'])if(serialized.includes(secret))throw new Error('entity identifier leaked: '+secret);
+if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new Error('classification evidence missing');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_furry_companion_structure_privacy_and_accessibility_contracts(self):
+        template = report_dashboard._TEMPLATE
+        for marker in (
+            "id=section-creature",
+            "FURRY TOKEN COMPANION · LOCAL SVG",
+            "id=creature-species",
+            "value=wolf",
+            "value=fox",
+            "value=cat",
+            "value=rabbit",
+            "value=dragon",
+            "id=creature-primary type=color",
+            "id=creature-secondary type=color",
+            "id=creature-accent type=color",
+            "role=group aria-label=\"伙伴配色\"",
+            "id=creature-file type=file",
+            'accept="image/png,image/jpeg,image/webp"',
+            "id=creature-upload-status role=status aria-live=polite",
+            "id=creature-reference-image alt=",
+            "const CREATURE_PREFS_KEY='tk-creature-v1'",
+            "function normalizeCreaturePrefs(",
+            "function creatureMetrics(",
+            "function defaultCreatureSpecies(",
+            "function creaturePaletteFromPixels(",
+            "function applyCreatureReference(",
+            "file.size>5*1024*1024",
+            "image.naturalWidth>12000",
+            "URL.revokeObjectURL(creatureReferenceURL)",
+            "furry-token-companion.svg",
+        ):
+            self.assertIn(marker, template)
+        save_start = template.index(
+            "document.getElementById('creature-save').addEventListener"
+        )
+        save_end = template.index("/* ---- 每模型迷你趋势", save_start)
+        save_code = template[save_start:save_end]
+        self.assertNotIn("creature-reference", save_code)
+        self.assertNotIn("data:image", save_code)
+        self.assertNotIn("<image", save_code)
+        self.assertNotIn("creatureReferenceURL", save_code)
+        storage_start = template.index("function saveCreaturePrefs(")
+        storage_end = template.index("function creatureMetrics(", storage_start)
+        storage_code = template[storage_start:storage_end]
+        self.assertNotIn("file", storage_code.lower())
+        self.assertNotIn("image", storage_code.lower())
+        self.assertNotIn("session", storage_code.lower())
+        self.assertNotIn("cwd", storage_code.lower())
+        self.assertNotIn("p.set('creature", template)
+
+    def test_furry_companion_helpers_validate_preferences_and_palette(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+
+        def extract_function(name):
+            start = script.index(f"function {name}(")
+            brace = script.index("{", start)
+            depth = 0
+            for index in range(brace, len(script)):
+                if script[index] == "{":
+                    depth += 1
+                elif script[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return script[start:index + 1]
+            self.fail(name)
+
+        constants_start = script.index("const CREATURE_PREFS_KEY=")
+        constants_end = script.index("let creatureReferenceURL=", constants_start)
+        helpers = script[constants_start:constants_end] + "\n" + "\n".join(
+            extract_function(name) for name in (
+                "validCreatureColor",
+                "normalizeCreaturePrefs",
+                "creatureMetrics",
+                "defaultCreatureSpecies",
+                "hslCreatureColor",
+                "creatureDataPalette",
+                "creaturePaletteFromPixels",
+            )
+        )
+        node_script = helpers + r'''
+const clean=normalizeCreaturePrefs({species:'fox',primary:'#AABBCC',secondary:'#102030',accent:'#fedcba'});
+if(clean.species!=='fox'||clean.primary!=='#AABBCC'||clean.accent!=='#fedcba')throw new Error('valid prefs');
+const invalid=normalizeCreaturePrefs({species:'human',primary:'red',secondary:'#12345g',accent:'javascript:alert(1)',filename:'secret.png',cwd:'/private'});
+if(invalid.species!=='auto'||invalid.primary!==null||invalid.secondary!==null||invalid.accent!==null)throw new Error('invalid prefs');
+if(JSON.stringify(invalid).includes('secret')||JSON.stringify(invalid).includes('/private'))throw new Error('extra fields leaked');
+const base={total:123456,models:3,projects:7,night:.4,cache:.2};
+const species=defaultCreatureSpecies(base);
+if(!['wolf','fox','cat','rabbit','dragon'].includes(species)||defaultCreatureSpecies(base)!==species)throw new Error('species mapping');
+const metrics=creatureMetrics({day:[{total:1000},{total:2000},{total:0}],hourly:Array(24).fill(100),cache_read:600,models:['a','b'],n_cwds:4});
+if(metrics.total!==3000||metrics.models!==2||metrics.projects!==4||metrics.streak!==2||Math.abs(metrics.cache-.2)>.0001)throw new Error('metrics');
+const palette=creatureDataPalette(base);if(!Object.values(palette).every(validCreatureColor))throw new Error('data palette');
+const pixels=new Uint8ClampedArray([
+  220,40,60,255,220,40,60,255,35,120,210,255,35,120,210,255,80,210,120,255,
+  0,0,0,255,255,255,255,255,200,100,50,0
+]);
+const extracted=creaturePaletteFromPixels(pixels);if(extracted.length!==3||!extracted.every(validCreatureColor))throw new Error('palette extraction');
+const mono=creaturePaletteFromPixels(new Uint8ClampedArray([80,120,160,255,80,120,160,255]));if(mono.length!==3||new Set(mono).size!==3)throw new Error('mono fallback');
+const empty=creaturePaletteFromPixels(new Uint8ClampedArray([0,0,0,0,255,255,255,255]));if(empty.length!==0)throw new Error('empty palette');
 '''
         result = subprocess.run(
             ["node", "-e", node_script],
@@ -1470,7 +1707,7 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
         storage_keys = set(re.findall(r"tk-[a-z0-9-]+", report_dashboard._TEMPLATE))
         storage_keys.discard("tk-motion-change")
         self.assertEqual(
-            {"tk-theme", "tk-motion", "tk-mods", "tk-discovery", "tk-achievements-v2", "tk-almanac-v1", "tk-lang"},
+            {"tk-theme", "tk-motion", "tk-mods", "tk-discovery", "tk-achievements-v2", "tk-almanac-v1", "tk-creature-v1", "tk-lang"},
             storage_keys,
         )
         self.assertNotIn("localStorage.setItem('tk-trail", script)

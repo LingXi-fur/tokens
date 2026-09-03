@@ -4,9 +4,11 @@ import argparse
 import sys
 from datetime import date, datetime, timedelta
 
-from . import __version__, aggregate, config, doctor, readers, report_dashboard, report_html, report_term
+from . import (__version__, aggregate, config, doctor, live_dashboard, readers,
+               report_dashboard, report_html, report_term)
+from .opener import open_url
 
-RANGES = ["day", "week", "month", "all", "dashboard", "doctor"]
+RANGES = ["day", "week", "month", "all", "dashboard", "serve", "doctor"]
 
 
 def compute_window(mode, now, days, weeks, months):
@@ -48,11 +50,15 @@ def build_parser():
     parser.add_argument("--html", action="store_true", help="write a static HTML report")
     parser.add_argument("--dashboard", action="store_true", help="write the interactive offline dashboard")
     parser.add_argument("--anonymize", action="store_true",
-                        help="pseudonymize project, session, and title identifiers in a dashboard")
+                        help="pseudonymize identifiers in an offline or live dashboard")
     parser.add_argument("--open", action="store_true", help="open generated HTML in the default browser")
     parser.add_argument("--output", metavar="DIR", help="output directory (default: ./out)")
     parser.add_argument("--timezone", metavar="ZONE", help="IANA timezone, for example Europe/Berlin")
     parser.add_argument("--no-cache", action="store_true", help="ignore the file cache and re-read logs")
+    parser.add_argument("--interval", type=_positive_float, default=5.0,
+                        help="live Dashboard check interval in seconds (default: 5)")
+    parser.add_argument("--port", type=_port, default=8765,
+                        help="live Dashboard loopback port; 0 chooses a free port (default: 8765)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
@@ -61,6 +67,20 @@ def _positive_int(value):
     number = int(value)
     if number < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
+    return number
+
+
+def _positive_float(value):
+    number = float(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return number
+
+
+def _port(value):
+    number = int(value)
+    if number < 0 or number > 65535:
+        raise argparse.ArgumentTypeError("must be between 0 and 65535")
     return number
 
 
@@ -85,8 +105,8 @@ def _configure(args, parser):
     args.until = _date(args.until, "--until", parser)
     if args.since and args.until and args.since > args.until:
         parser.error("--since must not be after --until")
-    if args.anonymize and not (args.dashboard or args.range == "dashboard"):
-        parser.error("--anonymize requires dashboard mode")
+    if args.anonymize and not (args.dashboard or args.range in ("dashboard", "serve")):
+        parser.error("--anonymize requires dashboard or serve mode")
 
 
 def _open_generated(path):
@@ -119,6 +139,40 @@ def main(argv=None):
 
     if args.range == "doctor":
         doctor.print_report(doctor.collect(sources=args.source))
+        return 0
+
+    if args.range == "serve":
+        try:
+            server = live_dashboard.create_server(
+                args.port,
+                sources,
+                since=args.since,
+                until=args.until,
+                anonymize=args.anonymize,
+                use_cache=not args.no_cache,
+                interval=args.interval,
+            )
+        except OSError as exc:
+            print(f"Could not start the live Dashboard: {exc}", file=sys.stderr)
+            return 1
+        host, port = server.server_address
+        url = f"http://{host}:{port}/"
+        print(f"Live Dashboard: {url}")
+        print(f"Checking local logs every {args.interval:g} seconds. Press Ctrl+C to stop.")
+        if args.open:
+            try:
+                opened = open_url(url)
+            except OSError as exc:
+                print(f"Could not open the browser: {exc}", file=sys.stderr)
+            else:
+                if opened is False:
+                    print(f"Could not open the browser automatically. Open this URL: {url}", file=sys.stderr)
+        try:
+            server.serve_forever(poll_interval=0.25)
+        except KeyboardInterrupt:
+            print("\nLive Dashboard stopped.")
+        finally:
+            server.server_close()
         return 0
 
     now = datetime.now(config.TZ).date()

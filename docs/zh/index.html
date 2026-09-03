@@ -21,9 +21,9 @@
 
 <div class="page-shell no-sidebar"><main id="main">
   <section class="hero">
-    <div class="eyebrow">LOCAL-FIRST · ZERO DEPENDENCIES · OFFLINE REPORTS</div>
+    <div class="eyebrow">LOCAL-FIRST · ZERO DEPENDENCIES · LIVE OR OFFLINE</div>
     <h1>看清每一次<br>Token 流动。</h1>
-    <p class="lead">tokens 是一个纯 Python stdlib 的本地 CLI，读取 Claude Code、Gemini CLI 与 Codex 日志，按日、周、月聚合用量，并输出终端表格、静态 HTML 报告和交互式离线 Dashboard。</p>
+    <p class="lead">tokens 是一个纯 Python stdlib 的本地 CLI，读取 Claude Code、Gemini CLI 与 Codex 日志，按日、周、月聚合用量，并输出终端表格、本机实时 Dashboard 或单文件离线快照。</p>
     <div class="hero-actions"><a class="button primary" href="getting-started.html">5 分钟开始</a><a class="button" href="dashboard.html">探索 Dashboard</a><a class="button" href="cli.html">查看命令</a></div>
     <p class="hero-note">Python ≥ 3.9 · 默认仅统计 Claude · 无 CDN · 不上传数据</p>
   </section>
@@ -39,7 +39,7 @@
   <section class="section"><div class="grid three">
     <article class="card"><div class="card-label">01 · Read</div><div class="card-value">三类日志</div><p class="card-meta">统一读取 Claude Code、Gemini CLI、Codex 的本地记录。</p></article>
     <article class="card"><div class="card-label">02 · Aggregate</div><div class="card-value">日 / 周 / 月</div><p class="card-meta">按模型、来源、调用等维度聚合，支持日期与来源过滤。</p></article>
-    <article class="card"><div class="card-label">03 · Report</div><div class="card-value">三种输出</div><p class="card-meta">终端表格、单期静态 HTML、交互式自包含 Dashboard。</p></article>
+    <article class="card"><div class="card-label">03 · Report</div><div class="card-value">四种输出</div><p class="card-meta">终端表格、单期静态 HTML、本机实时 Dashboard 与自包含离线快照。</p></article>
   </div></section>
 
   <section class="section"><h2>为本地开发工作流而生</h2><div class="grid"><article class="card"><h3>零构建，零运行时依赖</h3><p>项目与本站均不依赖前端框架、CDN 或第三方 JavaScript。克隆后即可运行；文档也可直接双击打开。</p></article><article class="card"><h3>报告离线可分发</h3><p>生成的 HTML 数据与渲染逻辑自包含，适合个人归档。但 Dashboard 可能包含项目路径、会话标识或摘要，分享前必须检查。</p></article><article class="card"><h3>默认最小数据面</h3><p>默认来源为 Claude；只有显式传入 <code>--source gemini</code> 或 <code>--source codex</code> 才会加入其他来源。</p></article><article class="card"><h3>不仅是柱状图</h3><p>Dashboard 提供时光探针、作息织锦、模型筛选、导出、Token 流光图、生物、星云与成就图鉴等本地交互。</p></article></div></section>

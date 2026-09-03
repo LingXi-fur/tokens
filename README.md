@@ -5,7 +5,7 @@
 
 **A local-first usage dashboard for Claude Code, Gemini CLI, and Codex.**
 
-Turn the token logs already on your machine into terminal reports and a private, interactive HTML dashboard. No account, database, telemetry, or runtime dependencies.
+Turn the token logs already on your machine into terminal reports, a live local dashboard, or a self-contained offline snapshot. No account, database, telemetry, or third-party runtime dependencies.
 
 [![CI](https://github.com/LingXi-fur/tokens/actions/workflows/ci.yml/badge.svg)](https://github.com/LingXi-fur/tokens/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b)](https://github.com/LingXi-fur/tokens/blob/v0.2.0/LICENSE)
@@ -26,9 +26,9 @@ AI coding tools already record useful usage data locally, but each tool uses a d
 - **Claude Code, Gemini CLI, and Codex** log readers;
 - daily, weekly, and monthly trends by model and source;
 - project and session exploration where the source logs support it;
-- terminal output, static HTML, and a self-contained interactive dashboard;
-- a pseudonymized export mode for safer sharing;
-- Python standard-library-only runtime with no network requests.
+- terminal output, a loopback-only live dashboard, and self-contained offline HTML;
+- a pseudonymized mode for safer local viewing and export;
+- Python standard-library-only runtime with no external network requests.
 
 ## Quick start
 
@@ -37,7 +37,7 @@ AI coding tools already record useful usage data locally, but each tool uses a d
 ```bash
 pipx install ai-cli-tokens
 tokens doctor
-tokens dashboard --open
+tokens serve --open
 ```
 
 `tokens doctor` checks log locations, timezone, output, and cache permissions without reading message content.
@@ -48,25 +48,28 @@ tokens dashboard --open
 git clone https://github.com/LingXi-fur/tokens.git
 cd tokens
 ./run doctor
-./run dashboard --open
+./run serve --open
 ```
 
 Reports are written to `./out` by default. Use `--output DIR` to choose another location.
 
-## Three useful commands
+## Four useful commands
 
 ```bash
 # A compact terminal report for the last 14 days
 tokens day
 
-# One offline dashboard across all supported sources
-tokens dashboard \
+# Keep a live dashboard open; it checks local logs every 5 seconds
+tokens serve \
   --source claude \
   --source gemini \
   --source codex \
   --open
 
-# A pseudonymized dashboard for a limited date range
+# Export one self-contained offline snapshot
+tokens dashboard --open
+
+# Export a pseudonymized snapshot for a limited date range
 tokens dashboard --anonymize \
   --since 2026-08-01 \
   --until 2026-08-31
@@ -97,7 +100,7 @@ Different tools do not expose identical token semantics. `tokens` preserves each
 ## CLI essentials
 
 ```text
-tokens [day|week|month|all|dashboard|doctor] [options]
+tokens [day|week|month|all|dashboard|serve|doctor] [options]
 ```
 
 | Option | Purpose |
@@ -107,15 +110,17 @@ tokens [day|week|month|all|dashboard|doctor] [options]
 | `--timezone AREA/CITY` | Override the detected system timezone. |
 | `--output DIR` | Choose the report directory; default is `./out`. |
 | `--html` | Add a static HTML report to terminal modes. |
-| `--anonymize` | Pseudonymize identifiers in dashboard mode. |
-| `--open` | Open generated HTML in the default browser. |
+| `--anonymize` | Pseudonymize identifiers in dashboard or live mode. |
+| `--interval SECONDS` | Live log check interval; minimum 1, default 5. |
+| `--port PORT` | Live loopback port; default 8765, or 0 for an available port. |
+| `--open` | Open generated HTML or the live local URL in the default browser. |
 | `--no-cache` | Re-read all selected log files. |
 
 See the [complete CLI reference](https://lingxi-fur.github.io/tokens/cli.html).
 
 ## Privacy
 
-`tokens` runs locally and generated dashboards make no network requests. That does **not** mean every generated file is safe to publish.
+`tokens` runs locally. Offline snapshots make no network requests; live mode talks only to its loopback service on `127.0.0.1` and does not upload logs. That does **not** mean every generated file is safe to publish.
 
 A regular dashboard may contain:
 
@@ -138,8 +143,8 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 
 ## Design principles
 
-- **Local-first:** no account, hosted backend, telemetry, or runtime network access.
-- **Inspectable:** plain Python data processing and a self-contained vanilla JavaScript dashboard.
+- **Local-first:** no account, hosted backend, telemetry, LAN binding, or external runtime network access.
+- **Inspectable:** plain Python data processing, a loopback-only standard-library server, and a self-contained vanilla JavaScript dashboard.
 - **Portable:** Python 3.9+ on macOS, Linux, and Windows.
 - **Progressive detail:** core usage questions first; optional labs stay out of the primary path.
 - **Explicit semantics:** cache reads are not claimed as confirmed monetary savings, and local achievements are not global rankings.

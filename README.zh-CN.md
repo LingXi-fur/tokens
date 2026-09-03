@@ -43,7 +43,10 @@ cd tokens
 # 今天的终端报告
 tokens
 
-# 推荐：生成并打开交互式 Dashboard
+# 推荐：启动仅限本机、每 5 秒检查更新的实时 Dashboard
+tokens serve --open
+
+# 需要归档时：生成离线快照
 tokens dashboard --open
 
 # 生成标识脱敏的可分享版本
@@ -55,7 +58,7 @@ tokens dashboard --anonymize --open
 ```bash
 pipx install ai-cli-tokens
 tokens doctor
-tokens dashboard --open
+tokens serve --open
 ```
 
 要求：
@@ -64,19 +67,22 @@ tokens dashboard --open
 - 支持 macOS、Linux 与 Windows，`--open` 使用系统默认浏览器；
 - 至少存在一种受支持 CLI 的本地日志。
 
-## 三种输出
+## 四种输出
 
 | 输出 | 命令 | 适合场景 | 特点 |
 |---|---|---|---|
 | 终端报告 | `tokens week` | 快速查看、脚本工作流 | ANSI 表格，按模型拆分 |
 | 静态 HTML | `tokens month --html --open` | 单期归档、轻量分享 | Python 预渲染 SVG，页面结构稳定 |
-| 交互式 Dashboard | `tokens dashboard --open` | 深入探索、长期自用 | 日/周/月联动，单文件离线应用 |
+| 本机实时 Dashboard | `tokens serve --open` | 深入探索、长期自用 | 默认每 5 秒检查；页面热更新；仅绑定 `127.0.0.1` |
+| 离线 Dashboard | `tokens dashboard --open` | 归档、审查后分享 | 日/周/月联动，单文件离线应用 |
 
 生成结果位于 `out/`；该目录默认被 Git 忽略。
 
 ## 交互式 Dashboard
 
-`tokens dashboard --open` 会生成 `out/dashboard.html`。数据、CSS 与 JavaScript 全部内嵌，双击即可离线打开。
+长期打开请使用 `tokens serve --open`。它只绑定 `127.0.0.1`，默认每 5 秒检查日志文件；没有变化时不会重复解析或传输，变化后在当前页面内热更新。
+
+需要归档时使用 `tokens dashboard --open`，生成 `out/dashboard.html`。数据、CSS 与 JavaScript 全部内嵌，双击即可离线打开；该文件是生成时快照，不会自行读取后来新增的日志。
 
 ### 统计与筛选
 
@@ -208,7 +214,8 @@ usage: cli.py [-h] [--since SINCE] [--until UNTIL]
               [--days DAYS] [--weeks WEEKS] [--months MONTHS]
               [--source {claude,gemini,codex}]
               [--html] [--dashboard] [--anonymize] [--open] [--no-cache]
-              [{day,week,month,all,dashboard}]
+              [--interval INTERVAL] [--port PORT]
+              [{day,week,month,all,dashboard,serve,doctor}]
 ```
 
 ### 位置模式
@@ -219,7 +226,9 @@ usage: cli.py [-h] [--since SINCE] [--until UNTIL]
 | `week` | 最近 8 周 | 周一为周首 |
 | `month` | 最近 6 个月 | 月 |
 | `all` | 全部历史 | 日 |
-| `dashboard` | 全部数据或显式日期范围 | 页面内日 / 周 / 月切换 |
+| `dashboard` | 全部数据或显式日期范围 | 导出页面内日 / 周 / 月切换的离线快照 |
+| `serve` | 全部数据或显式日期范围 | 启动仅绑定 `127.0.0.1` 的实时 Dashboard |
+| `doctor` | 不适用 | 安全检查来源、时区、输出与缓存环境 |
 
 ### 参数
 
@@ -233,7 +242,9 @@ usage: cli.py [-h] [--since SINCE] [--until UNTIL]
 | `--source SOURCE` | 限定来源，可重复使用；不传时读取 `config.DEFAULT_SOURCES` |
 | `--html` | 为普通报告生成单期静态 HTML |
 | `--dashboard` | 生成交互式 Dashboard，等价于位置模式 `dashboard` |
-| `--anonymize` | 仅用于 Dashboard：以报告级稳定别名替换项目路径、会话标识与自然语言标题，输出 `out/dashboard-anonymized.html` |
+| `--anonymize` | 用于离线或实时 Dashboard：以报告 / 服务生命周期内稳定别名替换项目路径、会话标识与自然语言标题；离线输出为 `out/dashboard-anonymized.html` |
+| `--interval SECONDS` | 实时模式检查间隔，最小 1 秒，默认 5 秒 |
+| `--port PORT` | 实时模式本机回环端口，默认 8765；传 0 由系统选择可用端口 |
 | `--output DIR` | 选择报告输出目录，默认当前工作目录下的 `out/` |
 | `--timezone AREA/CITY` | 使用 IANA 时区覆盖系统本地时区 |
 | `--open` | 生成 HTML 后使用系统默认浏览器打开 |
@@ -305,7 +316,9 @@ flowchart LR
     B --> D[aggregate.py<br>日期筛选与日/周/月聚合]
     D --> E[report_term.py<br>终端表格]
     D --> F[report_html.py<br>静态 HTML]
-    B --> G[report_dashboard.py<br>扩展 payload + 单文件应用]
+    B --> G[report_dashboard.py<br>扩展 payload + Dashboard]
+    G --> H[dashboard.html<br>离线快照]
+    G --> I[live_dashboard.py<br>127.0.0.1 + ETag 热更新]
 ```
 
 ### 缓存与输入防护
@@ -321,7 +334,7 @@ flowchart LR
 
 ## 隐私与安全
 
-`tokens` 不上传日志，生成的 Dashboard 也不发起网络请求。但“本地生成”不代表“已经匿名”。
+`tokens` 不上传日志。离线 Dashboard 不发起网络请求；实时模式只通过同机 `127.0.0.1` 在浏览器与本地 Python 进程之间同步，不绑定局域网，也不连接外部服务。但“本地生成”不代表“已经匿名”。
 
 ### `out/dashboard.html` 可能包含
 
@@ -363,9 +376,9 @@ Token 年鉴使用独立的 `tk-almanac-v1` 保存身份无关的紧凑历史：
 
 ## 设计原则
 
-- **stdlib-only runtime**：运行数据管线不引入第三方 Python 包；
-- **offline-first**：Dashboard 是自包含文件，没有 CDN 和远程运行时资源；
-- **generated, not hand-edited**：修改 `src/tokens_cli/dashboard_payload.py` 与 `src/tokens_cli/dashboard_assets/template.html` / `dashboard.css` / `dashboard.js`，由 `report_dashboard.py` 组装后重新生成 `out/dashboard.html`；
+- **stdlib-only runtime**：运行数据管线与本机实时服务不引入第三方 Python 包；
+- **local-first**：不连接外部服务；实时模式只绑定 `127.0.0.1`，离线导出不发运行时请求；
+- **generated, not hand-edited**：修改 `src/tokens_cli/dashboard_payload.py` 与 `src/tokens_cli/dashboard_assets/template.html` / `dashboard.css` / `dashboard.js`，由 `report_dashboard.py` 为离线与实时入口统一组装；
 - **progressive detail**：核心统计优先，数据宇宙与彩蛋可通过模块开关隐藏；
 - **accessible interactions**：主要 SVG 节点可键盘操作，支持焦点状态与 `prefers-reduced-motion`；
 - **privacy is explicit**：项目不会把“聚合”误称为“匿名”。
@@ -381,6 +394,7 @@ tokens/
 │   ├── aggregate.py              # 日 / 周 / 月与模型 / 来源聚合
 │   ├── dashboard_payload.py      # Dashboard 聚合、假名化与回放数据
 │   ├── dashboard_wire.py         # 紧凑版本化编码
+│   ├── live_dashboard.py         # 回环 HTTP、文件签名、ETag 与热更新
 │   ├── report_*.py               # 终端、静态 HTML 与 Dashboard 报告
 │   └── dashboard_assets/         # Dashboard 模板、CSS 与 JavaScript
 ├── pyproject.toml                # 包元数据与 tokens 命令
@@ -431,7 +445,8 @@ git diff --check
 
 ## 已知限制
 
-- Dashboard 是生成时快照，不会自动监听日志变化；成就中心和 Token 年鉴的“本设备新观察到”都需要在同一浏览器、兼容的本地文件来源中打开后续更新快照；`file:` localStorage 的隔离方式可能因浏览器而异；
+- 离线 `dashboard.html` 是生成时快照；长期查看应使用 `tokens serve --open`。实时模式只在标签页可见时检查，并在连接失败时保留最后一次成功快照；
+- 成就中心和 Token 年鉴的“本设备新观察到”依赖同一浏览器的兼容存储作用域；`file:` localStorage 的隔离方式可能因浏览器而异；
 - 成就日期受报告范围与聚合可重建能力限制；图鉴阶位描述目录门槛，不提供全球用户稀有度；
 - Gemini / Codex 日志缺少 cwd 或 session 时，项目 / 会话类视图会自然减少；
 - 跨来源 Token 口径不是完全同构；
@@ -440,7 +455,7 @@ git diff --check
 ## Roadmap
 
 - [ ] 模型价格表与可配置成本估算；
-- [ ] `tokens serve` 本地自动刷新；
+- [x] `tokens serve` 本机自动刷新（默认 5 秒、loopback-only、ETag 热更新）；
 - [x] macOS、Linux 与 Windows 跨平台浏览器打开；
 - [x] 项目透镜：项目日 / 周 / 月趋势、模型构成与焦点联动；
 - [x] 迁移到标准 `src/tokens_cli/` 包结构；

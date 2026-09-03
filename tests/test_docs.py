@@ -247,6 +247,21 @@ class DocsTests(unittest.TestCase):
                 f"{filename} tests must import the src-layout package",
             )
 
+    def test_live_dashboard_is_documented_as_loopback_and_offline_is_snapshot(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        chinese_readme = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+        english_start = (DOCS / "getting-started.html").read_text(encoding="utf-8")
+        chinese_start = (DOCS / "zh" / "getting-started.html").read_text(encoding="utf-8")
+        english_dashboard = (DOCS / "dashboard.html").read_text(encoding="utf-8")
+        chinese_dashboard = (DOCS / "zh" / "dashboard.html").read_text(encoding="utf-8")
+
+        for text in (readme, chinese_readme, english_start, chinese_start):
+            self.assertIn("tokens serve --open", text)
+        for text in (readme, chinese_readme, english_dashboard, chinese_dashboard):
+            self.assertIn("127.0.0.1", text)
+        self.assertIn("generation-time snapshot", english_dashboard)
+        self.assertIn("之后新增的日志不会自动进入", chinese_dashboard)
+
     def test_readme_preview_is_synthetic_and_referenced(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         preview = (DOCS / "assets" / "readme-preview.svg").read_text(encoding="utf-8")

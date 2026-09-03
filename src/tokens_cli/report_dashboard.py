@@ -54,6 +54,13 @@ def _embed_json(payload):
              .replace(chr(0x2029), "\\u2029"))
 
 
+def render_dashboard(wire, live=None):
+    live_config = live or {"enabled": False, "interval": 0}
+    return (_TEMPLATE
+            .replace("__DATA__", _embed_json(wire))
+            .replace("__LIVE__", _embed_json(live_config)))
+
+
 def write_dashboard(records, since=None, until=None, sources=None, anonymize=False):
     payload = build_payload(
         records,
@@ -63,7 +70,7 @@ def write_dashboard(records, since=None, until=None, sources=None, anonymize=Fal
         anonymize=anonymize,
     )
     wire = dashboard_wire.encode_payload(payload)
-    html_doc = _TEMPLATE.replace("__DATA__", _embed_json(wire))
+    html_doc = render_dashboard(wire)
     os.makedirs(config.OUT_DIR, exist_ok=True)
     filename = "dashboard-anonymized.html" if anonymize else "dashboard.html"
     path = os.path.join(config.OUT_DIR, filename)

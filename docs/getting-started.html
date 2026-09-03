@@ -7,7 +7,7 @@ tokens --version</code></pre><h3>From source</h3><pre><code>git clone https://gi
 cd tokens
 ./run --version</code></pre><p>The PyPI distribution is named <code>ai-cli-tokens</code>; the installed command is <code>tokens</code>.</p>
 <h2 id="doctor">Check the environment</h2><pre><code>tokens doctor</code></pre><p>The doctor reports timezone, output and cache permissions, and candidate file counts for each source. It does not parse messages or print project and session identifiers.</p>
-<h2 id="dashboard">Generate the dashboard</h2><pre><code>tokens dashboard --open</code></pre><p>The self-contained file is written to <code>./out/dashboard.html</code>. Choose another destination with <code>--output</code>:</p><pre><code>tokens dashboard --output ~/Reports/tokens --open</code></pre><p>If a browser cannot be opened automatically, the report is still generated and the CLI prints its path.</p>
+<h2 id="dashboard">Open the live dashboard</h2><pre><code>tokens serve --open</code></pre><p>The server binds only to <code>127.0.0.1</code>, checks local log changes every five seconds, and updates the open page without uploading data. Press <code>Ctrl+C</code> to stop it.</p><p>For an offline archive instead, generate a self-contained file:</p><pre><code>tokens dashboard --output ~/Reports/tokens --open</code></pre><p>If a browser cannot be opened automatically, the CLI prints the local URL or generated path.</p>
 <h2 id="sources">Choose sources</h2><p>Claude is the only default source, which keeps the initial scan narrow. Repeat <code>--source</code> to combine tools:</p><pre><code>tokens dashboard \
   --source claude \
   --source gemini \

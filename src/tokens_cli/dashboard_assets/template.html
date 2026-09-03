@@ -18,6 +18,7 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
     </div>
   </div>
   <div class=head-tools>
+    <div class="seg live-beacon static" id=live-beacon role=status aria-live=polite aria-atomic=true title="静态离线快照"><span class=led></span><span id=live-text>静态快照</span></div>
     <button class=langbtn id=lang-btn type=button data-i18n-skip aria-label="切换语言" title="切换到中文">中文</button>
     <button class="seg freshness-beacon" id=freshness-beacon type=button title="查看数据可信度"><span class=led></span><span id=freshness-text>数据体检 —</span></button>
     <button class="seg status-pulse" id=status-pulse type=button title="用量状态计算中"><span class=led></span><span id=status-text>状态 —</span></button>
@@ -33,6 +34,7 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
         <div class=mrow><label><input type=checkbox data-mod=block checked>5h 计费块</label><span class="switch on" aria-hidden=true data-sw=block></span></div>
         <div class=mrow><label><input type=checkbox data-mod=daily checked>每天趋势</label><span class="switch on" aria-hidden=true data-sw=daily></span></div>
         <div class=mrow><label><input type=checkbox data-mod=rhythm checked>作息织锦</label><span class="switch on" aria-hidden=true data-sw=rhythm></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=modes checked>工作模式图鉴</label><span class="switch on" aria-hidden=true data-sw=modes></span></div>
         <div class=mrow><label><input type=checkbox data-mod=multiples checked>每模型趋势</label><span class="switch on" aria-hidden=true data-sw=multiples></span></div>
         <div class=mrow><label><input type=checkbox data-mod=provenance checked>数据可信度</label><span class="switch on" aria-hidden=true data-sw=provenance></span></div>
         <div class=mrow><label><input type=checkbox data-mod=project checked>项目透镜</label><span class="switch on" aria-hidden=true data-sw=project></span></div>
@@ -221,6 +223,17 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  <div class=rh-foot><div class=persona id=rhythm-persona></div><div class=rh-legend>静 <i></i><i class=l1></i><i class=l2></i><i class=l3></i><i class=l4></i> 沸</div></div>
 </section>
 
+<section class="card work-mode-atlas" data-module=modes data-lazy=modes id=section-modes>
+ <div class=mode-head>
+  <div><div class=mode-k>WORK MODE ATLAS · LOCAL PATTERNS</div><h2>工作模式图鉴</h2><p>按每日聚合特征描述使用形态；不评价生产力、代码质量或工作表现。</p></div>
+  <span class=mode-scope id=mode-scope></span>
+ </div>
+ <div class=mode-summary id=mode-summary></div>
+ <div class=mode-timeline id=mode-timeline role=listbox aria-label="每日工作模式，使用方向键浏览"></div>
+ <div class=mode-detail id=mode-detail aria-live=polite></div>
+ <p class=mode-rules id=mode-rules></p>
+</section>
+
 <section class=card data-module=fortune>
  <div class=row-between>
    <h2 style=margin:0>今日 token 运势</h2>
@@ -253,10 +266,54 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  <div class=flow-stats id=flow-stats></div>
 </section>
 
-<section class=card data-module=creature data-lazy=creature>
- <div class=row-between><h2 style=margin:0>Token 生物 · 你的数字生命</h2><button class=ghostbtn id=creature-save>保存 SVG</button></div>
- <div class=creature-stage id=creature-stage><svg class=creature id=creature viewBox="0 0 260 260"></svg></div>
- <div class=creature-name id=creature-name></div><div class=creature-desc id=creature-desc></div>
+<section class="card furry-lab" data-module=creature data-lazy=creature id=section-creature>
+ <div class=row-between>
+  <div>
+   <div class=creature-k>FURRY TOKEN COMPANION · LOCAL SVG</div>
+   <h2 style=margin:0>Furry Token 伙伴 · 你的数字兽设</h2>
+   <p class=creature-lead>原创日系兽人伙伴，由本地 Token 聚合与角色设定共同塑形。</p>
+  </div>
+  <button class=ghostbtn id=creature-save type=button>保存 SVG</button>
+ </div>
+ <div class=creature-lab-grid>
+  <div>
+   <div class=creature-stage id=creature-stage>
+    <svg class=creature id=creature viewBox="0 0 300 320" role=img aria-label="数据驱动的 Furry Token 伙伴"></svg>
+    <div class=creature-reference id=creature-reference hidden>
+     <img id=creature-reference-image alt="仅在当前页面显示的兽设参考图">
+     <span>本地参考</span>
+    </div>
+   </div>
+   <div class=creature-name id=creature-name></div>
+   <div class=creature-desc id=creature-desc></div>
+  </div>
+  <div class=creature-controls>
+   <label class=creature-field>
+    <span>物种</span>
+    <select id=creature-species>
+     <option value=auto>由数据选择</option>
+     <option value=wolf>狼</option>
+     <option value=fox>狐狸</option>
+     <option value=cat>猫</option>
+     <option value=rabbit>兔</option>
+     <option value=dragon>龙</option>
+    </select>
+   </label>
+   <div class=creature-palette role=group aria-label="伙伴配色">
+    <label><span>主毛色</span><input id=creature-primary type=color></label>
+    <label><span>辅毛色</span><input id=creature-secondary type=color></label>
+    <label><span>强调色</span><input id=creature-accent type=color></label>
+   </div>
+   <div class=creature-actions>
+    <label class="ghostbtn creature-upload" for=creature-file>导入兽设参考</label>
+    <input id=creature-file type=file accept="image/png,image/jpeg,image/webp" hidden>
+    <button class=ghostbtn id=creature-remove type=button disabled>移除参考图</button>
+    <button class=ghostbtn id=creature-reset type=button>恢复数据外观</button>
+   </div>
+   <div class=creature-upload-status id=creature-upload-status role=status aria-live=polite>可导入不超过 5MB 的 PNG、JPEG 或 WebP。</div>
+   <p class=creature-privacy>图片只在此页面本地解码并提取三种配色，不上传、不是 AI 重绘，也不会写入 URL、年鉴或保存的 SVG。</p>
+  </div>
+ </div>
  <div class=creature-info id=creature-info></div>
 </section>
 

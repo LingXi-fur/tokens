@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local-first token usage analytics for Claude Code, Gemini CLI, and Codex.">
   <meta property="og:title" content="tokens — local AI CLI usage analytics">
-  <meta property="og:description" content="Turn local Claude Code, Gemini CLI, and Codex logs into private terminal reports and an offline dashboard.">
+  <meta property="og:description" content="Turn local Claude Code, Gemini CLI, and Codex logs into terminal reports, a live local dashboard, or an offline snapshot.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://lingxi-fur.github.io/tokens/">
   <meta property="og:image" content="https://lingxi-fur.github.io/tokens/assets/readme-preview.svg">
@@ -28,9 +28,9 @@
 
 <div class="page-shell no-sidebar"><main id="main">
   <section class="hero">
-    <div class="eyebrow">LOCAL-FIRST · ZERO RUNTIME DEPENDENCIES · OFFLINE REPORTS</div>
+    <div class="eyebrow">LOCAL-FIRST · ZERO RUNTIME DEPENDENCIES · LIVE OR OFFLINE</div>
     <h1>See where your<br>AI coding tokens go.</h1>
-    <p class="lead">tokens reads the Claude Code, Gemini CLI, and Codex logs already on your machine, then turns them into terminal summaries and a private, self-contained dashboard.</p>
+    <p class="lead">tokens reads the Claude Code, Gemini CLI, and Codex logs already on your machine, then turns them into terminal summaries, a loopback-only live dashboard, or a self-contained offline snapshot.</p>
     <div class="hero-actions"><a class="button primary" href="getting-started.html">Install in 30 seconds</a><a class="button" href="dashboard.html">Explore the dashboard</a><a class="button" href="https://github.com/LingXi-fur/tokens">View on GitHub</a></div>
     <p class="hero-note">Python 3.9+ · macOS, Linux, Windows · no account · no telemetry · no upload</p>
   </section>
@@ -45,11 +45,11 @@
 
   <section class="section"><div class="grid three">
     <article class="card"><div class="card-label">01 · Inspect</div><div class="card-value">tokens doctor</div><p class="card-meta">Check log locations, timezone, output, and permissions without reading message content.</p></article>
-    <article class="card"><div class="card-label">02 · Generate</div><div class="card-value">One command</div><p class="card-meta">Create a terminal report, static HTML, or an interactive offline dashboard.</p></article>
+    <article class="card"><div class="card-label">02 · Open</div><div class="card-value">Four outputs</div><p class="card-meta">Use terminal, static HTML, a loopback-only live view, or a self-contained archive.</p></article>
     <article class="card"><div class="card-label">03 · Explore</div><div class="card-value">Your data</div><p class="card-meta">Filter models, inspect periods, projects, sessions, and standardized token composition.</p></article>
   </div></section>
 
-  <section class="section"><h2>Built for a private local workflow</h2><div class="grid"><article class="card"><h3>No hosted service</h3><p>There is no account, backend, telemetry collector, CDN, or runtime network request. The generated dashboard is one HTML file.</p></article><article class="card"><h3>Useful across tools</h3><p>One interface normalizes the local formats exposed by Claude Code, Gemini CLI, and Codex while preserving source-specific totals.</p></article><article class="card"><h3>Safe defaults, explicit limits</h3><p>The default source is Claude, output goes to <code>./out</code>, cache lives in the user cache directory, and sharing risks are documented rather than hidden.</p></article><article class="card"><h3>Deep when you need it</h3><p>Start with trends and model mix, then open Data Trail, project and session views, context reuse, rhythm, achievements, or Token Almanac.</p></article></div></section>
+  <section class="section"><h2>Built for a private local workflow</h2><div class="grid"><article class="card"><h3>No hosted service</h3><p>There is no account, backend, telemetry collector, CDN, or external runtime request. Live mode binds only to <code>127.0.0.1</code>; offline exports remain one HTML file.</p></article><article class="card"><h3>Useful across tools</h3><p>One interface normalizes the local formats exposed by Claude Code, Gemini CLI, and Codex while preserving source-specific totals.</p></article><article class="card"><h3>Safe defaults, explicit limits</h3><p>The default source is Claude, output goes to <code>./out</code>, cache lives in the user cache directory, and sharing risks are documented rather than hidden.</p></article><article class="card"><h3>Deep when you need it</h3><p>Start with trends and model mix, then open Data Trail, project and session views, context reuse, rhythm, achievements, or Token Almanac.</p></article></div></section>
 
   <section class="section"><div class="callout warning"><strong>Local does not mean anonymous</strong>A generated dashboard can contain paths, session identifiers, exact dates, models, and behavior patterns. Use <code>--anonymize</code>, restrict the date range, and inspect any file before sharing it.</div></section>
 </main></div>

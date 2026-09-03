@@ -90,6 +90,37 @@ class CliTests(unittest.TestCase):
         self.assertEqual(0, result)
         self.assertIn("Open this file", stderr.getvalue())
 
+    @mock.patch("tokens_cli.cli.open_url", return_value=True)
+    @mock.patch("tokens_cli.cli.live_dashboard.create_server")
+    def test_live_dashboard_forwards_options_and_opens_loopback_url(self, create_server, open_url):
+        server = mock.Mock()
+        server.server_address = ("127.0.0.1", 43123)
+        server.serve_forever.side_effect = KeyboardInterrupt
+        create_server.return_value = server
+        result = cli.main([
+            "serve", "--port", "0", "--interval", "2", "--open",
+            "--source", "claude", "--anonymize", "--since", "2026-07-01",
+        ])
+        self.assertEqual(0, result)
+        create_server.assert_called_once_with(
+            0,
+            ["claude"],
+            since="2026-07-01",
+            until=None,
+            anonymize=True,
+            use_cache=True,
+            interval=2.0,
+        )
+        open_url.assert_called_once_with("http://127.0.0.1:43123/")
+        server.serve_forever.assert_called_once_with(poll_interval=0.25)
+        server.server_close.assert_called_once()
+
+    def test_live_dashboard_rejects_invalid_interval_and_port(self):
+        for args in (["serve", "--interval", "0"], ["serve", "--port", "65536"]):
+            with self.subTest(args=args), self.assertRaises(SystemExit) as caught:
+                cli.main(args)
+            self.assertEqual(2, caught.exception.code)
+
     def test_invalid_dates_and_timezone_are_rejected(self):
         for args in (
             ["day", "--since", "not-a-date"],
