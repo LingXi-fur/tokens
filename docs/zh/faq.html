@@ -4,7 +4,7 @@
 <h2 id="no-logs">提示“未找到任何日志”怎么办？</h2><p>先运行 <code>tokens doctor</code> 查看各来源的根目录、候选文件数与可读性。默认只读 Claude；若你只有 Gemini 或 Codex 日志，必须添加来源：</p><pre><code>tokens day --source gemini
 tokens day --source codex</code></pre><p>仍失败时，可检查当前用户主目录是否与日志所在用户一致。</p>
 <h2 id="default-source">为什么默认没有合并三种来源？</h2><p>默认只扫描 Claude，以减少意外扫描范围。需要 Gemini 或 Codex 时重复传入 <code>--source</code>；不同来源的 Token 口径并不完全相同。</p>
-<h2 id="cache-diff">日志已经变化，统计数字为何没有更新？</h2><p>如果打开的是 <code>out/dashboard.html</code>，它是生成时快照，浏览器刷新不会重新运行 Python。长期查看请使用：</p><pre><code>tokens serve --open</code></pre><p>实时模式默认每 5 秒检查文件修改时间和大小。若上游日志时间戳或文件元数据异常，可用 <code>--no-cache</code> 在检测到变化后强制重读；离线报告则重新执行生成命令。</p>
+<h2 id="cache-diff">日志已经变化，统计数字为何没有更新？</h2><p>如果打开的是 <code>out/dashboard.html</code>，它是生成时快照，浏览器刷新不会重新运行 Python。长期查看请使用：</p><pre><code>tokens serve --open</code></pre><p>实时模式默认每 5 分钟检查文件修改时间和大小，页面可选择其他预设间隔或暂停。若上游日志时间戳或文件元数据异常，可用 <code>--no-cache</code> 在检测到变化后强制重读；离线报告则重新执行生成命令。</p>
 <h2 id="timezone">一天的边界按什么时区？</h2><p>默认使用系统本地时区。可通过 <code>tokens day --timezone Asia/Shanghai</code> 等 IANA 时区名称显式覆盖；无效名称会在读取日志前报错。</p>
 <h2 id="offline">“离线可用”是否意味着可以公开分享？</h2><p>不是。离线快照运行时不发网络请求；实时模式也只访问同机 <code>127.0.0.1</code>，不上传数据。但两种模式的 Dashboard 都可能处理完整 cwd、会话标识、自然语言摘要和大量行为统计。请查看<a href="data-and-privacy.html">隐私清单</a>。</p>
 <h2 id="open"><code>--open</code> 在 Linux / Windows 上可用吗？</h2><p>可用。tokens 通过 Python 标准库请求系统默认浏览器打开本地文件。若系统拒绝自动打开，报告仍会生成，并在终端显示文件路径。</p>

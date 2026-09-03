@@ -11,7 +11,7 @@ Thanks for helping improve tokens.
 
 ## Local setup
 
-Python 3.9 or newer is required. The runtime has no third-party dependencies.
+Python 3.9 or newer is required. The core runtime uses the Python standard library; Windows installs the data-only `tzdata` package for IANA timezone support.
 
 ```bash
 python3 -m venv .venv

@@ -266,13 +266,73 @@ class DocsTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         preview = (DOCS / "assets" / "readme-preview.svg").read_text(encoding="utf-8")
         self.assertIn(
-            "https://raw.githubusercontent.com/LingXi-fur/tokens/v0.2.0/docs/assets/readme-preview.svg",
+            "https://raw.githubusercontent.com/LingXi-fur/tokens/main/docs/assets/readme-preview.svg",
             readme,
         )
         self.assertIn("SYNTHETIC DATA", preview)
+        self.assertIn("Synthetic tokens dashboard preview", preview)
+        self.assertIn("TOKEN FLOW · PROJECT → MODEL → SESSION", preview)
+        self.assertNotRegex(preview, re.compile(r"[一-鿿]"))
         self.assertNotIn("/Users/", preview)
         self.assertNotIn("/home/", preview)
         self.assertNotRegex(preview, UUID_RE)
+
+    def test_public_readmes_have_verified_first_run_path(self):
+        readmes = [
+            (ROOT / "README.md").read_text(encoding="utf-8"),
+            (ROOT / "README.zh-CN.md").read_text(encoding="utf-8"),
+        ]
+        for readme in readmes:
+            with self.subTest(language="zh" if "30 秒开始" in readme else "en"):
+                for command in (
+                    "pipx install ai-cli-tokens",
+                    "tokens doctor",
+                    "tokens serve --open",
+                    "tokens dashboard --open",
+                    "git clone https://github.com/LingXi-fur/tokens.git",
+                ):
+                    self.assertIn(command, readme)
+                self.assertIn("127.0.0.1", readme)
+                self.assertIn("tzdata", readme)
+                self.assertNotIn("/v0.2.0/", readme)
+                self.assertNotIn("blob/v0.2.0", readme)
+
+    def test_documentation_uses_current_live_refresh_default(self):
+        files = [ROOT / "README.md", ROOT / "README.zh-CN.md"] + sorted(
+            path for path in DOCS.rglob("*.html")
+        )
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in files)
+        for stale in (
+            "every five seconds",
+            "default 5.</td>",
+            "每 5 秒",
+        ):
+            self.assertNotIn(stale, combined)
+        self.assertIn("every five minutes", combined)
+        self.assertIn("每 5 分钟", combined)
+        self.assertIn("default 300", combined)
+
+    def test_runtime_dependency_claims_match_windows_timezone_data(self):
+        project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        public_docs = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                ROOT / "README.md",
+                ROOT / "README.zh-CN.md",
+                DOCS / "architecture.html",
+                DOCS / "zh" / "architecture.html",
+            )
+        )
+        self.assertIn("tzdata>=2025.2", project)
+        self.assertIn("platform_system == 'Windows'", project)
+        self.assertIn("tzdata", public_docs)
+        for overclaim in (
+            "ZERO RUNTIME DEPENDENCIES",
+            "Python standard-library-only runtime",
+            "运行时只依赖 Python 标准库",
+            "安装后的运行时只依赖 Python 标准库",
+        ):
+            self.assertNotIn(overclaim, public_docs)
 
     def test_pypi_readme_links_are_absolute_or_anchors(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
