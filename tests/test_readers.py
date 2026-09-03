@@ -72,7 +72,8 @@ class ReadersTests(unittest.TestCase):
             self.assertNotIn(": ", text)
             self.assertNotIn(", ", text)
             self.assertEqual(readers.CACHE_VERSION, json.loads(text)["_v"])
-            self.assertEqual(0o600, stat.S_IMODE(cache_file.stat().st_mode))
+            if os.name != "nt":
+                self.assertEqual(0o600, stat.S_IMODE(cache_file.stat().st_mode))
 
 
 if __name__ == "__main__":

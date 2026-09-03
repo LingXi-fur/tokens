@@ -8,6 +8,9 @@ version = "0.2.0"
 description = "Local-first token usage analytics for Claude Code, Gemini CLI, and Codex."
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = [
+    "tzdata>=2025.2; platform_system == 'Windows'",
+]
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "LingXi-fur" }]
