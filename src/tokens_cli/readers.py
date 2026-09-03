@@ -25,7 +25,7 @@ import stat
 import tempfile
 from datetime import datetime
 
-import config
+from . import config
 
 # 缓存结构版本：解析口径变更后旧 cache.json 作废、强制重读。
 #   v1 = 初版（含 Claude 重复 message.id 导致总量夸大）
@@ -352,10 +352,9 @@ def _load_cache():
 
 
 def _save_cache(cache):
-    os.makedirs(config.OUT_DIR, exist_ok=True)
+    os.makedirs(config.CACHE_DIR, exist_ok=True)
     cache["_v"] = CACHE_VERSION
-    # mkstemp：随机名 + 不跟软链 + 默认 0600，杜绝可预测临时名竞争与世界可读泄漏。
-    fd, tmp = tempfile.mkstemp(prefix=".cache-", dir=config.OUT_DIR)
+    fd, tmp = tempfile.mkstemp(prefix=".records-", dir=config.CACHE_DIR)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(cache, fh, separators=(",", ":"))

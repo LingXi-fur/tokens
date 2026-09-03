@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.13"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install project
+        run: python -m pip install -e .
+      - name: Run tests
+        run: python -m unittest discover -s tests
+        env:
+          PYTHONPATH: src
+      - name: Compile Python
+        run: python -m compileall -q src tests
+      - name: Smoke-test source CLI
+        run: python -m tokens_cli --version
+        env:
+          PYTHONPATH: src
+
+  javascript:
+    name: JavaScript syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript
+        run: |
+          node --check src/tokens_cli/dashboard_assets/dashboard.js
+          node --check docs/assets/site.js
+
+  package:
+    name: Build and install package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install build tools
+        run: python -m pip install --upgrade build twine
+      - name: Build distributions
+        run: python -m build
+      - name: Check metadata
+        run: python -m twine check dist/*
+      - name: Install wheel
+        shell: bash
+        run: |
+          python -m venv /tmp/tokens-smoke
+          /tmp/tokens-smoke/bin/python -m pip install dist/*.whl
+          /tmp/tokens-smoke/bin/tokens --version
+          /tmp/tokens-smoke/bin/tokens --help
+          /tmp/tokens-smoke/bin/tokens doctor
+      - name: Inspect release contents
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re, tarfile, zipfile
+          from pathlib import Path
+
+          forbidden = ("/.claude/", "/out/", ".env", "records-v3.json")
+          user_paths = re.compile(
+              rb"/(?:private/)?Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+"
+          )
+          members = []
+          sensitive = []
+          for archive in Path("dist").iterdir():
+              if archive.suffix == ".whl":
+                  with zipfile.ZipFile(archive) as wheel:
+                      members.extend(wheel.namelist())
+                      sensitive.extend(
+                          name for name in wheel.namelist()
+                          if user_paths.search(wheel.read(name))
+                      )
+              elif archive.name.endswith(".tar.gz"):
+                  with tarfile.open(archive) as sdist:
+                      members.extend(sdist.getnames())
+                      sensitive.extend(
+                          member.name for member in sdist.getmembers()
+                          if member.isfile()
+                          and user_paths.search(sdist.extractfile(member).read())
+                      )
+          bad = [name for name in members if any(item in "/" + name for item in forbidden)]
+          if bad:
+              raise SystemExit("forbidden release files: " + ", ".join(bad))
+          if sensitive:
+              raise SystemExit("absolute user paths in release files: " + ", ".join(sensitive))
+          PY

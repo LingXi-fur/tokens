@@ -12,22 +12,20 @@ import json
 import os
 import sys
 
-import config
-import dashboard_payload
-import dashboard_wire
+from . import config, dashboard_payload, dashboard_wire
+from .opener import open_path
 
-def build_payload(records, since=None, until=None, sources=None):
+def build_payload(records, since=None, until=None, sources=None, anonymize=False):
     return dashboard_payload.build_payload(
         records,
         since=since,
         until=until,
         sources=sources,
+        anonymize=anonymize,
     )
 
 
 _ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_assets")
-if not os.path.isdir(_ASSET_DIR):
-    _ASSET_DIR = os.path.join(sys.prefix, "lib", "dashboard_assets")
 _ASSET_CACHE = {}
 
 
@@ -56,17 +54,26 @@ def _embed_json(payload):
              .replace(chr(0x2029), "\\u2029"))
 
 
-def write_dashboard(records, since=None, until=None, sources=None):
-    payload = build_payload(records, since=since, until=until, sources=sources)
+def render_dashboard(wire, live=None):
+    live_config = live or {"enabled": False, "interval": 0}
+    return (_TEMPLATE
+            .replace("__DATA__", _embed_json(wire))
+            .replace("__LIVE__", _embed_json(live_config)))
+
+
+def write_dashboard(records, since=None, until=None, sources=None, anonymize=False):
+    payload = build_payload(
+        records,
+        since=since,
+        until=until,
+        sources=sources,
+        anonymize=anonymize,
+    )
     wire = dashboard_wire.encode_payload(payload)
-    html_doc = _TEMPLATE.replace("__DATA__", _embed_json(wire))
+    html_doc = render_dashboard(wire)
     os.makedirs(config.OUT_DIR, exist_ok=True)
-    path = os.path.join(config.OUT_DIR, "dashboard.html")
+    filename = "dashboard-anonymized.html" if anonymize else "dashboard.html"
+    path = os.path.join(config.OUT_DIR, filename)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html_doc)
     return path
-
-
-def open_path(path):
-    import subprocess
-    subprocess.Popen(["open", path])

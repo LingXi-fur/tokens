@@ -7,8 +7,8 @@ import html
 import math
 from datetime import datetime
 
-import config
-import report_term
+from . import config, report_term
+from .opener import open_path
 
 PERIOD_TITLE = {"day": "每日", "week": "每周", "month": "每月"}
 
@@ -312,9 +312,3 @@ def write_report(mode, rows, focus_date, focus_label, all_sources):
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html_doc)
     return path
-
-
-def open_path(path):
-    """mac 下用 open 打开。"""
-    import subprocess
-    subprocess.Popen(["open", path])

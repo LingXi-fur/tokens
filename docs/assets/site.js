@@ -1,15 +1,33 @@
 (function () {
   'use strict';
 
-  var pages = [
-    { title: '首页', url: 'index.html', desc: '项目能力、安装入口与合成数据预览', keywords: '首页 tokens token 统计 文档' },
-    { title: '快速开始', url: 'getting-started.html', desc: '安装、首次运行、生成报告和常见配置', keywords: '安装 pipx python 开始 html dashboard' },
-    { title: 'CLI 参考', url: 'cli.html', desc: 'day、week、month、all、dashboard 与全部参数', keywords: '命令行 参数 source since until cache open' },
-    { title: 'Dashboard', url: 'dashboard.html', desc: '交互功能、快捷键、导出与合成演示', keywords: '图表 模型 筛选 成就 城市 星云 导出 CSV Markdown' },
-    { title: '数据与隐私', url: 'data-and-privacy.html', desc: '日志路径、缓存、报告敏感信息与安全分享', keywords: '隐私 本地 日志 会话 cwd 路径 上传' },
-    { title: '架构', url: 'architecture.html', desc: '读取、统一记录、聚合与报告生成流程', keywords: 'readers aggregate report config stdlib 架构' },
-    { title: 'FAQ', url: 'faq.html', desc: '日志缺失、统计差异、主题、平台支持等问题', keywords: '问题 帮助 日志 无数据 时区 windows' }
-  ];
+  var isZh = (document.documentElement.lang || '').toLowerCase().indexOf('zh') === 0;
+  var labels = isZh ? {
+    pages: [
+      { title: '首页', url: 'index.html', desc: '项目能力、安装入口与合成数据预览', keywords: '首页 tokens token 统计 文档' },
+      { title: '快速开始', url: 'getting-started.html', desc: '安装、首次运行、生成报告和常见配置', keywords: '安装 pipx python 开始 html dashboard' },
+      { title: 'CLI 参考', url: 'cli.html', desc: 'day、week、month、all、dashboard 与全部参数', keywords: '命令行 参数 source since until cache open' },
+      { title: 'Dashboard', url: 'dashboard.html', desc: '交互功能、快捷键、导出与合成演示', keywords: '图表 模型 筛选 成就 年鉴 星云 导出' },
+      { title: '数据与隐私', url: 'data-and-privacy.html', desc: '日志路径、缓存、报告敏感信息与安全分享', keywords: '隐私 本地 日志 会话 cwd 路径 上传' },
+      { title: '架构', url: 'architecture.html', desc: '读取、统一记录、聚合与报告生成流程', keywords: 'readers aggregate report config stdlib 架构' },
+      { title: 'FAQ', url: 'faq.html', desc: '日志缺失、统计差异、主题、平台支持等问题', keywords: '问题 帮助 日志 无数据 时区 windows' }
+    ],
+    theme: { light: '亮色', dark: '暗色', auto: '自动' }, copy: '复制', copied: '已复制',
+    empty: '没有匹配结果。试试“隐私”“dashboard”或“source”。', synthetic: '合成数据：', locale: 'zh-CN'
+  } : {
+    pages: [
+      { title: 'Home', url: 'index.html', desc: 'Capabilities, installation, and synthetic preview', keywords: 'home tokens usage analytics local' },
+      { title: 'Get started', url: 'getting-started.html', desc: 'Install, diagnose, and generate the first report', keywords: 'install pipx python doctor dashboard' },
+      { title: 'CLI reference', url: 'cli.html', desc: 'Commands, ranges, sources, timezone, and output', keywords: 'command options source since until cache output' },
+      { title: 'Dashboard', url: 'dashboard.html', desc: 'Core analysis, Data Trail, labs, and shortcuts', keywords: 'chart model filter session context export' },
+      { title: 'Data and privacy', url: 'data-and-privacy.html', desc: 'Local paths, cache, reports, and safe sharing', keywords: 'privacy local logs session cwd pseudonymize' },
+      { title: 'Architecture', url: 'architecture.html', desc: 'Package structure and local data flow', keywords: 'readers aggregate package stdlib architecture' },
+      { title: 'FAQ', url: 'faq.html', desc: 'Installation, missing logs, timezone, cache, and privacy', keywords: 'help no logs timezone windows browser' }
+    ],
+    theme: { light: 'light', dark: 'dark', auto: 'system' }, copy: 'Copy', copied: 'Copied',
+    empty: 'No matching results. Try “privacy”, “dashboard”, or “source”.', synthetic: 'Synthetic data: ', locale: 'en-US'
+  };
+  var pages = labels.pages;
 
   var root = document.documentElement;
   var basePrefix = location.pathname.indexOf('/docs/') >= 0 ? '' : '';
@@ -24,7 +42,7 @@
     var trigger = document.querySelector('[data-theme-trigger]');
     if (trigger) {
       trigger.textContent = theme === 'light' ? '☀' : theme === 'dark' ? '☾' : '◐';
-      trigger.setAttribute('aria-label', '当前主题：' + (theme === 'light' ? '亮色' : theme === 'dark' ? '暗色' : '自动'));
+      trigger.setAttribute('aria-label', (isZh ? '当前主题：' : 'Current theme: ') + labels.theme[theme]);
     }
   }
 
@@ -73,14 +91,14 @@
     var button = document.createElement('button');
     button.className = 'copy-button';
     button.type = 'button';
-    button.textContent = '复制';
-    button.setAttribute('aria-label', '复制代码');
+    button.textContent = labels.copy;
+    button.setAttribute('aria-label', isZh ? '复制代码' : 'Copy code');
     button.addEventListener('click', function () {
-      var text = pre.innerText.replace(/^复制\s*/, '');
+      var text = pre.innerText.replace(new RegExp('^' + labels.copy + '\\s*'), '');
       function done() {
-        button.textContent = '已复制';
+        button.textContent = labels.copied;
         button.classList.add('copied');
-        setTimeout(function () { button.textContent = '复制'; button.classList.remove('copied'); }, 1600);
+        setTimeout(function () { button.textContent = labels.copy; button.classList.remove('copied'); }, 1600);
       }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done, function () {});
@@ -135,7 +153,7 @@
     });
     activeIndex = 0;
     if (!currentResults.length) {
-      searchResults.innerHTML = '<div class="search-empty">没有匹配结果。试试“隐私”“dashboard”或“source”。</div>';
+      searchResults.innerHTML = '<div class="search-empty">' + labels.empty + '</div>';
       return;
     }
     searchResults.innerHTML = currentResults.map(function (page, index) {
@@ -169,7 +187,7 @@
     searchInput.addEventListener('keydown', function (event) {
       if (event.key === 'ArrowDown') { event.preventDefault(); setActive(activeIndex + 1); }
       else if (event.key === 'ArrowUp') { event.preventDefault(); setActive(activeIndex - 1); }
-      else if (event.key === 'Enter' && currentResults[activeIndex]) { location.href = currentResults[activeIndex].url; }
+      else if (event.key === 'Enter' && currentResults[activeIndex]) { location.href = basePrefix + currentResults[activeIndex].url; }
       else if (event.key === 'Escape') closeSearch();
     });
   }
@@ -205,7 +223,7 @@
       if (callsEl) callsEl.textContent = String(830 + (seed % 3) * 47);
       bars.forEach(function (bar, index) {
         bar.style.setProperty('--h', values[index % values.length] + '%');
-        bar.title = '合成数据：' + (values[index % values.length] * 12800).toLocaleString('zh-CN') + ' token';
+        bar.title = labels.synthetic + (values[index % values.length] * 12800).toLocaleString(labels.locale) + ' token';
       });
     }
     if (refresh) refresh.addEventListener('click', draw);

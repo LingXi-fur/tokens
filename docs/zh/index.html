@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="tokens：本地统计 Claude Code、Gemini 与 Codex token 用量的零依赖 Python CLI。">
+  <title>tokens 文档｜本地 Token 用量分析</title>
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/site.css">
+  <script>try{var t=localStorage.getItem('tokens-docs-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a><div class="progress" data-progress></div>
+<header class="site-header"><div class="header-inner">
+  <a class="brand" href="index.html"><span class="brand-mark">Tk</span><span>tokens <small>DOCS</small></span></a>
+  <nav class="desktop-nav" aria-label="主导航"><a href="getting-started.html">快速开始</a><a href="cli.html">CLI</a><a href="dashboard.html">Dashboard</a><a href="data-and-privacy.html">数据与隐私</a><a href="architecture.html">架构</a><a href="faq.html">FAQ</a></nav>
+  <div class="header-actions"><a class="language-link" href="../index.html" lang="en">English</a><button class="search-button" type="button" data-search-trigger aria-label="搜索文档" aria-controls="search-modal">⌕ <span>搜索文档</span><kbd>⌘ K</kbd></button><button class="icon-button" type="button" data-theme-trigger aria-label="切换主题" aria-controls="theme-menu">◐</button><button class="icon-button menu-button" type="button" data-mobile-trigger aria-label="打开导航" aria-controls="mobile-panel" aria-expanded="false">☰</button></div>
+</div></header>
+<nav id="mobile-panel" class="mobile-panel" data-mobile-panel aria-label="移动导航"><a href="getting-started.html">快速开始</a><a href="cli.html">CLI 参考</a><a href="dashboard.html">Dashboard</a><a href="data-and-privacy.html">数据与隐私</a><a href="architecture.html">架构</a><a href="faq.html">FAQ</a><a class="language-link" href="../index.html" lang="en">English</a></nav>
+<div id="theme-menu" class="theme-menu" data-theme-menu aria-label="主题选择"><button class="theme-option" data-theme-choice="auto" aria-label="使用自动主题">◐ 自动</button><button class="theme-option" data-theme-choice="light" aria-label="使用亮色主题">☀ 亮色</button><button class="theme-option" data-theme-choice="dark" aria-label="使用暗色主题">☾ 暗色</button></div>
+
+<div class="page-shell no-sidebar"><main id="main">
+  <section class="hero">
+    <div class="eyebrow">LOCAL-FIRST · ZERO DEPENDENCIES · LIVE OR OFFLINE</div>
+    <h1>看清每一次<br>Token 流动。</h1>
+    <p class="lead">tokens 是一个纯 Python stdlib 的本地 CLI，读取 Claude Code、Gemini CLI 与 Codex 日志，按日、周、月聚合用量，并输出终端表格、本机实时 Dashboard 或单文件离线快照。</p>
+    <div class="hero-actions"><a class="button primary" href="getting-started.html">5 分钟开始</a><a class="button" href="dashboard.html">探索 Dashboard</a><a class="button" href="cli.html">查看命令</a></div>
+    <p class="hero-note">Python ≥ 3.9 · 默认仅统计 Claude · 无 CDN · 不上传数据</p>
+  </section>
+
+  <section class="demo" data-demo aria-labelledby="demo-title">
+    <div class="demo-toolbar"><span class="demo-dots"><i></i><i></i><i></i></span><span class="demo-title" id="demo-title">synthetic://token-overview</span><button class="demo-button" type="button" data-demo-refresh aria-label="刷新合成演示数据">刷新合成数据</button></div>
+    <div class="demo-body">
+      <div class="demo-kpis"><div class="demo-kpi"><span>总 Token</span><b data-demo-total>—</b></div><div class="demo-kpi"><span>调用次数</span><b data-demo-calls>—</b></div><div class="demo-kpi"><span>模型数</span><b>3</b></div><div class="demo-kpi"><span>缓存占比</span><b>68%</b></div></div>
+      <div class="demo-grid"><div class="demo-panel"><h3>近 12 期用量</h3><div class="demo-chart"><i class="demo-bar" data-demo-bar data-label="01"></i><i class="demo-bar" data-demo-bar data-label="02"></i><i class="demo-bar" data-demo-bar data-label="03"></i><i class="demo-bar" data-demo-bar data-label="04"></i><i class="demo-bar" data-demo-bar data-label="05"></i><i class="demo-bar" data-demo-bar data-label="06"></i><i class="demo-bar" data-demo-bar data-label="07"></i><i class="demo-bar" data-demo-bar data-label="08"></i><i class="demo-bar" data-demo-bar data-label="09"></i><i class="demo-bar" data-demo-bar data-label="10"></i><i class="demo-bar" data-demo-bar data-label="11"></i><i class="demo-bar" data-demo-bar data-label="12"></i></div></div><div class="demo-panel"><h3>模型构成</h3><div class="demo-legend"><div class="demo-legend-row"><i style="--c:#72a7ff"></i><span>Atlas Code</span><b>54%</b></div><div class="demo-legend-row"><i style="--c:#9d86ff"></i><span>Nova Reasoner</span><b>31%</b></div><div class="demo-legend-row"><i style="--c:#37d6bc"></i><span>Swift Mini</span><b>15%</b></div></div><p class="demo-note">本演示仅使用虚构模型名与合成数值，不读取或复制任何本机报告。</p></div></div>
+    </div>
+  </section>
+
+  <section class="section"><div class="grid three">
+    <article class="card"><div class="card-label">01 · Read</div><div class="card-value">三类日志</div><p class="card-meta">统一读取 Claude Code、Gemini CLI、Codex 的本地记录。</p></article>
+    <article class="card"><div class="card-label">02 · Aggregate</div><div class="card-value">日 / 周 / 月</div><p class="card-meta">按模型、来源、调用等维度聚合，支持日期与来源过滤。</p></article>
+    <article class="card"><div class="card-label">03 · Report</div><div class="card-value">四种输出</div><p class="card-meta">终端表格、单期静态 HTML、本机实时 Dashboard 与自包含离线快照。</p></article>
+  </div></section>
+
+  <section class="section"><h2>为本地开发工作流而生</h2><div class="grid"><article class="card"><h3>零构建，零运行时依赖</h3><p>项目与本站均不依赖前端框架、CDN 或第三方 JavaScript。克隆后即可运行；文档也可直接双击打开。</p></article><article class="card"><h3>报告离线可分发</h3><p>生成的 HTML 数据与渲染逻辑自包含，适合个人归档。但 Dashboard 可能包含项目路径、会话标识或摘要，分享前必须检查。</p></article><article class="card"><h3>默认最小数据面</h3><p>默认来源为 Claude；只有显式传入 <code>--source gemini</code> 或 <code>--source codex</code> 才会加入其他来源。</p></article><article class="card"><h3>不仅是柱状图</h3><p>Dashboard 提供时光探针、作息织锦、模型筛选、导出、Token 流光图、生物、星云与成就图鉴等本地交互。</p></article></div></section>
+
+  <section class="section"><div class="callout warning"><strong>隐私边界</strong>工具不会上传数据，不等于生成文件可以公开分享。交互式 Dashboard 会根据本地记录嵌入聚合数据，并可能带有 cwd、会话标识及本地摘要。请阅读<a href="data-and-privacy.html">数据与隐私</a>后再分发报告。</div></section>
+</main></div>
+
+<footer class="site-footer"><nav aria-label="页脚导航"><a href="getting-started.html">快速开始</a><a href="cli.html">CLI</a><a href="dashboard.html">Dashboard</a><a href="data-and-privacy.html">隐私</a><a href="architecture.html">架构</a><a href="faq.html">FAQ</a></nav><div>tokens 文档 · 静态文件 · 无 CDN · 核心内容无需 JavaScript</div></footer>
+<div id="search-modal" class="search-modal" data-search-modal aria-hidden="true"><div class="search-panel" role="dialog" aria-modal="true" aria-label="搜索文档"><div class="search-input-wrap">⌕ <input class="search-input" data-search-input aria-label="搜索文档" aria-controls="search-results" placeholder="搜索页面与主题…" autocomplete="off"></div><div id="search-results" class="search-results" data-search-results></div><div class="search-help">↑↓ 选择 · Enter 打开 · Esc 关闭</div></div></div>
+<script src="../assets/site.js" defer></script>
+</body></html>
