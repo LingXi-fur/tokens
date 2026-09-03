@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-cli-tokens"
 version = "0.2.0"
-description = "Local-first token usage analytics for Claude Code, Gemini CLI, and Codex."
+description = "Private, local-first token analytics for Claude Code, Gemini CLI, and Codex."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-08-26
+## [0.2.0] - 2026-09-03
 
 ### Added
 
@@ -20,6 +20,12 @@ All notable changes to this project are documented here. The format follows [Kee
 - Reports default to `./out`; the derivative cache uses the platform user-cache directory.
 - Dashboard assets are packaged under `src/tokens_cli/dashboard_assets`.
 - Cache writes are atomic and use private file permissions where supported.
+- Live Dashboard checks default to five minutes and can be changed or paused from the page.
+- The README and documentation provide a concise first-run path for installed and source users.
+
+### Fixed
+
+- Windows installs include IANA timezone data, and cross-platform permission tests respect Windows filesystem semantics.
 
 ### Security
 

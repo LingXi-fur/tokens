@@ -12,7 +12,7 @@ tokens day</code></pre><p><code>doctor</code> 只检查日志位置、候选文�
 tokens week --source gemini
 tokens month --source codex
 tokens all --source claude --source gemini --source codex</code></pre>
-<h2 id="reports">生成报告</h2><h3 id="static-html">单期静态 HTML</h3><pre><code>tokens month --html</code></pre><p>文件默认写入当前目录下的 <code>out/report-month-&lt;焦点日期&gt;.html</code>；可用 <code>--output DIR</code> 改变位置。</p><h3 id="interactive-dashboard">本机实时 Dashboard</h3><pre><code>tokens serve --open</code></pre><p>服务只绑定 <code>127.0.0.1</code>，默认每 5 秒检查一次本地日志。日志未变化时不会重复解析或传输；有变化时当前页面会热更新。按 <code>Ctrl+C</code> 停止服务。</p><h3 id="offline-dashboard">离线 Dashboard 快照</h3><pre><code>tokens dashboard --open</code></pre><p>也可写成 <code>tokens --dashboard</code>。输出为 <code>out/dashboard.html</code>，数据、CSS、JavaScript 与 SVG 渲染逻辑均内嵌，离线可用。它是生成时快照，后来新增的日志不会自动进入该文件。</p>
+<h2 id="reports">生成报告</h2><h3 id="static-html">单期静态 HTML</h3><pre><code>tokens month --html</code></pre><p>文件默认写入当前目录下的 <code>out/report-month-&lt;焦点日期&gt;.html</code>；可用 <code>--output DIR</code> 改变位置。</p><h3 id="interactive-dashboard">本机实时 Dashboard</h3><pre><code>tokens serve --open</code></pre><p>服务只绑定 <code>127.0.0.1</code>，默认每 5 分钟检查一次本地日志。页面可选择 1、5、15、30 分钟或暂停；日志未变化时不会重复解析或传输，有变化时当前页面会热更新。按 <code>Ctrl+C</code> 停止服务。</p><h3 id="offline-dashboard">离线 Dashboard 快照</h3><pre><code>tokens dashboard --open</code></pre><p>也可写成 <code>tokens --dashboard</code>。输出为 <code>out/dashboard.html</code>，数据、CSS、JavaScript 与 SVG 渲染逻辑均内嵌，离线可用。它是生成时快照，后来新增的日志不会自动进入该文件。</p>
 <h2 id="filters">筛选数据</h2><pre><code>tokens --since 2026-07-01 --until 2026-07-25
 tokens week --source gemini --source codex
 tokens dashboard --since 2026-01-01 --source claude
