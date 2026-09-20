@@ -5,9 +5,9 @@
   var labels = isZh ? {
     pages: [
       { title: '首页', url: 'index.html', desc: '项目能力、安装入口与合成数据预览', keywords: '首页 tokens token 统计 文档' },
-      { title: '快速开始', url: 'getting-started.html', desc: '安装、首次运行、生成报告和常见配置', keywords: '安装 pipx python 开始 html dashboard' },
+      { title: '快速开始', url: 'getting-started.html', desc: '源码运行、首次检查、生成报告和常见配置', keywords: '源码 克隆 python 开始 html dashboard' },
       { title: 'CLI 参考', url: 'cli.html', desc: 'day、week、month、all、dashboard 与全部参数', keywords: '命令行 参数 source since until cache open' },
-      { title: 'Dashboard', url: 'dashboard.html', desc: '交互功能、快捷键、导出与合成演示', keywords: '图表 模型 筛选 成就 年鉴 星云 导出' },
+      { title: 'Dashboard', url: 'dashboard.html', desc: '交互分析、工作模式、信号坞、导出与合成演示', keywords: '图表 模型 筛选 成就 年鉴 工作模式 信号坞 Token Flow 导出' },
       { title: '数据与隐私', url: 'data-and-privacy.html', desc: '日志路径、缓存、报告敏感信息与安全分享', keywords: '隐私 本地 日志 会话 cwd 路径 上传' },
       { title: '架构', url: 'architecture.html', desc: '读取、统一记录、聚合与报告生成流程', keywords: 'readers aggregate report config stdlib 架构' },
       { title: 'FAQ', url: 'faq.html', desc: '日志缺失、统计差异、主题、平台支持等问题', keywords: '问题 帮助 日志 无数据 时区 windows' }
@@ -17,7 +17,7 @@
   } : {
     pages: [
       { title: 'Home', url: 'index.html', desc: 'Capabilities, installation, and synthetic preview', keywords: 'home tokens usage analytics local' },
-      { title: 'Get started', url: 'getting-started.html', desc: 'Install, diagnose, and generate the first report', keywords: 'install pipx python doctor dashboard' },
+      { title: 'Get started', url: 'getting-started.html', desc: 'Clone, diagnose, and generate the first report', keywords: 'source clone python doctor dashboard' },
       { title: 'CLI reference', url: 'cli.html', desc: 'Commands, ranges, sources, timezone, and output', keywords: 'command options source since until cache output' },
       { title: 'Dashboard', url: 'dashboard.html', desc: 'Core analysis, Data Trail, labs, and shortcuts', keywords: 'chart model filter session context export' },
       { title: 'Data and privacy', url: 'data-and-privacy.html', desc: 'Local paths, cache, reports, and safe sharing', keywords: 'privacy local logs session cwd pseudonymize' },

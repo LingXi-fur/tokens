@@ -30,23 +30,15 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
       <button class=themebtn id=mods-btn aria-label="模块开关" aria-controls=mods-pop aria-expanded=false title="模块开关">⚙</button>
       <div class=popover id=mods-pop>
         <h3>显示模块</h3>
-        <div class=mrow><label><input type=checkbox data-mod=clock checked>作息时钟</label><span class="switch on" aria-hidden=true data-sw=clock></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=fun checked>趣味换算</label><span class="switch on" aria-hidden=true data-sw=fun></span></div>
         <div class=mrow><label><input type=checkbox data-mod=block checked>5h 计费块</label><span class="switch on" aria-hidden=true data-sw=block></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=daily checked>每天趋势</label><span class="switch on" aria-hidden=true data-sw=daily></span></div>
         <div class=mrow><label><input type=checkbox data-mod=rhythm checked>作息织锦</label><span class="switch on" aria-hidden=true data-sw=rhythm></span></div>
         <div class=mrow><label><input type=checkbox data-mod=modes checked>工作模式图鉴</label><span class="switch on" aria-hidden=true data-sw=modes></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=multiples checked>每模型趋势</label><span class="switch on" aria-hidden=true data-sw=multiples></span></div>
         <div class=mrow><label><input type=checkbox data-mod=provenance checked>数据可信度</label><span class="switch on" aria-hidden=true data-sw=provenance></span></div>
         <div class=mrow><label><input type=checkbox data-mod=project checked>项目透镜</label><span class="switch on" aria-hidden=true data-sw=project></span></div>
         <div class=mrow><label><input type=checkbox data-mod=reuse checked>复用之河</label><span class="switch on" aria-hidden=true data-sw=reuse></span></div>
         <div class=mrow><label><input type=checkbox data-mod=flow checked>Token 流光图</label><span class="switch on" aria-hidden=true data-sw=flow></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=creature checked>Token 生物</label><span class="switch on" aria-hidden=true data-sw=creature></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=race checked>柱图竞赛</label><span class="switch on" aria-hidden=true data-sw=race></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=fortune checked>今日运势</label><span class="switch on" aria-hidden=true data-sw=fortune></span></div>
         <div class=mrow><label><input type=checkbox data-mod=almanac checked>Token 年鉴</label><span class="switch on" aria-hidden=true data-sw=almanac></span></div>
         <div class=mrow><label><input type=checkbox data-mod=badges checked>成就徽章</label><span class="switch on" aria-hidden=true data-sw=badges></span></div>
-        <div class=mrow><label><input type=checkbox data-mod=dna checked>Token 星云</label><span class="switch on" aria-hidden=true data-sw=dna></span></div>
         <div class=mrow><label><input type=checkbox data-mod=top checked>Top 榜</label><span class="switch on" aria-hidden=true data-sw=top></span></div>
       </div>
     </div>
@@ -72,19 +64,6 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
   <div class=signal-status id=signal-status role=status aria-live=polite aria-atomic=true></div>
  </div>
 </nav>
-
-<section class="card weather" id=weather-card>
-  <div class=w-icon id=w-icon>◌</div>
-  <div><div class=w-title><span id=w-title>数据气候计算中</span><small>LOCAL FORECAST</small></div><div class=w-copy id=w-copy>正在读取你的本地 Token 气压、活跃时段与缓存云层。</div></div>
-  <div class=w-metric><b id=w-metric>—</b><span id=w-metric-label>相对近况</span></div>
-</section>
-
-<section class="card discovery" id=discovery-card tabindex=0 aria-label="数据侦探，点击切换洞察">
- <div class=disc-kicker>YOU MAY NOT HAVE NOTICED · 数据侦探</div>
- <div class=disc-text id=discovery-text>正在寻找藏在数字之间的线索……</div>
- <div class=disc-sub id=discovery-sub>所有发现均由本地数据计算，不调用 AI。</div>
- <div class=disc-actions><span class=disc-pos id=discovery-pos>1/1</span><button class="ghostbtn disc-pin" id=discovery-pin title="固定当前洞察" aria-pressed=false>◇ 固定</button><button class="ghostbtn disc-next" id=discovery-next title="换一条发现">↻ 换一条</button></div>
-</section>
 
 <div class=probe id=time-probe>
   <span class=probe-orb></span>
@@ -141,6 +120,13 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  </div>
  <div id=bar class=trend-chart style=margin-top:14px aria-describedby="bar-hint scrub-status"></div>
  <div class=scrub-status id=scrub-status role=status aria-live=polite aria-atomic=true></div>
+ <div class=table-panel>
+  <div class=row-between>
+   <div><h3 style=margin:0 data-i18n-key="Exact details">Exact details</h3><p class=sub style="margin:3px 0 0;color:var(--faint)" data-i18n-key="Exact values behind the trend chart and export actions">Exact values behind the trend chart and export actions</p></div>
+   <div style="display:flex;gap:8px"><button class=ghostbtn id=md-btn title="下载当前明细为 Markdown">◇ 导出 MD</button><button class=ghostbtn id=csv-btn title="下载当前明细为 CSV">⤓ 导出 CSV</button></div>
+  </div>
+  <div class=table-scroll tabindex=0 role=region aria-label="Token 明细，可横向滚动"><table class=detail-table><thead id=thead></thead><tbody id=tbody></tbody></table></div>
+ </div>
 </section>
 
 <section class=card data-module=provenance id=section-provenance>
@@ -156,20 +142,19 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
 
 <section class="card token-almanac" data-module=almanac data-lazy=almanac id=section-almanac>
  <div class=almanac-head>
-  <div><div class=almanac-k>THE TOKEN ALMANAC · LOCAL MEMORY</div><h2>Token 年鉴 · 会记得你的 Dashboard</h2><p>赛季、个人纪录与时间胶囊只由本地聚合快照生成；这是个人历史，不是全球排名。</p></div>
+  <div><div class=almanac-k>THE TOKEN ALMANAC · LOCAL MEMORY</div><h2>Token 年鉴 · 会记得你的 Dashboard</h2><p>赛季与跨快照时间胶囊只由本地聚合数据生成；这是个人历史，不是全球排名。</p></div>
   <div class=almanac-actions><button class=ghostbtn id=almanac-open type=button>✦ 打开时间胶囊</button><button class=ghostbtn id=almanac-export type=button>导出年鉴</button><button class=ghostbtn id=almanac-clear type=button>清除本地年鉴</button></div>
  </div>
  <div class=almanac-letter id=almanac-letter aria-live=polite></div>
  <div class=almanac-grid>
   <section class=season-atlas aria-labelledby=season-atlas-title><div class=almanac-section-head><div><span>SEASON ATLAS</span><h3 id=season-atlas-title>赛季星图</h3></div><small id=season-meta></small></div><div class=season-rail id=season-rail role=listbox aria-label="Token 赛季，使用方向键浏览"></div><div class=season-detail id=season-detail aria-live=polite></div></section>
-  <section class=record-observatory aria-labelledby=record-title><div class=almanac-section-head><div><span>RECORD OBSERVATORY</span><h3 id=record-title>个人纪录天文台</h3></div><small>全部模型 · 当前报告作用域</small></div><div class=record-sky-wrap><svg class=record-sky id=record-sky viewBox="0 0 520 300" role=img aria-label="个人纪录星图"></svg><div class=record-detail id=record-detail aria-live=polite></div></div><div class=record-list id=record-list></div></section>
  </div>
  <p class=almanac-privacy id=almanac-privacy></p>
 </section>
 
 <section class="card achievement-center" data-module=badges data-lazy=badges id=section-achievements>
  <div class=row-between>
-  <div><h2 style=margin:0>🏆 Achievement Center · 成就中心</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">解锁日期以本报告范围为界；阶位表示图鉴门槛，不代表全球用户稀有度</p></div>
+  <div><h2 style=margin:0>🏆 Achievement Center · 成就中心</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">把本地日志聚合出的指标（累计、连续、缓存、模型、作息、彩蛋）拆成 3000+ 道阶梯门槛，报告范围内首次越过即解锁；纯本地收藏，阶位不代表全球用户稀有度</p></div>
   <span class=ach-meta id=ach-meta></span>
  </div>
  <div class=ach-center-grid>
@@ -190,30 +175,22 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  <div class=table-scroll tabindex=0 role=region aria-label="项目趋势明细，可横向滚动"><table class=project-table><thead id=project-thead></thead><tbody id=project-tbody></tbody></table></div>
 </section>
 
-<section class=card data-module=fun>
- <div class=row-between>
-   <h2 style=margin:0>趣味换算 · 你的 token 约等于</h2>
-   <button class=ghostbtn id=fun-shuffle title="换一组">🎲 换一组</button>
- </div>
- <div id=funfacts style=margin-top:12px></div>
-</section>
 
-<section class=card data-module=block>
- <div class=row-between>
+<div class=grid2>
+ <section class=card>
+  <h2 data-i18n-key="Model mix">Model mix</h2>
+  <div id=donut></div>
+  <ul class=legend id=donut-legend></ul>
+ </section>
+ <section class=card data-module=block>
+  <div class=row-between>
    <h2 style=margin:0>5h 计费窗口 · 近 5 小时</h2>
    <span class=sub id=block-total style=margin:0;color:var(--faint)></span>
- </div>
- <div class=block-bars id=block-bars></div>
- <div class=block-now id=block-now></div>
-</section>
-
-<section class=card data-module=daily>
- <div class=row-between>
-   <h2 style=margin:0>每天 · 近 14 天</h2>
-   <span class=sub id=daily-total style=margin:0;color:var(--faint)></span>
- </div>
- <div class=block-bars id=daily-bars style=margin-top:22px></div>
-</section>
+  </div>
+  <div class=block-bars id=block-bars></div>
+  <div class=block-now id=block-now></div>
+ </section>
+</div>
 
 <section class=card data-module=rhythm id=section-rhythm>
  <div class=row-between>
@@ -235,27 +212,6 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  <p class=mode-rules id=mode-rules></p>
 </section>
 
-<section class=card data-module=fortune>
- <div class=row-between>
-   <h2 style=margin:0>今日 token 运势</h2>
-   <span class=sub id=f-date style=margin:0;color:var(--faint)></span>
- </div>
- <div class=fortune id=fortune></div>
-</section>
-
-<div class=grid2>
- <section class=card data-module=clock>
-   <h2>作息时钟 · 什么时段最肝</h2>
-   <div id=clock></div>
-   <p class=sub style="text-align:center;margin:10px 0 0;color:var(--faint)">每根辐条 = 一小时的 token 量 · 高亮为峰值</p>
- </section>
- <section class=card>
-   <h2>模型占比</h2>
-   <div id=donut></div>
-   <ul class=legend id=donut-legend></ul>
- </section>
-</div>
-
 <section class=card data-module=reuse data-lazy=reuse id=section-reuse>
  <div class=row-between><div><h2 style=margin:0>Context Reuse River · 上下文复用之河</h2><div class=sub style="margin-top:4px;color:var(--faint)">Input / Output / Cache Read / Cache Write 随时间流动，观察上下文何时开始被记住</div></div><span class=sub id=reuse-summary style="margin:0;color:var(--faint)"></span></div>
  <div class=reuse-shell><svg class=reuse-chart id=reuse-chart viewBox="0 0 1080 300" preserveAspectRatio="none" role=img aria-label="上下文复用构成随时间变化"></svg><div class=reuse-panel id=reuse-panel aria-live=polite>悬停或用方向键检查每一期的 Token 构成。</div></div>
@@ -265,98 +221,6 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  <div class=row-between><h2 style=margin:0>Token 流光图 · 项目 → 模型 → 会话</h2><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class=sub style="margin:0;color:var(--faint)">光带宽度对应真实 Token 流量；悬停或聚焦 Peek，点击 Pin 到 Signal Dock</span><button class=ghostbtn id=flow-save type=button title="保存当前流光图为 SVG">保存 SVG</button></div></div>
  <div class=flow-shell style=margin-top:14px><svg class=flow-map id=flow-map viewBox="0 0 1120 470" preserveAspectRatio="xMidYMid meet" role=img aria-label="项目到模型再到会话的 Token 流光图"></svg><div class=flow-panel id=flow-panel aria-live=polite><b>Token 流光图</b><span>悬停或聚焦节点查看真实流向，点击项目或模型可锁定链路。</span></div></div>
  <div class=flow-stats id=flow-stats></div>
-</section>
-
-<section class="card furry-lab" data-module=creature data-lazy=creature id=section-creature>
- <div class=row-between>
-  <div>
-   <div class=creature-k>FURRY TOKEN COMPANION · LOCAL SVG</div>
-   <h2 style=margin:0>Furry Token 伙伴 · 你的数字兽设</h2>
-   <p class=creature-lead>原创日系 Furry 半身角色，由本地 Token 聚合与角色设定共同塑形。</p>
-  </div>
-  <button class=ghostbtn id=creature-save type=button>保存角色 SVG</button>
- </div>
- <div class=creature-lab-grid>
-  <div class=creature-showcase>
-   <div class=creature-stage id=creature-stage>
-    <div class=creature-stage-label>LOCAL CHARACTER PORTRAIT</div>
-    <svg class=creature id=creature viewBox="0 0 360 420" role=img aria-label="数据驱动的日系 Furry Token 半身伙伴"></svg>
-    <div class=creature-reference id=creature-reference hidden>
-     <img id=creature-reference-image alt="仅在当前页面显示的兽设参考图">
-     <span>本地参考</span>
-    </div>
-   </div>
-   <div class=creature-plate>
-    <div class=creature-name id=creature-name></div>
-    <div class=creature-desc id=creature-desc></div>
-   </div>
-  </div>
-  <div class=creature-controls>
-   <div class=creature-control-k>CHARACTER CUSTOMIZE</div>
-   <label class=creature-field>
-    <span>伙伴物种</span>
-    <select id=creature-species>
-     <option value=auto>由数据选择</option>
-     <option value=wolf>狼</option>
-     <option value=fox>狐狸</option>
-     <option value=cat>猫</option>
-     <option value=rabbit>兔</option>
-     <option value=dragon>龙</option>
-    </select>
-   </label>
-   <div class=creature-palette role=group aria-label="伙伴配色">
-    <label><span>主毛色</span><input id=creature-primary type=color></label>
-    <label><span>脸胸毛</span><input id=creature-secondary type=color></label>
-    <label><span>虹膜与饰品</span><input id=creature-accent type=color></label>
-   </div>
-   <div class=creature-actions>
-    <label class="ghostbtn creature-upload" for=creature-file>导入兽设配色</label>
-    <input id=creature-file type=file accept="image/png,image/jpeg,image/webp" hidden>
-    <button class=ghostbtn id=creature-remove type=button disabled>移除参考图</button>
-    <button class=ghostbtn id=creature-reset type=button>恢复数据外观</button>
-   </div>
-   <div class=creature-upload-status id=creature-upload-status role=status aria-live=polite>可导入不超过 5MB 的 PNG、JPEG 或 WebP。</div>
-   <p class=creature-privacy>图片只在此页面本地解码并提取三种配色，不上传、不是 AI 重绘，也不会写入 URL、年鉴或保存的 SVG。</p>
-  </div>
- </div>
- <div class=creature-info id=creature-info></div>
-</section>
-
-<div class=grid2>
- <section class=card data-module=multiples>
-   <h2>每模型趋势 · 日</h2>
-   <div class=mp-grid id=multiples></div>
- </section>
- <section class=card data-module=race data-lazy=race>
-   <div class=row-between>
-     <h2 style=margin:0>柱图竞赛 · 累计 token</h2>
-     <span class=sub id=race-day style=margin:0;color:var(--faint)></span>
-   </div>
-   <div class=race id=race></div>
-   <div class=race-ctrl>
-     <button class=rbtn id=race-play>▶ 播放</button>
-     <input class=rscrub id=race-scrub type=range min=0 max=0 value=0 aria-label="柱图竞赛日期位置">
-     <span id=race-pos></span>
-   </div>
- </section>
-</div>
-
-<section class=card>
- <div class=row-between>
-   <h2 style=margin:0>明细</h2>
-   <div style="display:flex;gap:8px"><button class=ghostbtn id=md-btn title="下载当前明细为 Markdown">◇ 导出 MD</button><button class=ghostbtn id=csv-btn title="下载当前明细为 CSV">⤓ 导出 CSV</button></div>
- </div>
- <div class=table-scroll tabindex=0 role=region aria-label="Token 明细，可横向滚动"><table class=detail-table><thead id=thead></thead><tbody id=tbody></tbody></table></div>
-</section>
-
-<section class=card data-module=dna data-lazy=dna>
- <h2>Token 星云 · 你的数据深空</h2>
- <div class=dna-wrap>
-  <div class=nebula-stage><svg class=dna id=dna viewBox="0 0 300 300"></svg></div>
-  <div class=dna-tip>24 小时形成星云旋臂 · 模型化作彩色星团 · 缓存点亮中央星核</div>
-  <div class=nebula-meta id=nebula-meta></div>
-  <button class=dnadl id=dna-dl>📥 收藏这片星云</button>
- </div>
 </section>
 
 <section class=card data-module=top id=section-top>
@@ -409,6 +273,10 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
      <button class=ghostbtn id=ach-confetti aria-label="庆祝成就进度">🎉</button>
    </div>
   </div>
+  <div class=ach-intro>
+   <p><b>这是什么：</b>成就 = 本地日志聚合指标的阶梯门槛（累计、连续、缓存、模型 / 项目 / 会话、作息节奏、数字彩蛋…）。当前报告范围内指标首次 ≥ 门槛即解锁；点击任意徽章可查看指标、阈值与达成日期。</p>
+   <p><b>怎么读：</b>青铜 → 白银 → 黄金 → 彩钻只表示门槛在阶梯中的位置；隐藏成就达成后自动揭晓；「本设备新观察」= 与上一次快照对比新增。全部计算仅在本机完成，不参与任何全球排名。</p>
+  </div>
   <div class=ach-detail id=ach-detail aria-live=polite>选择一枚成就查看状态、日期、目标与图鉴阶位。</div>
   <div class=ach-body id=ach-body></div>
  </div>
@@ -421,9 +289,9 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
    <div class=help-row><span>切换日 / 周 / 月</span><kbd>1 / 2 / 3</kbd></div><div class=help-row><span>打开命令面板</span><kbd>⌘/Ctrl K</kbd></div>
    <div class=help-row><span>切换主题</span><kbd>T</kbd></div><div class=help-row><span>导出当前 CSV</span><kbd>E</kbd></div>
    <div class=help-row><span>退出时光探针 / 关闭弹层</span><kbd>Esc</kbd></div><div class=help-row><span>打开本帮助</span><kbd>?</kbd></div>
-   <div class=help-row><span>数据侦探前后切换</span><kbd>← / →</kbd></div><div class=help-row><span>流光节点锁定 / 回放</span><kbd>Enter / Space</kbd></div>
-   <div class=help-row><span>浏览年鉴赛季 / 胶囊章节</span><kbd>← / →</kbd></div><div class=help-row><span>打开赛季 / 纪录详情</span><kbd>Enter / Space</kbd></div>
-   <div class=help-row><span>打开 / 返回数据寻迹</span><kbd>I</kbd></div><div class=help-row><span>寻迹步骤前后移动</span><kbd>← / →</kbd></div>
+   <div class=help-row><span>流光节点锁定 / 回放</span><kbd>Enter / Space</kbd></div><div class=help-row><span>浏览年鉴赛季 / 胶囊章节</span><kbd>← / →</kbd></div>
+   <div class=help-row><span>打开赛季详情</span><kbd>Enter / Space</kbd></div><div class=help-row><span>打开 / 返回数据寻迹</span><kbd>I</kbd></div>
+   <div class=help-row><span>寻迹步骤前后移动</span><kbd>← / →</kbd></div>
    <div class=help-row><span>寻迹选项浏览</span><kbd>↑ / ↓ · Home / End</kbd></div><div class=help-row><span>选择线索 / 打开证据</span><kbd>Enter / Space</kbd></div>
    <div class=help-row><span>寻迹返回上一步</span><kbd>Backspace</kbd></div><div class=help-row><span>先关闭寻迹，再退出时光探针</span><kbd>Esc</kbd></div>
    <div class=help-row><span>Signal Dock Peek / Pin</span><kbd>悬停 / 聚焦 · 点击</kbd></div><div class=help-row><span>清除 Pin / 精确层</span><kbd>Esc</kbd></div>

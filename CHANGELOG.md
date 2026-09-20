@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Source-first launch paths for repository clones, including `./run`, `PYTHONPATH=src python -m tokens_cli`, and editable installs.
+- Release contracts for launchers, package assets, synthetic previews, exports, model sorting, and stable Dashboard colors.
+
+### Changed
+
+- Public documentation now treats cloning the repository as the verified first-run path instead of advertising an unverified package-index release.
+- Terminal and Dashboard model ordering now follows the current user's token totals, with model-name tie-breaking.
+- Dashboard model identity uses independently validated light and dark palettes; colors stay stable across ranking, filtering, input order, and refresh, while excess categories fold into `Other`.
+- Claude Code Router rules are read locally and conservatively only for plain Claude request aliases; router backends, Gemini models, and Codex models remain historical facts.
+
+### Fixed
+
+- Unsupported Router return expressions can no longer leak pending aliases into a later rule.
+- CSV and Markdown Dashboard exports preserve delimiters, quotes, pipes, and multiline values.
+- Manual dark mode now uses the same complete theme token set as system dark mode.
+
+### Security
+
+- Privacy documentation now states that Router files are read as local text, never executed or uploaded.
+- `--anonymize` is documented as pseudonymization: model names and Router-resolved backend names remain visible and may reveal local configuration semantics.
+- Public preview assets use synthetic data and contain no local identifiers.
+
 ## [0.2.0] - 2026-09-03
 
 ### Added

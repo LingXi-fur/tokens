@@ -1,6 +1,6 @@
 """终端表格输出。纯 ANSI，不依赖 rich。
 
-默认只看 claude（GLM-5.2 / DeepSeek），所以趋势表按「模型」拆列，而非按来源。
+趋势表按「模型」拆列，而非按来源。
 """
 from . import config
 
@@ -12,10 +12,6 @@ GREEN = "\033[32m"
 RESET = "\033[0m"
 
 PERIOD_LABEL = {"day": "日期", "week": "周(始)", "month": "月份"}
-
-# 趋势表里固定展示的模型列（按常见度排序）。命中即显示，无数据补 0。
-PRIORITY_MODELS = ["glm-5.2", "deepseek-v4-pro", "glm-5.1"]
-
 
 def fmt(n):
     return f"{n:,}"
@@ -47,20 +43,18 @@ def _bar(ratio, width=24):
 
 
 def _top_model_columns(rows, limit=3):
-    """从所有期里挑总 token 最高的 N 个模型，并叠加 PRIORITY_MODELS 顺序。"""
+    """从所有期里挑总 token 最高的 N 个模型。"""
     totals = {}
     for _, s in rows:
         for m, v in s["by_model"]:
             totals[m] = totals.get(m, 0) + v
-    ranked = [m for m, _ in sorted(totals.items(), key=lambda kv: kv[1], reverse=True)]
-    cols = []
-    for m in PRIORITY_MODELS:
-        if m in totals and m not in cols:
-            cols.append(m)
-    for m in ranked:
-        if m not in cols:
-            cols.append(m)
-    return cols[:limit]
+    return [
+        model
+        for model, _ in sorted(
+            totals.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[:limit]
+    ]
 
 
 def print_report(mode, rows, focus_date, focus_label):
