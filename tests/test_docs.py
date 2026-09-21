@@ -247,6 +247,27 @@ class DocsTests(unittest.TestCase):
                 f"{filename} tests must import the src-layout package",
             )
 
+    def test_release_workflows_reject_versioned_cache_files(self):
+        for filename in ("ci.yml", "release.yml"):
+            workflow = (
+                ROOT / ".github" / "workflows" / filename
+            ).read_text(encoding="utf-8")
+            self.assertIn(
+                'cache_file = re.compile(r"(?:^|/)records-v\\d+\\.json$")',
+                workflow,
+            )
+            self.assertIn("or cache_file.search(name)", workflow)
+            self.assertNotIn('"records-v3.json"', workflow)
+
+    def test_release_workflow_does_not_publish_to_package_indexes(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("pypa/gh-action-pypi-publish", workflow)
+        self.assertNotIn("id-token: write", workflow)
+        self.assertNotIn("environment:\n      name: pypi", workflow)
+        self.assertIn("publish-github-release:\n    needs: draft-github-release", workflow)
+
     def test_live_dashboard_is_documented_as_loopback_and_offline_is_snapshot(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         chinese_readme = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
@@ -263,19 +284,23 @@ class DocsTests(unittest.TestCase):
         self.assertIn("之后新增的日志不会自动进入", chinese_dashboard)
 
     def test_readme_preview_is_synthetic_and_referenced(self):
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        preview = (DOCS / "assets" / "readme-preview.svg").read_text(encoding="utf-8")
-        self.assertIn(
-            "https://raw.githubusercontent.com/LingXi-fur/tokens/main/docs/assets/readme-preview.svg",
-            readme,
+        readmes = [
+            (ROOT / "README.md").read_text(encoding="utf-8"),
+            (ROOT / "README.zh-CN.md").read_text(encoding="utf-8"),
+        ]
+        preview_path = DOCS / "assets" / "readme-preview.png"
+        self.assertTrue(preview_path.is_file())
+        self.assertGreater(preview_path.stat().st_size, 10_000)
+        self.assertEqual(b"\x89PNG\r\n\x1a\n", preview_path.read_bytes()[:8])
+        preview_url = (
+            "https://raw.githubusercontent.com/LingXi-fur/tokens/main/"
+            "docs/assets/readme-preview.png"
         )
-        self.assertIn("SYNTHETIC DATA", preview)
-        self.assertIn("Synthetic tokens dashboard preview", preview)
-        self.assertIn("TOKEN FLOW · PROJECT → MODEL → SESSION", preview)
-        self.assertNotRegex(preview, re.compile(r"[一-鿿]"))
-        self.assertNotIn("/Users/", preview)
-        self.assertNotIn("/home/", preview)
-        self.assertNotRegex(preview, UUID_RE)
+        for readme in readmes:
+            self.assertIn(preview_url, readme)
+            self.assertRegex(readme, re.compile(r"synthetic|合成", re.IGNORECASE))
+            self.assertRegex(readme, re.compile(r"isolated|隔离", re.IGNORECASE))
+            self.assertNotIn("docs/assets/readme-preview.png)", readme.replace(preview_url, ""))
 
     def test_public_readmes_have_verified_first_run_path(self):
         readmes = [
@@ -283,19 +308,22 @@ class DocsTests(unittest.TestCase):
             (ROOT / "README.zh-CN.md").read_text(encoding="utf-8"),
         ]
         for readme in readmes:
-            with self.subTest(language="zh" if "30 秒开始" in readme else "en"):
-                for command in (
-                    "pipx install ai-cli-tokens",
-                    "tokens doctor",
-                    "tokens serve --open",
-                    "tokens dashboard --open",
-                    "git clone https://github.com/LingXi-fur/tokens.git",
-                ):
-                    self.assertIn(command, readme)
-                self.assertIn("127.0.0.1", readme)
-                self.assertIn("tzdata", readme)
-                self.assertNotIn("/v0.2.0/", readme)
-                self.assertNotIn("blob/v0.2.0", readme)
+            for command in (
+                "git clone https://github.com/LingXi-fur/tokens.git",
+                "./run doctor",
+                "./run serve --open",
+                "./run dashboard --open",
+                "python -m pip install -e .",
+                "tokens doctor",
+                "tokens serve --open",
+            ):
+                self.assertIn(command, readme)
+            self.assertIn("127.0.0.1", readme)
+            self.assertIn("tzdata", readme)
+            self.assertNotIn("pipx install ai-cli-tokens", readme)
+            self.assertNotIn("pip install ai-cli-tokens", readme)
+            self.assertNotIn("/v0.2.0/", readme)
+            self.assertNotIn("blob/v0.2.0", readme)
 
     def test_documentation_uses_current_live_refresh_default(self):
         files = [ROOT / "README.md", ROOT / "README.zh-CN.md"] + sorted(
@@ -334,14 +362,14 @@ class DocsTests(unittest.TestCase):
         ):
             self.assertNotIn(overclaim, public_docs)
 
-    def test_pypi_readme_links_are_absolute_or_anchors(self):
+    def test_public_readme_links_are_absolute_or_anchors(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         targets = re.findall(r"!?\[[^]]*\]\(([^)]+)\)", readme)
         relative = [
             target for target in targets
             if not target.startswith(("https://", "http://", "#", "mailto:"))
         ]
-        self.assertEqual([], relative, f"PyPI README contains relative links: {relative}")
+        self.assertEqual([], relative, f"Public README contains relative links: {relative}")
         image_sources = re.findall(r"<img\s+[^>]*src=[\"']([^\"']+)", readme)
         self.assertTrue(image_sources)
         self.assertTrue(all(source.startswith("https://") for source in image_sources))
@@ -392,7 +420,7 @@ class DocsTests(unittest.TestCase):
         ):
             self.assertNotIn(overclaim, combined)
 
-    def test_signal_lens_exactness_and_compare_privacy_are_documented(self):
+    def test_signal_dock_exactness_and_compare_privacy_are_documented(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         dashboard = "\n".join(
             (DOCS / path).read_text(encoding="utf-8")
@@ -404,7 +432,7 @@ class DocsTests(unittest.TestCase):
         )
         combined = "\n".join((readme, dashboard, privacy))
         for marker in (
-            "Signal Lens", "Exactness Key", "按住对比", "页面内存",
+            "Signal Dock", "Exactness Key", "按住对比", "页面内存",
             "项目 / 会话 ID", "固定幻影对比", "compare=1",
             "项目 → 模型", "模型 → 会话", "不写入 URL",
         ):
@@ -414,7 +442,7 @@ class DocsTests(unittest.TestCase):
         for retired in (
             "快捷键与隐藏操作", "点击总数本身只切换数字表达格式",
             "点击总数切换", "项目与会话自动配对",
-            "Signal Lens 会写入 URL", "精确层会保存到 localStorage",
+            "Signal Dock 会写入 URL", "精确层会保存到 localStorage",
         ):
             self.assertNotIn(retired, combined)
 

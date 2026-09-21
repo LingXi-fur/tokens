@@ -17,10 +17,10 @@ total 口径说明：
   gemini : tokens.total（= input + output + cached + thoughts + tool）
   codex  : total_tokens（input_tokens 已含 cached_input_tokens，故不重复加）
 """
+import glob
 import json
 import os
 import re
-import glob
 import stat
 import tempfile
 from datetime import datetime
@@ -31,7 +31,8 @@ from . import config
 #   v1 = 初版（含 Claude 重复 message.id 导致总量夸大）
 #   v2 = Claude 按 message.id 去重
 #   v3 = record 增 cwd 字段（项目维度 Top 榜需要）
-CACHE_VERSION = 3
+#   v4 = Claude request aliases may resolve through the user's current CCR router
+CACHE_VERSION = 4
 
 # 单文件大小上限：防恶意/失控日志吃光内存（OOM）。超出直接跳过。
 MAX_FILE_BYTES = 64 * 1024 * 1024  # 64 MB
@@ -51,7 +52,7 @@ def _to_local_date(iso_ts):
 
 
 def local_hour(iso_ts):
-    """ISO 字符串 → 本地时区小时(0-23)。无效返回 None。用于「作息时钟」。"""
+    """ISO 字符串 → 本地时区小时(0-23)。无效返回 None。用于小时聚合。"""
     if not isinstance(iso_ts, str):
         return None
     try:
@@ -69,6 +70,94 @@ def parse_local_dt(iso_ts):
         return datetime.fromisoformat(iso_ts.replace("Z", "+00:00")).astimezone(config.TZ)
     except ValueError:
         return None
+
+
+# ---------- Optional CCR model resolution ----------
+# Claude logs may contain request aliases (for example a Claude tier name) or
+# an actual backend name. A local CCR router can resolve aliases for its owner.
+# Public/default behavior is conservative: without a matching local rule, keep
+# the logged model unchanged.
+
+_NEEDLE_RE = re.compile(r"model\.includes\(\s*['\"]([^'\"]+)['\"]\s*\)")
+_RETURN_RE = re.compile(r"return\s+['\"][^,'\"]+,([^,'\"]+)['\"]")
+_ANY_RETURN_RE = re.compile(r"\breturn\b")
+
+_ccr_rules_cache = ("", [])
+
+
+def _parse_ccr_rules(text):
+    """Return conservative ordered rules parsed from router source.
+
+    Every return ends the pending condition. Unsupported return expressions are
+    ignored rather than allowed to attach their aliases to a later branch.
+    """
+    rules, needles = [], []
+    for line in text.splitlines():
+        needles.extend(_NEEDLE_RE.findall(line))
+        if not _ANY_RETURN_RE.search(line):
+            continue
+        match = _RETURN_RE.search(line)
+        if match and needles:
+            backend = match.group(1)
+            rules.extend((needle, backend) for needle in needles)
+        needles = []
+    return rules
+
+
+def _ccr_signature():
+    """Return the local router mtime/size signature, or an empty string."""
+    try:
+        st = os.stat(config.CCR_ROUTER_FILE)
+        return f"{st.st_mtime_ns}|{st.st_size}"
+    except OSError:
+        return ""
+
+
+def _ccr_rules():
+    """Read ordered rules from this user's router, cached by file signature."""
+    global _ccr_rules_cache
+    signature = _ccr_signature()
+    if _ccr_rules_cache[0] == signature:
+        return _ccr_rules_cache[1]
+    rules = []
+    if signature:
+        try:
+            with open(config.CCR_ROUTER_FILE, "r", encoding="utf-8", errors="replace") as fh:
+                rules = _parse_ccr_rules(fh.read())
+        except OSError:
+            rules = []
+    _ccr_rules_cache = (signature, rules)
+    return rules
+
+
+_TIER_MODEL_RE = re.compile(
+    r"^(?:claude-)?(opus|sonnet|haiku)(?:-\d[\w.-]*)?$",
+    re.IGNORECASE,
+)
+
+
+def _tier_of(model):
+    """Return a tier only for a plain tier or Claude-style request model."""
+    match = _TIER_MODEL_RE.fullmatch(model)
+    return match.group(1).lower() if match else None
+
+
+def _resolve_model(model):
+    """Resolve a Claude request alias through the current user's router.
+
+    Backend names are historical facts and remain unchanged. Without a local
+    router or matching rule, public users see the model name stored in the log;
+    no maintainer-specific fallback is applied.
+    """
+    rules = _ccr_rules()
+    if model in {backend for _, backend in rules}:
+        return model
+    if not _tier_of(model):
+        return model
+    for needle, backend in rules:
+        if needle in model:
+            return backend
+    return model
 
 
 # ---------- Claude ----------
@@ -107,6 +196,8 @@ def claude_parse(path):
                 date = _to_local_date(ts)
                 if not date:
                     continue
+                # Resolve only Claude request aliases matched by this user's router.
+                model = _resolve_model(model)
                 inp = usage.get("input_tokens", 0)
                 outp = usage.get("output_tokens", 0)
                 cread = usage.get("cache_read_input_tokens", 0)
@@ -378,6 +469,12 @@ def read_all(sources=None, use_cache=True):
         cache = {}
         changed = True
 
+    # A local CCR router change can alter alias resolution, so rebuild records.
+    router_sig = _ccr_signature()
+    if use_cache and cache.get("_router") != router_sig:
+        cache = {}
+        changed = True
+
     for src in sources:
         if src not in SOURCES:
             continue
@@ -416,5 +513,6 @@ def read_all(sources=None, use_cache=True):
         changed = True
 
     if changed and use_cache:
+        cache["_router"] = router_sig
         _save_cache(cache)
     return out

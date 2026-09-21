@@ -43,6 +43,23 @@ jobs:
         env:
           PYTHONPATH: src
 
+  browser:
+    name: Chromium Dashboard runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install browser test dependencies
+        run: python -m pip install -e . "playwright>=1.40,<2"
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Run Dashboard runtime tests
+        run: python -m unittest tests.test_dashboard_runtime
+        env:
+          PYTHONPATH: src
+
   javascript:
     name: JavaScript syntax
     runs-on: ubuntu-latest
@@ -85,7 +102,8 @@ jobs:
           import re, tarfile, zipfile
           from pathlib import Path
 
-          forbidden = ("/.claude/", "/out/", ".env", "records-v3.json")
+          forbidden = ("/.claude/", "/out/", ".env")
+          cache_file = re.compile(r"(?:^|/)records-v\d+\.json$")
           user_paths = re.compile(
               rb"/(?:private/)?Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+"
           )
@@ -107,7 +125,11 @@ jobs:
                           if member.isfile()
                           and user_paths.search(sdist.extractfile(member).read())
                       )
-          bad = [name for name in members if any(item in "/" + name for item in forbidden)]
+          bad = [
+              name for name in members
+              if any(item in "/" + name for item in forbidden)
+              or cache_file.search(name)
+          ]
           if bad:
               raise SystemExit("forbidden release files: " + ", ".join(bad))
           if sensitive:

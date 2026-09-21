@@ -6,15 +6,80 @@ import hmac
 import json
 import secrets
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
-from . import aggregate, config, readers, report_term
+from . import aggregate, config, readers
 
 
-PALETTE = ["#5b8def", "#14b8a6", "#f59e0b", "#a78bfa",
-           "#f472b6", "#38bdf8", "#fb923c", "#94a3b8"]
+LIGHT_PALETTE = [
+    "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+    "#e87ba4", "#008300", "#4a3aa7", "#e34948",
+]
+DARK_PALETTE = [
+    "#3987e5", "#d95926", "#199e70", "#c98500",
+    "#d55181", "#008300", "#9085e9", "#e66767",
+]
+MODEL_IDENTITY_CAPACITY = 7
+OTHER_MODEL = "other"
 SNAPSHOT_SCHEMA = 1
 METRIC_SCHEMA = 1
+
+
+def _record_model(record):
+    return record.get("model") or "unknown"
+
+
+def _model_first_seen_key(record):
+    """Return an orderable, input-order-independent identity key."""
+    raw_ts = record.get("ts")
+    if isinstance(raw_ts, str):
+        try:
+            parsed = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            normalized = parsed.astimezone(timezone.utc).isoformat()
+            return 0, normalized
+        except ValueError:
+            pass
+    raw_day = record.get("date")
+    if isinstance(raw_day, str):
+        try:
+            return 1, date.fromisoformat(raw_day).isoformat()
+        except ValueError:
+            pass
+    return 2, ""
+
+
+def _model_registry(records):
+    """Assign fixed identity slots before range filtering or token ranking."""
+    first_seen = {}
+    saw_other = False
+    for record in records:
+        model = _record_model(record)
+        if model == OTHER_MODEL:
+            saw_other = True
+            continue
+        key = _model_first_seen_key(record)
+        if model not in first_seen or key < first_seen[model]:
+            first_seen[model] = key
+
+    ordered = sorted(first_seen, key=lambda model: (first_seen[model], model))
+    retained = ordered[:MODEL_IDENTITY_CAPACITY]
+    aliases = {model: model for model in retained}
+    overflow = ordered[MODEL_IDENTITY_CAPACITY:]
+    aliases.update({model: OTHER_MODEL for model in overflow})
+    if saw_other:
+        aliases[OTHER_MODEL] = OTHER_MODEL
+
+    slots = {model: index for index, model in enumerate(retained)}
+    if overflow or saw_other:
+        slots[OTHER_MODEL] = MODEL_IDENTITY_CAPACITY
+    return aliases, slots
+
+
+def _canonical_model(record, registry):
+    model = _record_model(record)
+    return registry.get(model, OTHER_MODEL)
 
 
 class _ReportAliases:
@@ -214,6 +279,8 @@ def _snapshot_identity(payload):
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False,
                   aliases=None):
+    records = tuple(records)
+    model_registry, model_slots = _model_registry(records)
     generated_at = datetime.now(config.TZ)
     aliases = aliases or (_ReportAliases() if anonymize else None)
     model_totals = {}
@@ -224,9 +291,6 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
     week_periods = {}
     month_periods = {}
     global_cwds = {}
-    global_sessions = {}
-    global_project_model = {}
-    global_model_session = {}
     replay_heaps = defaultdict(list)
     session_counts = defaultdict(int)
     session_totals = defaultdict(int)
@@ -266,7 +330,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             continue
 
         total = record.get("total", 0) or 0
-        model = record.get("model") or "unknown"
+        model = _canonical_model(record, model_registry)
         source = record.get("source") or "unknown"
         raw_cwd = record.get("cwd")
         raw_sid = record.get("session")
@@ -360,9 +424,6 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             hour_buckets[hour_key] = hour_buckets.get(hour_key, 0) + total
 
         _entity_add(global_cwds, cwd, model, total)
-        _entity_add(global_sessions, sid, model, total)
-        _flow_add(global_project_model, cwd, model, total)
-        _flow_add(global_model_session, model, sid, total)
 
         if cwd:
             cwd_totals[cwd] += total
@@ -391,15 +452,26 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
                 heapq.heapreplace(heap, replay_item)
         record_counter += 1
 
-    models = []
-    for model in report_term.PRIORITY_MODELS:
-        if model in model_totals:
-            models.append(model)
-    for model, _ in sorted(model_totals.items(), key=lambda item: item[1], reverse=True):
-        if model not in models:
-            models.append(model)
+    models = [
+        model
+        for model, _ in sorted(
+            model_totals.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
     pretty = {model: config.pretty_model(model) for model in models}
-    colors = {model: PALETTE[i % len(PALETTE)] for i, model in enumerate(models)}
+    if OTHER_MODEL in pretty:
+        pretty[OTHER_MODEL] = "Other"
+    colors = {
+        "light": {
+            model: LIGHT_PALETTE[model_slots[model]]
+            for model in models
+        },
+        "dark": {
+            model: DARK_PALETTE[model_slots[model]]
+            for model in models
+        },
+    }
 
     if anonymize:
         def title_for_session(sid):
@@ -489,9 +561,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "day_details": day_details,
         "block": {"total": sum(item["total"] for item in buckets), "buckets": buckets},
         "top_cwds": _top_cwds(global_cwds),
-        "top_sessions": _top_sessions(global_sessions, title_for_session),
         "session_series": session_series,
-        "flow": _flow_payload(global_project_model, global_model_session, title_for_session),
         "n_cwds": len(global_cwds),
         "n_sessions": len(session_counts),
         "max_turns": max(session_counts.values(), default=0),

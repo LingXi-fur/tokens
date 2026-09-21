@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="tokens：本地统计 Claude Code、Gemini 与 Codex token 用量的零依赖 Python CLI。">
+  <meta name="description" content="tokens：本地分析 Claude Code、Gemini CLI 与 Codex Token 用量的 Python CLI。">
   <title>tokens 文档｜本地 Token 用量分析</title>
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../assets/site.css">
@@ -21,10 +21,10 @@
 
 <div class="page-shell no-sidebar"><main id="main">
   <section class="hero">
-    <div class="eyebrow">LOCAL-FIRST · ZERO DEPENDENCIES · LIVE OR OFFLINE</div>
+    <div class="eyebrow">LOCAL-FIRST · NO TELEMETRY · LIVE OR OFFLINE</div>
     <h1>看清每一次<br>Token 流动。</h1>
-    <p class="lead">tokens 是一个纯 Python stdlib 的本地 CLI，读取 Claude Code、Gemini CLI 与 Codex 日志，按日、周、月聚合用量，并输出终端表格、本机实时 Dashboard 或单文件离线快照。</p>
-    <div class="hero-actions"><a class="button primary" href="getting-started.html">5 分钟开始</a><a class="button" href="dashboard.html">探索 Dashboard</a><a class="button" href="cli.html">查看命令</a></div>
+    <p class="lead">tokens 在本机读取 Claude Code、Gemini CLI 与 Codex 日志，按日、周、月聚合用量，并输出终端表格、仅限回环地址的实时 Dashboard 或单文件离线快照。核心管线使用 Python 标准库；Windows 额外需要 <code>tzdata</code>。</p>
+    <div class="hero-actions"><a class="button primary" href="getting-started.html">克隆并运行</a><a class="button" href="dashboard.html">探索 Dashboard</a><a class="button" href="cli.html">查看命令</a></div>
     <p class="hero-note">Python ≥ 3.9 · 默认仅统计 Claude · 无 CDN · 不上传数据</p>
   </section>
 
@@ -42,7 +42,7 @@
     <article class="card"><div class="card-label">03 · Report</div><div class="card-value">四种输出</div><p class="card-meta">终端表格、单期静态 HTML、本机实时 Dashboard 与自包含离线快照。</p></article>
   </div></section>
 
-  <section class="section"><h2>为本地开发工作流而生</h2><div class="grid"><article class="card"><h3>零构建，零运行时依赖</h3><p>项目与本站均不依赖前端框架、CDN 或第三方 JavaScript。克隆后即可运行；文档也可直接双击打开。</p></article><article class="card"><h3>报告离线可分发</h3><p>生成的 HTML 数据与渲染逻辑自包含，适合个人归档。但 Dashboard 可能包含项目路径、会话标识或摘要，分享前必须检查。</p></article><article class="card"><h3>默认最小数据面</h3><p>默认来源为 Claude；只有显式传入 <code>--source gemini</code> 或 <code>--source codex</code> 才会加入其他来源。</p></article><article class="card"><h3>不仅是柱状图</h3><p>Dashboard 提供时光探针、作息织锦、模型筛选、导出、Token 流光图、生物、星云与成就图鉴等本地交互。</p></article></div></section>
+  <section class="section"><h2>为本地开发工作流而生</h2><div class="grid"><article class="card"><h3>无需前端构建与托管服务</h3><p>项目与本站均不依赖前端框架、CDN 或托管后端。克隆后即可运行；核心解析与报告管线使用 Python 标准库，Windows 额外需要 <code>tzdata</code>。</p></article><article class="card"><h3>报告离线可分发</h3><p>生成的 HTML 数据与渲染逻辑自包含，适合个人归档。但 Dashboard 可能包含项目路径、会话标识或摘要，分享前必须检查。</p></article><article class="card"><h3>默认最小数据面</h3><p>默认来源为 Claude；只有显式传入 <code>--source gemini</code> 或 <code>--source codex</code> 才会加入其他来源。</p></article><article class="card"><h3>需要时再深入</h3><p>从趋势与模型构成开始，再查看 Data Trail、项目与会话、Context 复用、作息织锦、成就或 Token 年鉴。</p></article></div></section>
 
   <section class="section"><div class="callout warning"><strong>隐私边界</strong>工具不会上传数据，不等于生成文件可以公开分享。交互式 Dashboard 会根据本地记录嵌入聚合数据，并可能带有 cwd、会话标识及本地摘要。请阅读<a href="data-and-privacy.html">数据与隐私</a>后再分发报告。</div></section>
 </main></div>

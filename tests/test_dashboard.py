@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -33,7 +35,7 @@ class DashboardTests(unittest.TestCase):
                 "cache_write": 0,
                 "total": 100,
                 "session": "session-a",
-                "cwd": "/tmp/project-a",
+                "cwd": "/synthetic/project-a",
             },
             {
                 "source": "claude",
@@ -46,15 +48,15 @@ class DashboardTests(unittest.TestCase):
                 "cache_write": 0,
                 "total": 200,
                 "session": "session-b",
-                "cwd": "/tmp/project-b",
+                "cwd": "/synthetic/project-b",
             },
         ]
 
     def sensitive_records(self):
         records = self.synthetic_records()
         records[0].update({
-            "session": "raw-session-7b0fd86f",
-            "cwd": "/synthetic-user-root/alice/Customer-Zephyr",
+            "session": "synthetic-session-sensitive",
+            "cwd": "/synthetic/private-project",
         })
         records.append({
             "source": "claude",
@@ -66,8 +68,8 @@ class DashboardTests(unittest.TestCase):
             "cache_read": 10,
             "cache_write": 0,
             "total": 50,
-            "session": "raw-session-7b0fd86f",
-            "cwd": "/synthetic-user-root/alice/Customer-Zephyr",
+            "session": "synthetic-session-sensitive",
+            "cwd": "/synthetic/private-project",
         })
         return records
 
@@ -102,7 +104,7 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("tk-lang", script[view_start:view_end])
         self.assertNotIn("Project-", script[script.index("function applyLanguage("):script.index("const state =")])
         self.assertNotIn("Session-", script[script.index("function applyLanguage("):script.index("const state =")])
-        self.assertIn("Cumulative growth stage", script)
+        self.assertNotIn("Cumulative growth stage", script)
         self.assertIn("cumulative Tokens", script)
         self.assertIn("Static offline snapshot", script)
         self.assertIn("Token Usage", template)
@@ -160,9 +162,9 @@ class DashboardTests(unittest.TestCase):
         )
         serialized = json.dumps(payload, ensure_ascii=False)
         for sensitive in (
-            "/synthetic-user-root/alice/Customer-Zephyr",
-            "Customer-Zephyr",
-            "raw-session-7b0fd86f",
+            "/synthetic/private-project",
+            "private-project",
+            "synthetic-session-sensitive",
             "secret sidecar summary",
             "secret first prompt",
         ):
@@ -173,18 +175,25 @@ class DashboardTests(unittest.TestCase):
         self.assertTrue(payload["anonymized"])
 
         project_ids = {item[2] for item in payload["top_cwds"]}
-        project_flow_ids = {item[1] for item in payload["flow"]["project_model"]}
+        project_flow_ids = {
+            item[1]
+            for day in payload["day_details"].values()
+            for item in day["flow"]["project_model"]
+        }
         self.assertEqual(2, len(project_ids))
         self.assertEqual(project_ids, project_flow_ids)
         self.assertTrue(all(item.startswith("Project-") for item in project_ids))
 
-        session_ids = {item[2] for item in payload["top_sessions"]}
-        session_flow_ids = {item[2] for item in payload["flow"]["model_session"]}
-        self.assertEqual(session_ids, session_flow_ids)
+        session_ids = {
+            item[2]
+            for day in payload["day_details"].values()
+            for item in day["flow"]["model_session"]
+        }
         self.assertEqual(session_ids, set(payload["session_series"]))
         self.assertTrue(all(item.startswith("Session-") for item in session_ids))
-        for item in payload["top_sessions"]:
-            self.assertEqual(item[0], item[2])
+        for day in payload["day_details"].values():
+            for item in day["top_sessions"]:
+                self.assertEqual(item[0], item[2])
 
         day = payload["day_details"]["2026-07-01"]
         self.assertIn(next(item for item in project_ids if item in {row[2] for row in day["top_cwds"]}), project_ids)
@@ -218,9 +227,10 @@ class DashboardTests(unittest.TestCase):
         }]
         payload = report_dashboard.build_payload(records, anonymize=True)
         self.assertEqual([], payload["top_cwds"])
-        self.assertEqual([], payload["top_sessions"])
         self.assertEqual({}, payload["session_series"])
-        self.assertEqual({"project_model": [], "model_session": []}, payload["flow"])
+        day = payload["day_details"]["2026-07-01"]
+        self.assertEqual([], day["top_sessions"])
+        self.assertEqual({"project_model": [], "model_session": []}, day["flow"])
 
     def test_anonymized_builder_facade_matches_with_fixed_key(self):
         records = self.synthetic_records()
@@ -256,8 +266,8 @@ class DashboardTests(unittest.TestCase):
         )
         for key in (
             "generated", "snapshot", "source", "range", "models", "colors", "hourly",
-            "day_details", "top_cwds", "top_sessions", "session_series",
-            "flow", "reuse", "day", "week", "month", "provenance", "achievement_stats",
+            "day_details", "top_cwds", "session_series",
+            "reuse", "day", "week", "month", "provenance", "achievement_stats",
             "achievement_daily",
         ):
             self.assertIn(key, payload)
@@ -268,25 +278,35 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("model-b", reuse[1][1])
         self.assertEqual(300, sum(row["total"] for row in payload["day"]))
         self.assertEqual(2, len(payload["top_cwds"]))
-        self.assertEqual(2, len(payload["top_sessions"]))
         self.assertEqual({"model-a": 100}, payload["top_cwds"][1][3])
-        self.assertEqual({"model-b": 200}, payload["top_sessions"][0][3])
+        day_one = payload["day_details"]["2026-07-01"]
+        day_two = payload["day_details"]["2026-07-02"]
+        self.assertEqual({"model-a": 100}, day_one["top_sessions"][0][3])
+        self.assertEqual({"model-b": 200}, day_two["top_sessions"][0][3])
         self.assertEqual({"session-a", "session-b"}, set(payload["session_series"]))
         self.assertEqual(
             {
-                ("/tmp/project-a", "model-a", 100),
-                ("/tmp/project-b", "model-b", 200),
+                ("/synthetic/project-a", "model-a", 100),
+                ("/synthetic/project-b", "model-b", 200),
             },
-            {(row[1], row[2], row[3]) for row in payload["flow"]["project_model"]},
+            {
+                (row[1], row[2], row[3])
+                for day in payload["day_details"].values()
+                for row in day["flow"]["project_model"]
+            },
         )
         self.assertEqual(
             {
                 ("model-a", "session-a", 100),
                 ("model-b", "session-b", 200),
             },
-            {(row[0], row[2], row[3]) for row in payload["flow"]["model_session"]},
+            {
+                (row[0], row[2], row[3])
+                for day in payload["day_details"].values()
+                for row in day["flow"]["model_session"]
+            },
         )
-        self.assertIn("flow", payload["day_details"]["2026-07-01"])
+        self.assertIn("flow", day_one)
         self.assertEqual(
             [
                 {
@@ -344,8 +364,8 @@ class DashboardTests(unittest.TestCase):
         self.assertNotEqual(first["snapshot"]["id"], turns_payload["snapshot"]["id"])
 
         changed_entities = [dict(item) for item in records]
-        changed_entities[0]["cwd"] = "/synthetic-user-root/alice/Customer-Nova"
-        changed_entities[0]["session"] = "raw-session-different"
+        changed_entities[0]["cwd"] = "/synthetic/changed-project"
+        changed_entities[0]["session"] = "synthetic-session-changed"
         entities_payload = report_dashboard.build_payload(
             changed_entities,
             sources=["claude"],
@@ -357,8 +377,8 @@ class DashboardTests(unittest.TestCase):
 
         snapshot = json.dumps(first["snapshot"], ensure_ascii=False)
         for sensitive in (
-            "/synthetic-user-root/alice/Customer-Zephyr",
-            "raw-session-7b0fd86f",
+            "/synthetic/private-project",
+            "synthetic-session-sensitive",
             "Project-",
             "Session-",
         ):
@@ -377,7 +397,11 @@ class DashboardTests(unittest.TestCase):
                 "total": 1000 - i, "session": f"session-{i}", "cwd": "/tmp/main",
             })
         payload = report_dashboard.build_payload(records)
-        flow_ids = {item[2] for item in payload["flow"]["model_session"]}
+        flow_ids = {
+            item[2]
+            for day in payload["day_details"].values()
+            for item in day["flow"]["model_session"]
+        }
         self.assertEqual(flow_ids, set(payload["session_series"]))
         self.assertEqual([992], payload["session_series"]["session-8"])
 
@@ -411,6 +435,91 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("id=compare-btn type=button aria-pressed=false", template)
         self.assertIn("compare.setAttribute('aria-pressed',String(state.compare))", template)
 
+    def test_flow_renderer_does_not_shadow_shared_sum_helper(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("function renderFlow()")
+        end = script.index("\nfunction ", start + 1)
+        render_flow = script[start:end]
+        self.assertEqual(1, script.count("const sumBy="))
+        self.assertIn("selectedTotal=sumBy(selectedRows(),'total')", render_flow)
+        self.assertIn("const groupSum=", render_flow)
+        self.assertNotIn("const sumBy=", render_flow)
+        for call in ("groupSum(pm,2,3)", "groupSum(ms,0,3)", "groupSum(modelPM,1,3)", "groupSum(modelMS,2,3)"):
+            self.assertIn(call, render_flow)
+
+    def test_lazy_renderers_fail_visibly_and_can_retry(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        template = (ASSETS / "template.html").read_text(encoding="utf-8")
+        start = script.index("function renderLazy(")
+        end = script.index("\nfunction refreshThemeVisuals", start)
+        render_lazy = script[start:end]
+
+        self.assertIn("try{", render_lazy)
+        self.assertIn("catch(error){", render_lazy)
+        self.assertIn("showLazyError(card,name)", render_lazy)
+        self.assertIn("data-lazy-retry", script)
+        self.assertIn("const ok=renderLazy(name,true)", script)
+        self.assertIn("target.focus({preventScroll:true})", script)
+        self.assertIn("requestAnimationFrame(()=>", script)
+        self.assertIn("lazyState[name]?.status==='ready'", script)
+        self.assertIn("lazyState[name]?.status==='error'", script)
+        self.assertIn(".lazy-error-state [data-lazy-retry]", script)
+        self.assertIn("?.focus({preventScroll:true})", script)
+        self.assertIn("dirty:false,rendered:true,error:false,status:'ready'", render_lazy)
+        self.assertIn("dirty:true,rendered:false,error:true,status:'error'", render_lazy)
+        self.assertLess(
+            render_lazy.index("LAZY_RENDERERS[name]()"),
+            render_lazy.index("dirty:false,rendered:true"),
+        )
+        self.assertNotIn("error.message", render_lazy)
+        self.assertNotIn("error.stack", render_lazy)
+        self.assertIn("function ensureLazyPlaceholder(card)", script)
+        self.assertGreaterEqual(script.count("ensureLazyPlaceholder(card)"), 3)
+        self.assertIn("'Loads when scrolled into view':'进入视野后加载'", script)
+        self.assertIn(".lazy-placeholder{", css)
+        self.assertIn(".lazy-pending .lazy-placeholder{display:grid}", css)
+        self.assertNotIn('.lazy-pending::after{content:"进入视野后加载"', css)
+        self.assertIn(".lazy-error{", css)
+        self.assertIn(".lazy-error-state{", css)
+        self.assertRegex(css, r"\.flow-link\{[^}]*opacity:\.48")
+
+    def test_flow_region_and_full_titles_are_accessible_and_localized(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        template = (ASSETS / "template.html").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'class=flow-shell style=margin-top:14px tabindex=0 role=region '
+            'aria-label="Token 流光图，可横向滚动"',
+            template,
+        )
+        self.assertIn(".flow-shell:focus{outline:2px solid var(--accent-2)", css)
+        self.assertIn("<title>'+esc(label)+' · 悬停 Peek · 点击 Pin 信号</title>", script)
+        self.assertIn("'0 条流光链路':'0 flow links'", script)
+        self.assertIn(
+            "'Token 流光图，可横向滚动':'Token Flow; horizontally scrollable'",
+            script,
+        )
+        self.assertIn(
+            "[/^(.+) · 悬停 Peek · 点击 Pin 信号$/,(_,label)=>"
+            "`${label} · Hover to Peek · Click to Pin`]",
+            script,
+        )
+        self.assertNotIn("[' Token',' Tokens']", script)
+
+    def test_command_palette_renders_untrusted_model_names_as_text(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("function renderPalette(q)")
+        end = script.index("\nfunction runPalette", start)
+        render_palette = script[start:end]
+
+        self.assertIn("ul.replaceChildren()", render_palette)
+        self.assertIn("document.createTextNode(a.t)", render_palette)
+        self.assertIn("icon.textContent=a.ic", render_palette)
+        self.assertIn("key.textContent=a.k", render_palette)
+        self.assertNotIn("innerHTML", render_palette)
+
     def test_module_preferences_migrate_city_and_orbit_to_flow(self):
         template = report_dashboard._TEMPLATE
         self.assertIn("flow:true", template)
@@ -434,6 +543,8 @@ class DashboardTests(unittest.TestCase):
                     sources=["claude"],
                 ))
             html = path.read_text(encoding="utf-8")
+            if os.name != "nt":
+                self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
         self.assertNotIn("__DATA__", html)
         self.assertNotIn("__LIVE__", html)
         self.assertIn("const WIRE = {", html)
@@ -448,7 +559,6 @@ class DashboardTests(unittest.TestCase):
             "flow-panel", "flow-stats", "flow-save", "status-pulse", "view-capsule",
             "view-pop", "view-copy", "view-reset", "help-modal", "help-close",
             "share-modal", "share-close", "ach-modal", "ach-title", "ach-x",
-            "discovery-card", "discovery-pos", "discovery-pin",
             "trail-open", "data-trail", "trail-title", "trail-back",
             "trail-close", "trail-steps", "trail-body", "trail-status",
         ):
@@ -468,9 +578,9 @@ class DashboardTests(unittest.TestCase):
             html = path.read_text(encoding="utf-8")
         self.assertEqual("dashboard-anonymized.html", path.name)
         for sensitive in (
-            "/synthetic-user-root/alice/Customer-Zephyr",
-            "Customer-Zephyr",
-            "raw-session-7b0fd86f",
+            "/synthetic/private-project",
+            "private-project",
+            "synthetic-session-sensitive",
         ):
             self.assertNotIn(sensitive, html)
         self.assertIn("脱敏导出（标识已替换）", html)
@@ -483,8 +593,8 @@ class DashboardTests(unittest.TestCase):
         decoded = dashboard_wire.decode_payload(wire)
         self.assertEqual(payload, decoded)
         serialized = json.dumps(wire, ensure_ascii=False)
-        self.assertNotIn("Customer-Zephyr", serialized)
-        self.assertNotIn("raw-session-7b0fd86f", serialized)
+        self.assertNotIn("private-project", serialized)
+        self.assertNotIn("synthetic-session-sensitive", serialized)
 
     def test_view_links_help_and_flow_export_are_self_contained(self):
         template = report_dashboard._TEMPLATE
@@ -518,11 +628,9 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("dataSignalAttrs('session',it[2]||it[0],it[0],total,'top')", template)
         self.assertIn("if(el.matches('select,input,textarea,option'))return", template)
         self.assertIn("document.getElementById('replay-ecg').addEventListener('pointerdown'", template)
-        self.assertIn("const days=DATA.day||[], total=days.reduce((a,d)=>a+(d.total||0),0), calls=days.reduce", template)
+        self.assertIn("const days=DATA.day||[],total=sumBy(days,'total'),calls=sumBy(days,'calls')", template)
         self.assertIn("累计占比", template)
         self.assertIn("横轴为轮次，不代表真实耗时", template)
-        self.assertIn("class=rscrub id=race-scrub type=range", template)
-        self.assertIn("document.getElementById('race-scrub').addEventListener('input'", template)
         self.assertIn('class="bar-focus"', template)
         self.assertIn(".bar-hit{fill:transparent;pointer-events:all}", template)
         self.assertIn("signalState.peek=null;signalState.pinnedSignal=null;signalState.compareHeld=false;previousModels=null;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();renderFilters();renderDataViews();announceViewChange('已恢复月度全景'", template)
@@ -596,6 +704,26 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("signalState.pinnedSignal", template)
         self.assertNotIn("p.set('scrub'", template)
         self.assertNotIn("localStorage.setItem('scrub", template)
+
+    def test_model_sort_helpers_preserve_tie_contracts(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("const sortedModels=")
+        end = script.index("\n", script.index("const topModelOf=", start))
+        helpers = script[start:end]
+        node_script = helpers + r'''
+if(topModelOf({})!==null)throw new Error('empty model mix must have no leader');
+const tied={zeta:5,alpha:5,beta:2};
+const stable=sortedModels(tied).map(([model])=>model).join(',');
+if(stable!=='zeta,alpha,beta')throw new Error(`default tie order changed: ${stable}`);
+const named=sortedModels(tied,true).map(([model])=>model).join(',');
+if(named!=='alpha,zeta,beta')throw new Error(`named tie order changed: ${named}`);
+if(topModelOf(tied)?.[0]!=='zeta')throw new Error('default leader changed');
+if(topModelOf(tied,true)?.[0]!=='alpha')throw new Error('named leader changed');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_trend_period_index_helper_clamps_edges(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
@@ -736,7 +864,7 @@ if(refreshedReplayState(closed,{session_series:{}})!==closed)throw new Error('cl
             "回看这一天",
         ):
             self.assertIn(marker, template)
-        self.assertIn("['project','reuse','flow','modes','dna']", template)
+        self.assertIn("['project','reuse','flow','modes']", template)
         self.assertNotIn("event.key==='Enter'||event.key===' '){event.preventDefault();focusMomentDay", template)
         self.assertNotIn("localStorage.setItem('tk-modes", template)
         self.assertNotIn("p.set('mode'", template)
@@ -746,7 +874,9 @@ if(refreshedReplayState(closed,{session_series:{}})!==closed)throw new Error('cl
         start = script.index("const WORK_MODE_RULES=")
         end = script.index("let workModeCursor=", start)
         helpers = script[start:end]
-        node_script = "const fmt=n=>String(n);\n" + helpers + r'''
+        agg_start = script.index("const sumList=")
+        agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
+        node_script = script[agg_start:agg_end] + "\nconst fmt=n=>String(n);\n" + helpers + r'''
 const hours=(pairs)=>{const out=Array(24).fill(0);for(const [hour,value] of pairs)out[hour]=value;return out;};
 const project=(id,models)=>[id,0,id,models];
 const DATA={
@@ -788,147 +918,6 @@ if(focused.rows.length!==1||focused.rows[0].day!=='2026-07-03')throw new Error('
 const serialized=JSON.stringify(all);
 for(const secret of ['private-low','private-explore','private-deep','private-cruise','private-sprint','private-priority','private-filter'])if(serialized.includes(secret))throw new Error('entity identifier leaked: '+secret);
 if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new Error('classification evidence missing');
-'''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(0, result.returncode, result.stderr)
-
-    def test_furry_companion_structure_privacy_and_accessibility_contracts(self):
-        template = report_dashboard._TEMPLATE
-        for marker in (
-            "id=section-creature",
-            "FURRY TOKEN COMPANION · LOCAL SVG",
-            "id=creature-species",
-            "value=wolf",
-            "value=fox",
-            "value=cat",
-            "value=rabbit",
-            "value=dragon",
-            "id=creature-primary type=color",
-            "id=creature-secondary type=color",
-            "id=creature-accent type=color",
-            "role=group aria-label=\"伙伴配色\"",
-            "id=creature-file type=file",
-            'accept="image/png,image/jpeg,image/webp"',
-            "id=creature-upload-status role=status aria-live=polite",
-            "id=creature-reference-image alt=",
-            "const CREATURE_PREFS_KEY='tk-creature-v1'",
-            "原创日系 Furry 半身角色，由本地 Token 聚合与角色设定共同塑形。",
-            "累计成长阶段",
-            "累计 Token",
-            "function normalizeCreaturePrefs(",
-            "function creatureMetrics(",
-            "function defaultCreatureSpecies(",
-            "function creatureSpeciesParts(",
-            "creature-bangs",
-            "creature-cheek-fur",
-            "creature-muzzle",
-            "creature-chest-fur",
-            "creature-paw",
-            "creature-charm",
-            "function creaturePaletteFromPixels(",
-            "function applyCreatureReference(",
-            "file.size>5*1024*1024",
-            "image.naturalWidth>12000",
-            "URL.revokeObjectURL(creatureReferenceURL)",
-            "furry-token-companion.svg",
-        ):
-            self.assertIn(marker, template)
-        save_start = template.index(
-            "document.getElementById('creature-save').addEventListener"
-        )
-        save_end = template.index("/* ---- 每模型迷你趋势", save_start)
-        save_code = template[save_start:save_end]
-        self.assertNotIn("creature-reference", save_code)
-        self.assertNotIn("data:image", save_code)
-        self.assertNotIn("<image", save_code)
-        self.assertNotIn("creatureReferenceURL", save_code)
-        storage_start = template.index("function saveCreaturePrefs(")
-        storage_end = template.index("function creatureMetrics(", storage_start)
-        storage_code = template[storage_start:storage_end]
-        self.assertNotIn("file", storage_code.lower())
-        self.assertNotIn("image", storage_code.lower())
-        self.assertNotIn("session", storage_code.lower())
-        self.assertNotIn("cwd", storage_code.lower())
-        self.assertNotIn("p.set('creature", template)
-        self.assertIn(
-            "creatureDataPalette(metrics,species)",
-            template,
-        )
-        self.assertIn(
-            "addEventListener('change',updateCreatureSpecies)",
-            template,
-        )
-        self.assertIn(
-            "addEventListener('input',updateCreatureColors)",
-            template,
-        )
-        species_handler_start = template.index(
-            "function updateCreatureSpecies("
-        )
-        species_handler_end = template.index(
-            "function clearCreatureReference(", species_handler_start
-        )
-        species_handler = template[species_handler_start:species_handler_end]
-        self.assertNotIn("currentCreaturePrefs()", species_handler)
-        self.assertIn("prefs.species=", species_handler)
-
-    def test_furry_companion_helpers_validate_preferences_and_palette(self):
-        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
-
-        def extract_function(name):
-            start = script.index(f"function {name}(")
-            brace = script.index("{", start)
-            depth = 0
-            for index in range(brace, len(script)):
-                if script[index] == "{":
-                    depth += 1
-                elif script[index] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        return script[start:index + 1]
-            self.fail(name)
-
-        constants_start = script.index("const CREATURE_PREFS_KEY=")
-        constants_end = script.index("let creatureReferenceURL=", constants_start)
-        helpers = script[constants_start:constants_end] + "\n" + "\n".join(
-            extract_function(name) for name in (
-                "validCreatureColor",
-                "normalizeCreaturePrefs",
-                "creatureMetrics",
-                "defaultCreatureSpecies",
-                "hslCreatureColor",
-                "creatureTone",
-                "creatureDataPalette",
-                "creatureSpeciesParts",
-                "creaturePaletteFromPixels",
-            )
-        )
-        node_script = helpers + r'''
-const clean=normalizeCreaturePrefs({species:'fox',primary:'#AABBCC',secondary:'#102030',accent:'#fedcba'});
-if(clean.species!=='fox'||clean.primary!=='#AABBCC'||clean.accent!=='#fedcba')throw new Error('valid prefs');
-const invalid=normalizeCreaturePrefs({species:'human',primary:'red',secondary:'#12345g',accent:'javascript:alert(1)',filename:'secret.png',cwd:'/private'});
-if(invalid.species!=='auto'||invalid.primary!==null||invalid.secondary!==null||invalid.accent!==null)throw new Error('invalid prefs');
-if(JSON.stringify(invalid).includes('secret')||JSON.stringify(invalid).includes('/private'))throw new Error('extra fields leaked');
-const base={total:123456,models:3,projects:7,night:.4,cache:.2};
-const species=defaultCreatureSpecies(base);
-if(!['wolf','fox','cat','rabbit','dragon'].includes(species)||defaultCreatureSpecies(base)!==species)throw new Error('species mapping');
-const metrics=creatureMetrics({day:[{total:1000},{total:2000},{total:0}],hourly:Array(24).fill(100),cache_read:600,models:['a','b'],n_cwds:4});
-if(metrics.total!==3000||metrics.models!==2||metrics.projects!==4||metrics.streak!==2||Math.abs(metrics.cache-.2)>.0001)throw new Error('metrics');
-const palettes=['wolf','fox','cat','rabbit','dragon'].map(name=>creatureDataPalette(base,name));
-if(!palettes.flatMap(Object.values).every(validCreatureColor))throw new Error('data palette');
-if(new Set(palettes.map(value=>JSON.stringify(value))).size!==5)throw new Error('species palettes');
-const pixels=new Uint8ClampedArray([
-  220,40,60,255,220,40,60,255,35,120,210,255,35,120,210,255,80,210,120,255,
-  0,0,0,255,255,255,255,255,200,100,50,0
-]);
-const extracted=creaturePaletteFromPixels(pixels);if(extracted.length!==3||!extracted.every(validCreatureColor))throw new Error('palette extraction');
-const mono=creaturePaletteFromPixels(new Uint8ClampedArray([80,120,160,255,80,120,160,255]));if(mono.length!==3||new Set(mono).size!==3)throw new Error('mono fallback');
-const empty=creaturePaletteFromPixels(new Uint8ClampedArray([0,0,0,0,255,255,255,255]));if(empty.length!==0)throw new Error('empty palette');
 '''
         result = subprocess.run(
             ["node", "-e", node_script],
@@ -1086,7 +1075,9 @@ if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical
             "selectedDayTotal",
             "periodDelta",
         ))
-        node_script = helpers + r'''
+        agg_start = script.index("const sumList=")
+        agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
+        node_script = script[agg_start:agg_end] + "\n" + helpers + r'''
 let DATA, state;
 function detail(total){return {hourly_models:{a:[total,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}};}
 state={gran:'month',models:new Set(['a'])};
@@ -1201,7 +1192,6 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
             "data-lazy=almanac",
             "id=section-almanac",
             "id=season-rail role=listbox",
-            "id=record-sky",
             "id=almanac-modal",
             "function deriveSeasons(rows,range={})",
             "function derivePersonalRecords(rows)",
@@ -1212,13 +1202,22 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
             "不保存 cwd、session、标题或逐轮 Token",
             "if(!confirm('只清除 Token 年鉴的本地跨快照历史？",
             ".token-almanac",
-            ":root[data-motion=low] .token-almanac.almanac-awake",
         ):
             self.assertIn(marker, template)
         self.assertIn("almanac:renderAlmanac", template)
         self.assertIn("almanac:true", template)
         self.assertIn("else if(modal.id==='almanac-modal')closeAlmanacCapsule()", template)
         self.assertNotIn("setInterval(()=>renderCapsuleStory", template)
+        for removed in (
+            "id=discovery-card",
+            "id=clock",
+            "id=dna",
+            "id=record-sky",
+            "id=mix-trend",
+            "tk-discovery",
+            "Furry Token 伙伴",
+        ):
+            self.assertNotIn(removed, template)
 
     def test_token_almanac_helpers_cover_seasons_records_and_history(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
@@ -1253,7 +1252,9 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
             "almanacScopeKey", "readAlmanacStore", "summarizeAlmanacSnapshot",
             "compareAlmanacRecords", "writeAlmanacObservation",
         ))
-        node_script = r'''
+        agg_start = script.index("const sumList=")
+        agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
+        node_script = script[agg_start:agg_end] + "\n" + helpers + r'''
 const DATA={anonymized:false,generated:'2026-07-28 12:00',source:['claude'],range:{since:null,until:null},snapshot:{id:'snap-a',metric_schema:1,timezone:'Asia/Shanghai',coverage:{first_day:'2026-06-29',last_day:'2026-07-21'}}};
 const ALMANAC_KEY='tk-almanac-v1',ALMANAC_VERSION=1,ALMANAC_SCOPE_LIMIT=8,ALMANAC_SNAPSHOT_LIMIT=24;
 function longestActiveStreak(rows){const active=new Set(rows.filter(r=>r.total>0).map(r=>r.period));let longest=0,current=0,previous=null;[...active].sort().forEach(period=>{const p=period.split('-').map(Number),day=new Date(p[0],p[1]-1,p[2]);if(previous){const next=new Date(previous);next.setDate(next.getDate()+1);current=next.getFullYear()===day.getFullYear()&&next.getMonth()===day.getMonth()&&next.getDate()===day.getDate()?current+1:1;}else current=1;longest=Math.max(longest,current);previous=day;});return longest;}
@@ -1342,7 +1343,7 @@ if(almanacScopeKey({...DATA,anonymized:true})===almanacScopeKey(DATA))throw new 
         self.assertEqual(1, provenance["sources"]["codex"]["records"])
         self.assertEqual(provenance, anonymized["provenance"])
         serialized = json.dumps(provenance, ensure_ascii=False)
-        self.assertNotIn("/tmp/project-a", serialized)
+        self.assertNotIn("/synthetic/project-a", serialized)
         self.assertNotIn("session-a", serialized)
 
 
@@ -1463,7 +1464,7 @@ DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw 
         self.assertIn("signalState.peek=null;signalState.pinnedSignal=null", template)
         self.assertIn("if(el.matches('select,input,textarea,option'))return", template)
         self.assertIn("clear.disabled=!pinned", template)
-        self.assertIn("dataSignalAttrs('model',m,pretty(m),total,'multiples')", template)
+        self.assertIn("dataSignalAttrs('model',m,pretty(m),v,'composition')", template)
         self.assertIn("dataSignalAttrs('model',m,pretty(m),v,'project',false)", template)
         self.assertIn("CACHE READ", template)
 
@@ -1847,7 +1848,7 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
         storage_keys = set(re.findall(r"tk-[a-z0-9-]+", report_dashboard._TEMPLATE))
         storage_keys.discard("tk-motion-change")
         self.assertEqual(
-            {"tk-theme", "tk-motion", "tk-mods", "tk-discovery", "tk-achievements-v2", "tk-almanac-v1", "tk-creature-v1", "tk-lang"},
+            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang"},
             storage_keys,
         )
         self.assertNotIn("localStorage.setItem('tk-trail", script)
@@ -1872,8 +1873,8 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
         self.assertIn("Project-", html)
         self.assertIn("Session-", html)
         for sensitive in (
-            "/synthetic-user-root/alice/Customer-Zephyr",
-            "Customer-Zephyr",
-            "raw-session-7b0fd86f",
+            "/synthetic/private-project",
+            "private-project",
+            "synthetic-session-sensitive",
         ):
             self.assertNotIn(sensitive, html)
