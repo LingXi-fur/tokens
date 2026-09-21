@@ -85,6 +85,42 @@ class DashboardRuntimeTests(unittest.TestCase):
         )
         cls._path = Path(cls._tmp.name) / "synthetic-dashboard.html"
         cls._path.write_text(html, encoding="utf-8")
+        cls._malicious_path = Path(cls._tmp.name) / "synthetic-dashboard-malicious-model.html"
+        malicious_records = records + [{
+            "source": "claude",
+            "ts": "2026-07-02T14:00:00+08:00",
+            "date": "2026-07-02",
+            "model": "<img src=x onerror=window.__paletteXss=1>",
+            "input": 30,
+            "output": 10,
+            "cache_read": 10,
+            "cache_write": 0,
+            "total": 50,
+            "session": "synthetic-session-malicious-model",
+            "cwd": "/synthetic/security-fixture",
+        }]
+        with mock.patch(
+            "tokens_cli.dashboard_payload.readers.build_session_index",
+            return_value={},
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title",
+            return_value="",
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.load_session_summaries",
+            return_value={},
+        ):
+            malicious_payload = report_dashboard.build_payload(
+                malicious_records,
+                since="2026-07-01",
+                until="2026-07-02",
+                sources=["claude"],
+            )
+        cls._malicious_path.write_text(
+            report_dashboard.render_dashboard(
+                dashboard_wire.encode_payload(malicious_payload)
+            ),
+            encoding="utf-8",
+        )
         cls._playwright = sync_playwright().start()
         try:
             cls._browser = cls._playwright.chromium.launch(headless=True)
@@ -106,6 +142,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         color_scheme="light",
         reduced_motion="no-preference",
         freeze_lazy=False,
+        path=None,
     ):
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 820},
@@ -132,7 +169,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             if message.type == "error"
             else None,
         )
-        page.goto(self._path.as_uri(), wait_until="load")
+        page.goto((path or self._path).as_uri(), wait_until="load")
         return context, page, page_errors, console_errors
 
     def wait_for_flow(self, page):
@@ -162,6 +199,22 @@ class DashboardRuntimeTests(unittest.TestCase):
               );
             }
         """)
+
+    def test_command_palette_treats_model_names_as_text(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._malicious_path
+        )
+        try:
+            page.evaluate("openPalette()")
+            model_name = "<img src=x onerror=window.__paletteXss=1>"
+            palette = page.locator("#palette-list")
+            self.assertIn(model_name, palette.inner_text())
+            self.assertEqual(0, palette.locator("img").count())
+            self.assertIsNone(page.evaluate("window.__paletteXss"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
 
     def test_flow_is_visible_and_preserves_full_titles(self):
         context, page, page_errors, console_errors = self.new_page()
@@ -382,11 +435,11 @@ class DashboardRuntimeTests(unittest.TestCase):
 
             page.locator("[data-lazy-retry]").focus()
             page.evaluate("document.querySelector('[data-lazy-retry]').click()")
-            self.assertTrue(page.evaluate("""
+            page.wait_for_function("""
                 document.activeElement.matches(
                   '#section-flow .lazy-error-state [data-lazy-retry]'
-                )
-            """))
+                ) && lazyState.flow.status === 'error'
+            """)
             self.assertEqual("error", page.evaluate("lazyState.flow.status"))
 
             self.restore_flow_map(page)
@@ -394,7 +447,8 @@ class DashboardRuntimeTests(unittest.TestCase):
             page.wait_for_function(
                 "!document.querySelector('#section-flow .lazy-error-state') && "
                 "document.querySelectorAll('#flow-map .flow-node').length > 0 && "
-                "lazyState.flow.status === 'ready'"
+                "lazyState.flow.status === 'ready' && "
+                "document.activeElement.matches('#section-flow h2, #section-flow h3')"
             )
             focus = page.evaluate("""
                 () => ({

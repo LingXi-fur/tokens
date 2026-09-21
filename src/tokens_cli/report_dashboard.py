@@ -10,7 +10,7 @@
 """
 import json
 import os
-import sys
+import tempfile
 
 from . import config, dashboard_payload, dashboard_wire
 from .opener import open_path
@@ -74,6 +74,13 @@ def write_dashboard(records, since=None, until=None, sources=None, anonymize=Fal
     os.makedirs(config.OUT_DIR, exist_ok=True)
     filename = "dashboard-anonymized.html" if anonymize else "dashboard.html"
     path = os.path.join(config.OUT_DIR, filename)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(html_doc)
+    fd, tmp = tempfile.mkstemp(prefix=f".{filename}.", dir=config.OUT_DIR)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(html_doc)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
     return path

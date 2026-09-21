@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -459,8 +461,11 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("data-lazy-retry", script)
         self.assertIn("const ok=renderLazy(name,true)", script)
         self.assertIn("target.focus({preventScroll:true})", script)
+        self.assertIn("requestAnimationFrame(()=>", script)
+        self.assertIn("lazyState[name]?.status==='ready'", script)
+        self.assertIn("lazyState[name]?.status==='error'", script)
         self.assertIn(".lazy-error-state [data-lazy-retry]", script)
-        self.assertIn("?.focus()", script)
+        self.assertIn("?.focus({preventScroll:true})", script)
         self.assertIn("dirty:false,rendered:true,error:false,status:'ready'", render_lazy)
         self.assertIn("dirty:true,rendered:false,error:true,status:'error'", render_lazy)
         self.assertLess(
@@ -503,6 +508,18 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertNotIn("[' Token',' Tokens']", script)
 
+    def test_command_palette_renders_untrusted_model_names_as_text(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("function renderPalette(q)")
+        end = script.index("\nfunction runPalette", start)
+        render_palette = script[start:end]
+
+        self.assertIn("ul.replaceChildren()", render_palette)
+        self.assertIn("document.createTextNode(a.t)", render_palette)
+        self.assertIn("icon.textContent=a.ic", render_palette)
+        self.assertIn("key.textContent=a.k", render_palette)
+        self.assertNotIn("innerHTML", render_palette)
+
     def test_module_preferences_migrate_city_and_orbit_to_flow(self):
         template = report_dashboard._TEMPLATE
         self.assertIn("flow:true", template)
@@ -526,6 +543,8 @@ class DashboardTests(unittest.TestCase):
                     sources=["claude"],
                 ))
             html = path.read_text(encoding="utf-8")
+            if os.name != "nt":
+                self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
         self.assertNotIn("__DATA__", html)
         self.assertNotIn("__LIVE__", html)
         self.assertIn("const WIRE = {", html)

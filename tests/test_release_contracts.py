@@ -54,6 +54,7 @@ class ReleaseContractsTests(unittest.TestCase):
             work.mkdir()
             env = os.environ.copy()
             env["HOME"] = str(home)
+            env["USERPROFILE"] = str(home)
             env["PYTHONPATH"] = str(SRC)
             env.pop("XDG_CACHE_HOME", None)
             env.pop("LOCALAPPDATA", None)

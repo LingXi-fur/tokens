@@ -853,7 +853,7 @@ function clearLazyError(card){card.classList.remove('lazy-error');card.querySele
 function showLazyError(card,name){
   clearLazyError(card);card.classList.add('lazy-error');
   const state=document.createElement('div');state.className='lazy-error-state';state.setAttribute('role','alert');state.innerHTML='<b data-i18n-key="This module is temporarily unavailable">This module is temporarily unavailable</b><span data-i18n-key="Retry loading; other modules remain available.">Retry loading; other modules remain available.</span><button class="ghostbtn" type="button" data-lazy-retry data-i18n-key="Retry">Retry</button>';
-  state.querySelector('[data-lazy-retry]').addEventListener('click',()=>{const ok=renderLazy(name,true);if(ok){const target=card.querySelector('h2,h3')||card;target.setAttribute('tabindex','-1');target.focus({preventScroll:true});}else card.querySelector('.lazy-error-state [data-lazy-retry]')?.focus();});localizeKeyedElements(state);card.appendChild(state);
+  state.querySelector('[data-lazy-retry]').addEventListener('click',()=>{const ok=renderLazy(name,true);requestAnimationFrame(()=>{if(ok&&lazyState[name]?.status==='ready'){const target=card.querySelector('h2,h3')||card;target.setAttribute('tabindex','-1');target.focus({preventScroll:true});}else if(!ok&&lazyState[name]?.status==='error')card.querySelector('.lazy-error-state [data-lazy-retry]')?.focus({preventScroll:true});});});localizeKeyedElements(state);card.appendChild(state);
 }
 function renderLazy(name,force=false){
   const card=document.querySelector('[data-lazy="'+name+'"]');if(!card||card.style.display==='none')return false;
@@ -1368,9 +1368,22 @@ let pal={items:[],i:0},paletteOpener=null;
 function openPalette(){paletteOpener=document.activeElement;renderPalette('');const scrim=document.getElementById('scrim');scrim.classList.add('open');scrim.setAttribute('aria-hidden','false');setTimeout(()=>document.getElementById('palette-q').focus(),10);}
 function closePalette(){const scrim=document.getElementById('scrim');scrim.classList.remove('open');scrim.setAttribute('aria-hidden','true');document.getElementById('palette-q').value='';document.getElementById('palette-q').removeAttribute('aria-activedescendant');const opener=paletteOpener;paletteOpener=null;if(opener&&document.contains(opener))opener.focus();}
 function renderPalette(q){
-  const ul=document.getElementById('palette-list'), base=[...cmdActions(),...dataCommands()];
-  pal.items=base.filter(a=>!q||(a.t+a.ic+a.k).toLowerCase().includes(q.toLowerCase())); pal.i=0;
-  ul.innerHTML = pal.items.length ? pal.items.map((a,i)=>'<li id="palette-opt-'+i+'" role=option aria-selected="'+(i===0?'true':'false')+'" data-i="'+i+'"><span class=ic>'+a.ic+'</span>'+a.t+(a.k?'<span class=k>'+a.k+'</span>':'')+'</li>').join('') : '<div class="empty">无匹配结果 · 试试 whoami、42、matrix、coffee</div>';
+  const ul=document.getElementById('palette-list'),base=[...cmdActions(),...dataCommands()];
+  pal.items=base.filter(a=>!q||(a.t+a.ic+a.k).toLowerCase().includes(q.toLowerCase()));pal.i=0;
+  ul.replaceChildren();
+  if(pal.items.length){
+    const fragment=document.createDocumentFragment();
+    pal.items.forEach((a,i)=>{
+      const li=document.createElement('li'),icon=document.createElement('span');
+      li.id='palette-opt-'+i;li.setAttribute('role','option');li.setAttribute('aria-selected',String(i===0));li.dataset.i=String(i);
+      icon.className='ic';icon.textContent=a.ic;li.append(icon,document.createTextNode(a.t));
+      if(a.k){const key=document.createElement('span');key.className='k';key.textContent=a.k;li.appendChild(key);}
+      fragment.appendChild(li);
+    });
+    ul.appendChild(fragment);
+  }else{
+    const empty=document.createElement('div');empty.className='empty';empty.textContent='无匹配结果 · 试试 whoami、42、matrix、coffee';ul.appendChild(empty);
+  }
   syncPal();
 }
 function runPalette(i){ const a=pal.items[i]; if(!a) return; closePalette(); setTimeout(a.run,30); }
