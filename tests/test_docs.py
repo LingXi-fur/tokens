@@ -259,6 +259,15 @@ class DocsTests(unittest.TestCase):
             self.assertIn("or cache_file.search(name)", workflow)
             self.assertNotIn('"records-v3.json"', workflow)
 
+    def test_release_workflow_does_not_publish_to_package_indexes(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("pypa/gh-action-pypi-publish", workflow)
+        self.assertNotIn("id-token: write", workflow)
+        self.assertNotIn("environment:\n      name: pypi", workflow)
+        self.assertIn("publish-github-release:\n    needs: draft-github-release", workflow)
+
     def test_live_dashboard_is_documented_as_loopback_and_offline_is_snapshot(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         chinese_readme = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")

@@ -14,7 +14,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - English-first documentation with a complete Chinese entry and offline GitHub Pages site.
 - Data Trail, Signal Lens, Exactness Key, hold-to-compare, Token Almanac, project analysis, session replay, Context Reuse River, and Token Flow.
 - Report-scoped pseudonymization with `tokens dashboard --anonymize`.
-- Cross-platform CI and tag-driven PyPI/GitHub release automation.
+- Cross-platform CI and tag-driven GitHub release automation; package-index publishing remains disabled until separately authorized and verified.
 - Release contracts for launchers, package assets, synthetic previews, exports, model sorting, and stable Dashboard colors.
 
 ### Changed
