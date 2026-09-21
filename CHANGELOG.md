@@ -21,6 +21,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Unsupported Router return expressions can no longer leak pending aliases into a later rule.
 - CSV and Markdown Dashboard exports preserve delimiters, quotes, pipes, and multiline values.
 - Manual dark mode now uses the same complete theme token set as system dark mode.
+- Lazy Dashboard visualizations no longer fail as silent blank cards; Token Flow rendering now exposes a retryable error state and recovers after module or renderer failures.
 
 ### Security
 

@@ -438,11 +438,36 @@ class DashboardTests(unittest.TestCase):
         start = script.index("function renderFlow()")
         end = script.index("\nfunction ", start + 1)
         render_flow = script[start:end]
+        self.assertEqual(1, script.count("const sumBy="))
         self.assertIn("selectedTotal=sumBy(selectedRows(),'total')", render_flow)
         self.assertIn("const groupSum=", render_flow)
         self.assertNotIn("const sumBy=", render_flow)
         for call in ("groupSum(pm,2,3)", "groupSum(ms,0,3)", "groupSum(modelPM,1,3)", "groupSum(modelMS,2,3)"):
             self.assertIn(call, render_flow)
+
+    def test_lazy_renderers_fail_visibly_and_can_retry(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        start = script.index("function renderLazy(")
+        end = script.index("\nfunction refreshThemeVisuals", start)
+        render_lazy = script[start:end]
+
+        self.assertIn("try{", render_lazy)
+        self.assertIn("catch(error){", render_lazy)
+        self.assertIn("showLazyError(card,name)", render_lazy)
+        self.assertIn("data-lazy-retry", script)
+        self.assertIn("()=>renderLazy(name,true)", script)
+        self.assertIn("dirty:false,rendered:true,error:false,status:'ready'", render_lazy)
+        self.assertIn("dirty:true,rendered:false,error:true,status:'error'", render_lazy)
+        self.assertLess(
+            render_lazy.index("LAZY_RENDERERS[name]()"),
+            render_lazy.index("dirty:false,rendered:true"),
+        )
+        self.assertNotIn("error.message", render_lazy)
+        self.assertNotIn("error.stack", render_lazy)
+        self.assertIn(".lazy-error{", css)
+        self.assertIn(".lazy-error-state{", css)
+        self.assertRegex(css, r"\.flow-link\{[^}]*opacity:\.48")
 
     def test_module_preferences_migrate_city_and_orbit_to_flow(self):
         template = report_dashboard._TEMPLATE

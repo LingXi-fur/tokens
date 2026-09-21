@@ -117,6 +117,9 @@ const I18N_KEYED_ZH = Object.freeze({
   'Exact details':'精确明细',
   'Exact values behind the trend chart and export actions':'趋势图对应的精确数值与导出入口',
   'Model mix':'模型构成',
+  'This module is temporarily unavailable':'此模块暂时无法显示',
+  'Retry loading; other modules remain available.':'可重试加载；其他模块不会受影响。',
+  'Retry':'重试',
 });
 const i18nTextSource = new WeakMap();
 const i18nAttributeSource = new WeakMap();
@@ -837,7 +840,23 @@ compareButton.addEventListener('pointerup',event=>{clearTimeout(compareHoldTimer
 
 const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,modes:renderWorkModes,almanac:renderAlmanac,badges:renderBadges};
 const lazyState={};
-function renderLazy(name,force=false){const card=document.querySelector('[data-lazy="'+name+'"]');if(!card||card.style.display==='none')return;if(!force&&!lazyState[name]?.visible){card.classList.add('lazy-pending');lazyState[name]=Object.assign({},lazyState[name],{dirty:true});return;}card.classList.remove('lazy-pending');LAZY_RENDERERS[name]();lazyState[name]=Object.assign({},lazyState[name],{dirty:false,rendered:true});}
+function clearLazyError(card){card.classList.remove('lazy-error');card.querySelector('.lazy-error-state')?.remove();}
+function showLazyError(card,name){
+  clearLazyError(card);card.classList.add('lazy-error');
+  const state=document.createElement('div');state.className='lazy-error-state';state.setAttribute('role','alert');state.innerHTML='<b data-i18n-key="This module is temporarily unavailable">This module is temporarily unavailable</b><span data-i18n-key="Retry loading; other modules remain available.">Retry loading; other modules remain available.</span><button class="ghostbtn" type="button" data-lazy-retry data-i18n-key="Retry">Retry</button>';
+  state.querySelector('[data-lazy-retry]').addEventListener('click',()=>renderLazy(name,true));localizeKeyedElements(state);card.appendChild(state);
+}
+function renderLazy(name,force=false){
+  const card=document.querySelector('[data-lazy="'+name+'"]');if(!card||card.style.display==='none')return false;
+  if(!force&&!lazyState[name]?.visible){card.classList.add('lazy-pending');card.setAttribute('aria-busy','true');lazyState[name]=Object.assign({},lazyState[name],{dirty:true,rendered:false,status:'pending'});return false;}
+  card.classList.remove('lazy-pending');card.setAttribute('aria-busy','true');clearLazyError(card);
+  try{
+    LAZY_RENDERERS[name]();
+    lazyState[name]=Object.assign({},lazyState[name],{dirty:false,rendered:true,error:false,status:'ready'});card.setAttribute('aria-busy','false');return true;
+  }catch(error){
+    lazyState[name]=Object.assign({},lazyState[name],{dirty:true,rendered:false,error:true,status:'error'});card.setAttribute('aria-busy','false');showLazyError(card,name);console.error('[tokens] lazy renderer failed:',name);return false;
+  }
+}
 function refreshThemeVisuals(){if(!themeVisualsReady||!document.getElementById('bar'))return;renderBar();renderDonut();renderFilters();renderTop();renderDataTrail();['project','flow','almanac'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible||lazyState[name].rendered)renderLazy(name,true);});applySignalLens();}
 function markLazyDirty(){['project','reuse','flow','modes'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible)renderLazy(name,true);});}
 function markStaticLazyDirty(){['almanac','badges'].forEach(name=>{if(!lazyState[name]?.rendered)lazyState[name]=Object.assign({},lazyState[name],{dirty:true});});}
