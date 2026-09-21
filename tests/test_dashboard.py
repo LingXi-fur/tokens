@@ -448,6 +448,7 @@ class DashboardTests(unittest.TestCase):
     def test_lazy_renderers_fail_visibly_and_can_retry(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        template = (ASSETS / "template.html").read_text(encoding="utf-8")
         start = script.index("function renderLazy(")
         end = script.index("\nfunction refreshThemeVisuals", start)
         render_lazy = script[start:end]
@@ -456,7 +457,10 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("catch(error){", render_lazy)
         self.assertIn("showLazyError(card,name)", render_lazy)
         self.assertIn("data-lazy-retry", script)
-        self.assertIn("()=>renderLazy(name,true)", script)
+        self.assertIn("const ok=renderLazy(name,true)", script)
+        self.assertIn("target.focus({preventScroll:true})", script)
+        self.assertIn(".lazy-error-state [data-lazy-retry]", script)
+        self.assertIn("?.focus()", script)
         self.assertIn("dirty:false,rendered:true,error:false,status:'ready'", render_lazy)
         self.assertIn("dirty:true,rendered:false,error:true,status:'error'", render_lazy)
         self.assertLess(
@@ -465,9 +469,39 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertNotIn("error.message", render_lazy)
         self.assertNotIn("error.stack", render_lazy)
+        self.assertIn("function ensureLazyPlaceholder(card)", script)
+        self.assertGreaterEqual(script.count("ensureLazyPlaceholder(card)"), 3)
+        self.assertIn("'Loads when scrolled into view':'进入视野后加载'", script)
+        self.assertIn(".lazy-placeholder{", css)
+        self.assertIn(".lazy-pending .lazy-placeholder{display:grid}", css)
+        self.assertNotIn('.lazy-pending::after{content:"进入视野后加载"', css)
         self.assertIn(".lazy-error{", css)
         self.assertIn(".lazy-error-state{", css)
         self.assertRegex(css, r"\.flow-link\{[^}]*opacity:\.48")
+
+    def test_flow_region_and_full_titles_are_accessible_and_localized(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        template = (ASSETS / "template.html").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'class=flow-shell style=margin-top:14px tabindex=0 role=region '
+            'aria-label="Token 流光图，可横向滚动"',
+            template,
+        )
+        self.assertIn(".flow-shell:focus{outline:2px solid var(--accent-2)", css)
+        self.assertIn("<title>'+esc(label)+' · 悬停 Peek · 点击 Pin 信号</title>", script)
+        self.assertIn("'0 条流光链路':'0 flow links'", script)
+        self.assertIn(
+            "'Token 流光图，可横向滚动':'Token Flow; horizontally scrollable'",
+            script,
+        )
+        self.assertIn(
+            "[/^(.+) · 悬停 Peek · 点击 Pin 信号$/,(_,label)=>"
+            "`${label} · Hover to Peek · Click to Pin`]",
+            script,
+        )
+        self.assertNotIn("[' Token',' Tokens']", script)
 
     def test_module_preferences_migrate_city_and_orbit_to_flow(self):
         template = report_dashboard._TEMPLATE

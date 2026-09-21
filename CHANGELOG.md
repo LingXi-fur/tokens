@@ -22,6 +22,9 @@ All notable changes to this project are documented here. The format follows [Kee
 - CSV and Markdown Dashboard exports preserve delimiters, quotes, pipes, and multiline values.
 - Manual dark mode now uses the same complete theme token set as system dark mode.
 - Lazy Dashboard visualizations no longer fail as silent blank cards; Token Flow rendering now exposes a retryable error state and recovers after module or renderer failures.
+- Lazy Dashboard placeholders now use bilingual DOM content instead of untranslated CSS-generated text.
+- Token Flow preserves full node names in SVG tooltips, translates empty states and region labels, and exposes its horizontally scrollable canvas as a keyboard-focusable region.
+- Lazy-render retries now restore keyboard focus to the refreshed module or the replacement retry control.
 
 ### Security
 
