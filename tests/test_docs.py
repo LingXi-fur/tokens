@@ -247,6 +247,18 @@ class DocsTests(unittest.TestCase):
                 f"{filename} tests must import the src-layout package",
             )
 
+    def test_release_workflows_reject_versioned_cache_files(self):
+        for filename in ("ci.yml", "release.yml"):
+            workflow = (
+                ROOT / ".github" / "workflows" / filename
+            ).read_text(encoding="utf-8")
+            self.assertIn(
+                'cache_file = re.compile(r"(?:^|/)records-v\\d+\\.json$")',
+                workflow,
+            )
+            self.assertIn("or cache_file.search(name)", workflow)
+            self.assertNotIn('"records-v3.json"', workflow)
+
     def test_live_dashboard_is_documented_as_loopback_and_offline_is_snapshot(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         chinese_readme = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
