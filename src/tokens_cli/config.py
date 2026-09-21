@@ -98,16 +98,6 @@ DEFAULT_SOURCES = ["claude"]
 # never substitutes a project-maintainer-specific backend.
 CCR_ROUTER_FILE = os.path.join(HOME, ".claude-code-router", "custom-router.js")
 
-MODEL_ALIASES = {
-    "glm-5.3": "GLM-5.3",
-    "glm-5.2": "GLM-5.2",
-    "glm-5.1": "GLM-5.1",
-    "glm-4.7": "GLM-4.7",
-    "gpt-5.6-sol": "GPT-5.6-Sol",
-    "deepseek-v4-pro": "DeepSeek-V4-Pro",
-    "deepseek-v4-flash": "DeepSeek-V4-Flash",
-}
-
 
 def set_output_dir(path):
     global OUT_DIR, SESSION_SUMMARY_FILE
@@ -130,4 +120,4 @@ def timezone_name():
 def pretty_model(name):
     if not name:
         return "(unknown)"
-    return MODEL_ALIASES.get(name, name)
+    return name

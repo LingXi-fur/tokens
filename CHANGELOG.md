@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Changed
 
 - Public documentation now treats cloning the repository as the verified first-run path instead of advertising an unverified package-index release.
+- Public/default display formatting now preserves logged model and Router backend names verbatim instead of applying maintainer-specific aliases.
 - Terminal and Dashboard model ordering now follows the current user's token totals, with model-name tie-breaking.
 - Dashboard model identity uses independently validated light and dark palettes; colors stay stable across ranking, filtering, input order, and refresh, while excess categories fold into `Other`.
 - Claude Code Router rules are read locally and conservatively only for plain Claude request aliases; router backends, Gemini models, and Codex models remain historical facts.

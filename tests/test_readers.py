@@ -206,16 +206,17 @@ if (model.includes('opus')) { return 'provider-b,backend-large'; }
             self.assertEqual("gemini-sonnet-research", readers.gemini_parse(gemini_log)[0]["model"])
             self.assertEqual("codex-opus-compatible", readers.codex_parse(codex_log)[0]["model"])
 
-    def test_pretty_model_aliases_only_change_display_labels(self):
-        aliases = {
-            "glm-5.3": "GLM-5.3",
-            "gpt-5.6-sol": "GPT-5.6-Sol",
-            "deepseek-v4-pro": "DeepSeek-V4-Pro",
-        }
-        for raw, display in aliases.items():
-            with self.subTest(raw=raw):
-                self.assertEqual(display, readers.config.pretty_model(raw))
-        self.assertEqual("custom-model", readers.config.pretty_model("custom-model"))
+    def test_pretty_model_preserves_logged_and_router_backend_names(self):
+        names = (
+            "glm-5.3",
+            "gpt-5.6-sol",
+            "deepseek-v4-pro",
+            "custom-model",
+        )
+        for name in names:
+            with self.subTest(name=name):
+                self.assertEqual(name, readers.config.pretty_model(name))
+        self.assertEqual("(unknown)", readers.config.pretty_model(None))
 
     def test_read_all_reparses_when_router_signature_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
