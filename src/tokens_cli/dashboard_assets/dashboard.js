@@ -126,6 +126,10 @@ const I18N_KEYED_ZH = Object.freeze({
   'Six hourly buckets ending at generation time. Not an API billing window.':'近 6 个小时桶（按生成时刻往前），不是 API 计费窗口。',
   'Cache hit share = cache-read tokens over total. Not a currency-saving estimate.':'缓存命中为 cache_read 读取占当前 Token 总量的比例，不推断货币节省。',
   'Coverage denominator = all-model total at the current granularity; time-probe focus does not narrow it.':'覆盖百分比的分母是当前粒度下全模型 Token 总量；时光探针收窄不改变分母。',
+  'Cache share':'缓存占比',
+  'Output share':'输出占比',
+  'Cache share (model-filtered, reuse rows)':'缓存占比（随模型筛选，复用行口径）',
+  'Output token share (model-filtered, reuse rows)':'输出 token 占比（随模型筛选，复用行口径）',
 });
 const i18nTextSource = new WeakMap();
 const i18nAttributeSource = new WeakMap();
@@ -435,12 +439,13 @@ function renderScrubPreview(announce=false){
   else {hint.textContent=rows.length+' 期 · 拖动或用方向键预览 · Enter / Space / 点击提交';if(readout)readout.textContent='';status.textContent='';probe.classList.remove('scrubbing');delete probe.dataset.scrubPeriod;renderProbe();}
 }
 function setScrubPreview(index,source='pointer',focus=false,announce=false){
+  if(tableFocus.suppressPreview)return false;
   const rows=selectedRows(true);if(!rows.length)return false;index=Math.max(0,Math.min(rows.length-1,Number(index)||0));const changed=scrubState.index!==index||scrubState.source!==source;scrubState.index=index;scrubState.period=rows[index].period;scrubState.source=source;barCursor=index;document.querySelectorAll('#bar .barstack').forEach((el,i)=>el.setAttribute('tabindex',i===index?'0':'-1'));renderScrubPreview(announce&&changed);if(focus)document.querySelector('#bar .barstack[data-index="'+index+'"]')?.focus({preventScroll:true});return changed;
 }
 function clearScrub(reason='',announce=false){
   const had=!!scrubState.period;if(scrubState.raf){cancelAnimationFrame(scrubState.raf);scrubState.raf=0;}scrubState.pendingIndex=null;scrubState.period=null;scrubState.index=-1;scrubState.source=null;scrubState.pointerId=null;scrubState.intent=null;scrubState.dragged=false;renderScrubPreview(false);if(had)renderStatusPulse();if(announce&&reason)document.getElementById('scrub-status').textContent=reason;
 }
-function queueScrubPreview(index,source='pointer'){scrubState.pendingIndex=index;if(scrubState.raf)return;scrubState.raf=requestAnimationFrame(()=>{scrubState.raf=0;const next=scrubState.pendingIndex;scrubState.pendingIndex=null;if(next!=null)setScrubPreview(next,source,false,false);});}
+function queueScrubPreview(index,source='pointer'){scrubState.pendingIndex=index;if(scrubState.raf)return;scrubState.raf=requestAnimationFrame(()=>{scrubState.raf=0;const next=scrubState.pendingIndex;scrubState.pendingIndex=null;if(next!=null&&!(tableFocus.suppressPreview&&source==='pointer'))setScrubPreview(next,source,false,false);});}
 function commitScrub(period=scrubState.period,restoreBar=false){if(!period)return;clearScrub();toggleFocus(period,restoreBar);}
 function describeBar(el,focus=true){
   const i=Number(el.dataset.index||0);setScrubPreview(i,'keyboard',focus,true);
@@ -542,7 +547,13 @@ function renderDonut(){
   const entries=sortedModels(modelTotals(rows));
   const total=sumWhere(entries,([,v])=>v);
   const box=document.getElementById('donut');
-  if(total===0){ box.innerHTML=contextEmptyHTML('rhythm'); document.getElementById('donut-legend').innerHTML=''; return; }
+  /* 图例由全模型驱动：全不选时仍能从这里勾回（切片 pin=true 委托不动，图例按钮 pin=false 避免双触发） */
+  const legendValue=Object.fromEntries(entries);
+  document.getElementById('donut-legend').innerHTML=DATA.models.map(m=>{
+    const on=state.models.has(m),value=legendValue[m]||0;
+    return '<li class="model-mark" data-model="'+esc(m)+'"><button type="button" class="dl-item'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),value,'composition',false)+'><span class="ldot" style="background:'+modelColor(m)+'"></span><span>'+esc(pretty(m))+'</span><em>'+pct(value,total)+'</em></button></li>';
+  }).join('');
+  if(total===0){ box.innerHTML=contextEmptyHTML('rhythm'); return; }
   const size=220, cx=size/2, cy=size/2, r=size/2-8;
   let angle=-Math.PI/2; const p=['<svg viewBox="0 0 '+size+' '+size+'" class="pie">'];
   entries.forEach(([m,v])=>{
@@ -560,8 +571,6 @@ function renderDonut(){
   p.push('<text x="'+cx+'" y="'+(cy-2)+'" text-anchor="middle" class="pie-center">'+human(total)+'</text>');
   p.push('<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="pie-sub">TOKENS</text></svg>');
   box.innerHTML=p.join('');
-  document.getElementById('donut-legend').innerHTML=entries.map(([m,v])=>
-    '<li class="model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'composition')+'><span class="ldot" style="background:'+modelColor(m)+'"></span>'+esc(pretty(m))+' <em>'+pct(v,total)+'</em></li>').join('');
 }
 
 function renderTrendLegend(){
@@ -571,16 +580,121 @@ function renderTrendLegend(){
   box.querySelectorAll('[data-model-toggle]').forEach(button=>button.addEventListener('click',()=>{const model=button.dataset.modelToggle,next=new Set(state.models);next.has(model)?next.delete(model):next.add(model);setModels(next); }));
 }
 
+/* Donut 图例筛选：委托一次，重渲染按钮不丢事件 */
+const donutLegend=document.getElementById('donut-legend');
+donutLegend.addEventListener('click',event=>{
+  const button=event.target.closest('[data-model-toggle]');if(!button)return;
+  const model=button.dataset.modelToggle,next=new Set(state.models);
+  next.has(model)?next.delete(model):next.add(model);setModels(next);
+});
+/* 明细表键盘与移动详情：detail 行无 data-period，不参与 roving/联动 */
+const tableHead=document.getElementById('thead');
+tableHead.addEventListener('click',event=>{const button=event.target.closest('[data-sort-key]');if(button)cycleTableSort(button.dataset.sortKey);});
+const tableBody=document.getElementById('tbody');
+tableBody.addEventListener('focusin',event=>{
+  const row=event.target.closest('tr[data-period]');if(!row)return;
+  tableBody.querySelectorAll('tr[data-period]').forEach(item=>item.tabIndex=item===row?0:-1);
+  tableFocus.period=row.dataset.period;
+  if(tableFocus.suppressPreview)return;
+  const index=selectedRows(true).findIndex(item=>item.period===row.dataset.period);
+  if(index>=0)setScrubPreview(index,'keyboard',false,false);
+});
+tableBody.addEventListener('focusout',event=>{if(!tableBody.contains(event.relatedTarget)){tableFocus.suppressPreview=false;clearScrub();}});
+document.addEventListener('pointermove',()=>{tableFocus.suppressPreview=false;},{passive:true});
+tableBody.addEventListener('keydown',event=>{
+  const row=event.target.closest('tr[data-period]');if(!row)return;
+  const rows=[...tableBody.querySelectorAll('tr[data-period]')],index=rows.indexOf(row);
+  let next=index;
+  if(event.key==='ArrowDown')next=Math.min(rows.length-1,index+1);
+  else if(event.key==='ArrowUp')next=Math.max(0,index-1);
+  else if(event.key==='Home')next=0;
+  else if(event.key==='End')next=rows.length-1;
+  else if(event.key==='Enter'){
+    event.preventDefault();
+    scrubState.period===row.dataset.period?commitScrub(row.dataset.period,false):toggleFocus(row.dataset.period,false);
+    return;
+  }else if(event.key==='Escape'){
+    tableFocus.suppressPreview=true;event.preventDefault();event.stopPropagation();clearScrub();return;
+  }else return;
+  event.preventDefault();tableFocus.suppressPreview=false;rows[next].focus();
+});
+tableBody.addEventListener('click',event=>{
+  const button=event.target.closest('.row-toggle');if(!button)return;
+  event.preventDefault();event.stopPropagation();
+  const detail=document.getElementById(button.getAttribute('aria-controls'));if(!detail)return;
+  const open=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(open));detail.hidden=!open;
+});
+
+/* 明细表排序：纯展示态，不进 state/stateKey/URL；导出与柱体仍按规范时间序 */
+const tableSort={key:null,dir:null};
+const tableFocus={period:null,suppressPreview:false};
+function reuseShares(){
+  return memoDerived('shares|'+stateKey(),()=>{
+    const map={};
+    selectedReuseRows().forEach(r=>{
+      const sum=sumList(r.slice(1));
+      map[r[0]]=sum?{cache:(r[3]+r[4])/sum,output:r[2]/sum}:null;
+    });
+    return map;
+  });
+}
+function sortValue(row,key){
+  if(key==='cache'||key==='output'){const share=reuseShares()[row.period];return share?share[key]:null;}
+  return row[key];
+}
+function sortedRows(rows){
+  if(!tableSort.key)return rows;
+  const sign=tableSort.dir==='asc'?1:-1;
+  /* 拷贝后排序：selectedRows() 是 memo 值，原地 sort 会污染导出/Donut/KPI */
+  return rows.map((row,index)=>[row,index]).sort((a,b)=>{
+    const av=sortValue(a[0],tableSort.key),bv=sortValue(b[0],tableSort.key);
+    if(av===null&&bv===null)return a[1]-b[1];
+    if(av===null)return 1;
+    if(bv===null)return -1;
+    if(av===bv)return a[1]-b[1];
+    return (av-bv)*sign;
+  }).map(pair=>pair[0]);
+}
+function thSort(key,label,i18nKey){
+  const active=tableSort.key===key;
+  const dir=active?(tableSort.dir==='asc'?'ascending':'descending'):'none';
+  return '<th class="num" aria-sort="'+dir+'"><button type="button" class="th-sort" data-sort-key="'+key+'"'+(i18nKey?' data-i18n-key="'+esc(i18nKey)+'"':'')+' aria-label="'+esc(label)+'，点击排序">'+esc(label)+'</button></th>';
+}
+function cycleTableSort(key){
+  if(tableSort.key!==key){tableSort.key=key;tableSort.dir='desc';}
+  else if(tableSort.dir==='desc')tableSort.dir='asc';
+  else{tableSort.key=null;tableSort.dir=null;}
+  renderTable();
+  /* thead innerHTML 被整体替换，必须重找按钮还焦 */
+  const button=document.querySelector('#thead [data-sort-key="'+key+'"]');
+  if(button)button.focus();
+  const names={total:'总 token',calls:'调用',cache:'缓存占比',output:'输出占比'};
+  toast(tableSort.key?'已按 '+names[key]+' '+(tableSort.dir==='desc'?'降序':'升序'):'已恢复时间序');
+}
 function renderTable(){
   const rows=selectedRows();
   const cols=DATA.models.filter(m=>state.models.has(m));
-  const th=cols.map(m=>'<th class=num>'+esc(pretty(m))+'</th>').join('');
-  const body=rows.map(r=>{
-    const tds=cols.map(m=> r.models[m]?'<td class=num>'+fmt(r.models[m])+'</td>':'<td class=num><span class=dim>·</span></td>').join('');
-    return '<tr data-period="'+esc(r.period)+'"'+(state.focusPeriod===r.period?' class=row-focused':'')+'><td>'+esc(fmtLabel(r.period,state.gran))+'</td><td class=num>'+fmt(r.total)+'</td>'+tds+'<td class=num>'+fmt(r.calls)+'</td></tr>';
+  const shares=reuseShares(),ordered=sortedRows(rows);
+  /* 重渲染焦点恢复：只在原焦点确在行内时还原，绝不抢页面焦点 */
+  const focusRow=document.activeElement?.closest?.('#tbody tr[data-period]');
+  const focusBefore=focusRow?focusRow.dataset.period:null;
+  const th=cols.map(m=>'<th class="num col-model">'+esc(pretty(m))+'</th>').join('');
+  const shareCell=share=>share==null?'<td class=num><span class=dim>·</span></td>':'<td class=num>'+(share*100).toFixed(1)+'%</td>';
+  const anchor=ordered.some(r=>r.period===tableFocus.period)?tableFocus.period:null;
+  const body=ordered.map((r,i)=>{
+    const tds=cols.map(m=> r.models[m]?'<td class="num col-model">'+fmt(r.models[m])+'</td>':'<td class="num col-model"><span class=dim>·</span></td>').join('');
+    const share=shares[r.period]||null,label=esc(fmtLabel(r.period,state.gran));
+    const roving=(r.period===anchor||(anchor===null&&i===0))?0:-1;
+    const detail='<dl class="dl-grid"><div class="dl-item-detail"><dt>缓存占比</dt><dd>'+(share?(share.cache*100).toFixed(1)+'%':'—')+'</dd></div><div class="dl-item-detail"><dt>输出占比</dt><dd>'+(share?(share.output*100).toFixed(1)+'%':'—')+'</dd></div><div class="dl-item-detail"><dt>调用</dt><dd>'+fmt(r.calls)+'</dd></div>'+cols.map(m=>'<div class="dl-item-detail"><dt>'+esc(pretty(m))+'</dt><dd>'+(r.models[m]?fmt(r.models[m]):'—')+'</dd></div>').join('')+'</dl>';
+    return '<tr data-period="'+esc(r.period)+'" tabindex="'+roving+'"'+(state.focusPeriod===r.period?' class=row-focused':'')+'><td><button type="button" class="row-toggle" aria-expanded="false" aria-controls="row-detail-'+i+'" aria-label="'+label+'，点击展开详情"><span>'+label+'</span></button><span class="row-label">'+label+'</span></td><td class=num>'+fmt(r.total)+'</td>'+tds+shareCell(share?share.cache:null)+shareCell(share?share.output:null)+'<td class=num>'+fmt(r.calls)+'</td></tr>'
+      +'<tr class="row-detail" id="row-detail-'+i+'" hidden><td colspan="'+(cols.length+5)+'">'+detail+'</td></tr>';
   }).join('');
-  document.getElementById('thead').innerHTML='<tr><th>'+LABEL[state.gran]+'</th><th class=num>总 token</th>'+th+'<th class=num>调用</th></tr>';
-  document.getElementById('tbody').innerHTML=body || '<tr><td colspan="' +(cols.length+3)+ '" class="hint">无数据</td></tr>';
+  document.getElementById('thead').innerHTML='<tr><th>'+LABEL[state.gran]+'</th>'+thSort('total','总 token')+th+thSort('cache','缓存占比','Cache share')+thSort('output','输出占比','Output share')+thSort('calls','调用')+'</tr>';
+  document.getElementById('tbody').innerHTML=body || '<tr><td colspan="' +(cols.length+5)+ '" class="hint">无数据</td></tr>';
+  if(focusBefore){
+    const restored=document.querySelector('#tbody tr[data-period="'+focusBefore+'"]');
+    if(restored){restored.tabIndex=0;tableFocus.suppressPreview=false;restored.focus({preventScroll:true});}
+  }
   /* 趋势↔明细联动：行悬停只预览柱体，不改筛选、不播报 */
   const allRows=selectedRows(true);
   document.querySelectorAll('#tbody tr[data-period]').forEach(tr=>{

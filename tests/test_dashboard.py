@@ -729,6 +729,27 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("p.set('scrub'", template)
         self.assertNotIn("localStorage.setItem('scrub", template)
 
+    def test_p1_table_sort_keyboard_and_donut_legend_contracts(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        self.assertIn("const tableSort={key:null,dir:null}", script)
+        self.assertIn("function reuseShares(){", script)
+        self.assertIn("function cycleTableSort(key){", script)
+        self.assertIn("data-sort-key=", script)
+        self.assertIn("aria-sort=", script)
+        self.assertIn("commitScrub(row.dataset.period,false)", script)
+        self.assertIn("event.stopPropagation();clearScrub()", script)
+        self.assertIn("const donutLegend=document.getElementById('donut-legend')", script)
+        self.assertIn("donutLegend.addEventListener('click'", script)
+        self.assertIn("'composition',false", script)
+        self.assertIn("if(total===0){ box.innerHTML=contextEmptyHTML('rhythm'); return; }", script)
+        self.assertNotIn("selectedRows().sort(", script)
+        css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        self.assertIn(".th-sort::after", css)
+        self.assertIn(".row-toggle{display:inline-flex", css)
+        self.assertIn(".row-label{display:none}", css)
+        self.assertIn(".col-model{display:none}", css)
+        self.assertIn(".detail-table{min-width:0}", css)
+
     def test_model_sort_helpers_preserve_tie_contracts(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         start = script.index("const sortedModels=")

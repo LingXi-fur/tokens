@@ -20,6 +20,8 @@ except ImportError:
 
 @unittest.skipIf(sync_playwright is None, "Playwright is not installed")
 class DashboardRuntimeTests(unittest.TestCase):
+    BROWSER = "chromium"
+
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
@@ -123,11 +125,11 @@ class DashboardRuntimeTests(unittest.TestCase):
         )
         cls._playwright = sync_playwright().start()
         try:
-            cls._browser = cls._playwright.chromium.launch(headless=True)
+            cls._browser = getattr(cls._playwright, cls.BROWSER).launch(headless=True)
         except Exception as exc:
             cls._playwright.stop()
             cls._tmp.cleanup()
-            raise unittest.SkipTest(f"Chromium is unavailable: {exc}")
+            raise unittest.SkipTest(f"{cls.BROWSER} is unavailable: {exc}")
 
     @classmethod
     def tearDownClass(cls):
@@ -618,6 +620,136 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertEqual([], console_errors)
         finally:
             context.close()
+
+    def test_table_sort_cycles_three_states_and_returns_to_time_order(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            chronological = page.locator("#tbody tr[data-period]").evaluate_all(
+                "els => els.map(el => el.dataset.period)"
+            )
+            totals = page.evaluate("() => selectedRows(true).map(r => [r.period, r.total])")
+            self.assertGreaterEqual(len(chronological), 2)
+            button = page.locator('#thead [data-sort-key="total"]')
+            header = page.locator("#thead th").nth(1)
+            self.assertEqual("none", header.get_attribute("aria-sort"))
+            displayed = lambda: page.locator("#tbody tr[data-period]").evaluate_all(
+                "els => els.map(el => el.dataset.period)"
+            )
+            button.click()
+            self.assertEqual("descending", header.get_attribute("aria-sort"))
+            self.assertTrue(button.evaluate("el => document.activeElement === el"))
+            self.assertEqual(
+                [period for period, _ in sorted(totals, key=lambda item: -item[1])],
+                displayed(),
+            )
+            button.click()
+            self.assertEqual("ascending", header.get_attribute("aria-sort"))
+            self.assertEqual(
+                [period for period, _ in sorted(totals, key=lambda item: item[1])],
+                displayed(),
+            )
+            button.click()
+            self.assertEqual("none", header.get_attribute("aria-sort"))
+            self.assertEqual(chronological, displayed())
+            page.locator('#thead [data-sort-key="cache"]').click()
+            self.assertEqual(
+                1,
+                page.locator('#thead th[aria-sort="descending"], #thead th[aria-sort="ascending"]').count(),
+                "exactly one header may carry a non-none aria-sort",
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_table_row_keyboard_previews_clears_and_commits(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            row = page.locator("#tbody tr[data-period]").first
+            row.focus()
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(1, page.locator("#bar .barstack.scrub-preview").count())
+            page.keyboard.press("Escape")
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(0, page.locator("#bar .barstack.scrub-preview").count())
+            page.keyboard.press("ArrowDown")
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            period = page.locator("#tbody tr.row-linked").get_attribute("data-period")
+            page.keyboard.press("Enter")
+            focused = page.locator("#tbody tr.row-focused")
+            self.assertEqual(1, focused.count())
+            self.assertEqual(period, focused.get_attribute("data-period"))
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(1, page.locator("#bar .barstack.scrub-preview").count())
+            page.keyboard.press("Escape")
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(0, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_donut_legend_syncs_surfaces_and_recovers_from_all_off(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            donut = page.locator("#donut-legend [data-model-toggle]")
+            trend = page.locator("#trend-legend [data-model-toggle]")
+            slices = page.locator("#donut .slice[data-model]")
+            count = donut.count()
+            self.assertGreaterEqual(count, 2)
+            self.assertEqual(count, trend.count())
+            self.assertEqual(count, slices.count())
+            donut.nth(1).click()
+            self.assertEqual("false", donut.nth(1).get_attribute("aria-pressed"))
+            self.assertEqual("false", trend.nth(1).get_attribute("aria-pressed"))
+            self.assertEqual(count - 1, slices.count())
+            for index in range(count):
+                if donut.nth(index).get_attribute("aria-pressed") == "true":
+                    donut.nth(index).click()
+            self.assertEqual(
+                0, page.locator("#donut-legend [data-model-toggle][aria-pressed=true]").count()
+            )
+            self.assertEqual(0, slices.count(), "all-off must empty the donut but keep its legend")
+            donut.first.click()
+            self.assertEqual("true", donut.first.get_attribute("aria-pressed"))
+            self.assertGreaterEqual(slices.count(), 1)
+            self.assertGreater(page.locator("#tbody tr[data-period]").count(), 0)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_mobile_table_detail_expands_without_horizontal_overflow(self):
+        for width in (390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                viewport={"width": width, "height": 760}
+            )
+            try:
+                toggle = page.locator("#tbody tr[data-period] .row-toggle").first
+                self.assertTrue(toggle.is_visible(), f"row toggle must be visible at {width}px")
+                self.assertGreaterEqual(toggle.bounding_box()["height"], 44)
+                self.assertEqual(0, page.locator("#tbody .col-model:visible").count())
+                header_cells = page.locator("#thead th").count()
+                row_cells = page.locator("#tbody tr[data-period]").first.locator("td").count()
+                self.assertEqual(header_cells, row_cells)
+                detail = page.locator("#tbody tr.row-detail").first
+                self.assertTrue(detail.is_hidden())
+                toggle.scroll_into_view_if_needed()
+                toggle.click()
+                self.assertEqual("true", toggle.get_attribute("aria-expanded"))
+                self.assertFalse(detail.is_hidden())
+                self.assertTrue(detail.locator(".dl-grid").is_visible())
+                metrics = page.evaluate(
+                    "() => ({ scroll: document.documentElement.scrollWidth,"
+                    " client: document.documentElement.clientWidth })"
+                )
+                self.assertLessEqual(metrics["scroll"], metrics["client"] + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
 
     def test_scrub_links_exactly_one_table_row_and_drops_false_aria_current(self):
         context, page, page_errors, console_errors = self.new_page()

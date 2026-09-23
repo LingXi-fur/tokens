@@ -60,6 +60,28 @@ jobs:
         env:
           PYTHONPATH: src
 
+  browser-cross:
+    name: ${{ matrix.browser }} Dashboard runtime
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install browser test dependencies
+        run: python -m pip install -e . "playwright>=1.40,<2"
+      - name: Install ${{ matrix.browser }}
+        run: python -m playwright install --with-deps ${{ matrix.browser }}
+      - name: Run cross-browser Dashboard tests
+        run: python -m unittest tests.test_dashboard_crossbrowser
+        env:
+          PYTHONPATH: src
+          TOKENS_DASHBOARD_BROWSER: ${{ matrix.browser }}
+
   javascript:
     name: JavaScript syntax
     runs-on: ubuntu-latest
