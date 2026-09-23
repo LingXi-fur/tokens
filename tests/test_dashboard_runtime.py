@@ -220,6 +220,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             self.wait_for_flow(page)
+            page.evaluate("applyLanguage('en',false)")
             visible = page.evaluate("""
                 () => {
                   const section=document.getElementById('section-flow');
@@ -265,8 +266,8 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertGreater(visible["pathLength"], 0)
             self.assertGreaterEqual(visible["pathOpacity"], 0.45)
             self.assertIn("actual flows", visible["stats"])
-
             page.evaluate("applyLanguage('zh',false)")
+
             page.wait_for_function("""
                 [...document.querySelectorAll('#flow-map .flow-node.project')]
                   .some(item=>item.querySelector('title').textContent.includes('悬停 Peek'))
@@ -583,6 +584,186 @@ class DashboardRuntimeTests(unittest.TestCase):
                 message == "[tokens] lazy renderer failed: flow"
                 for message in console_errors
             ))
+        finally:
+            context.close()
+
+    def test_trend_legend_isolates_models_and_recovers_from_empty(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            buttons = page.locator("#trend-legend [data-model-toggle]")
+            self.assertGreaterEqual(buttons.count(), 2)
+            pressed = [buttons.nth(i).get_attribute("aria-pressed") for i in range(buttons.count())]
+            self.assertTrue(all(value == "true" for value in pressed))
+            buttons.nth(1).click()
+            self.assertEqual(
+                "false", buttons.nth(1).get_attribute("aria-pressed"), "legend click must toggle only its own model"
+            )
+            self.assertEqual("true", buttons.nth(0).get_attribute("aria-pressed"))
+            for i in range(buttons.count()):
+                if buttons.nth(i).get_attribute("aria-pressed") == "true":
+                    buttons.nth(i).click()
+            self.assertEqual(
+                0,
+                page.locator("#trend-legend [data-model-toggle][aria-pressed=true]").count(),
+            )
+            self.assertIn(
+                "0/2 个模型", page.locator("#filter-summary").inner_text().split(" · ")[0]
+            )
+            buttons.first.click()
+            self.assertEqual("true", buttons.first.get_attribute("aria-pressed"))
+            self.assertGreater(
+                page.locator("#tbody tr[data-period]").count(), 0, "empty legend selection must stay recoverable"
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_scrub_links_exactly_one_table_row_and_drops_false_aria_current(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            period = page.evaluate("selectedRows(true)[0].period")
+            page.evaluate("setScrubPreview(0,'test',false,false)")
+            linked = page.locator("#tbody tr.row-linked")
+            self.assertEqual(1, linked.count())
+            self.assertEqual(period, linked.first.get_attribute("data-period"))
+            self.assertEqual(
+                1,
+                page.evaluate(
+                    "[...document.querySelectorAll('#bar .barstack')]"
+                    ".filter(el=>el.getAttribute('aria-current')==='true').length"
+                ),
+            )
+            self.assertEqual(
+                0,
+                page.evaluate(
+                    "[...document.querySelectorAll('#bar .barstack')]"
+                    ".filter(el=>el.getAttribute('aria-current')==='false').length"
+                ),
+            )
+            page.evaluate("clearScrub()")
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+            self.assertTrue(
+                page.evaluate(
+                    "[...document.querySelectorAll('#bar .barstack')]"
+                    ".every(el=>el.getAttribute('aria-current')===null)"
+                )
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_table_hover_previews_trend_without_commit(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            row = page.locator("#tbody tr[data-period]").first
+            row.dispatch_event("pointerenter")
+            self.assertEqual(1, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(0, page.locator("#tbody tr.row-focused").count())
+            self.assertNotEqual("", page.locator("#trend-readout").inner_text())
+            row.dispatch_event("pointerleave")
+            self.assertEqual(0, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_mobile_trend_touch_targets_readout_and_no_overflow(self):
+        context, page, page_errors, console_errors = self.new_page(
+            viewport={"width": 390, "height": 760}
+        )
+        try:
+            metrics = page.evaluate(
+                """
+                () => {
+                  const targets=[...document.querySelectorAll('.tl-item,.chip,#tabs button')]
+                    .filter(el=>getComputedStyle(el).display!=='none')
+                    .map(el=>el.getBoundingClientRect().height);
+                  const legend=getComputedStyle(document.getElementById('trend-legend'));
+                  return {
+                    minHeight:Math.min(...targets),
+                    pageWidth:document.documentElement.scrollWidth,
+                    viewportWidth:document.documentElement.clientWidth,
+                    legendOverflowX:legend.overflowX,
+                    readoutDisplay:getComputedStyle(document.getElementById('trend-readout')).display,
+                  };
+                }
+                """
+            )
+            self.assertGreaterEqual(metrics["minHeight"], 44)
+            self.assertLessEqual(metrics["pageWidth"], metrics["viewportWidth"] + 1)
+            self.assertEqual("auto", metrics["legendOverflowX"])
+            self.assertNotEqual("none", metrics["readoutDisplay"])
+            desktop, desktop_page, _, _ = self.new_page()
+            try:
+                self.assertEqual(
+                    "none",
+                    desktop_page.evaluate(
+                        "getComputedStyle(document.getElementById('trend-readout')).display"
+                    ),
+                )
+            finally:
+                desktop.close()
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_faint_color_contrast_meets_aa_in_both_themes(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            for theme in ("light", "dark"):
+                page.evaluate("theme => applyTheme(theme)", theme)
+                ratio = page.evaluate(
+                    """
+                    () => {
+                      const parse=color=>{
+                        const value=color.trim();
+                        let match=value.match(/^#([0-9a-f]{6})$/i);
+                        if(match){
+                          return [0,2,4].map(index=>parseInt(match[1].slice(index,index+2),16)/255);
+                        }
+                        match=value.match(/^#([0-9a-f]{3})$/i);
+                        if(match){
+                          return [...match[1]].map(part=>parseInt(part+part,16)/255);
+                        }
+                        match=value.match(/^rgba?\\((.+)\\)$/i);
+                        if(match){
+                          const parts=match[1].replace(/,/g,' ').split(/[\\s/]+/)
+                            .filter(Boolean).slice(0,3);
+                          return parts.map(part=>part.endsWith('%')
+                            ?parseFloat(part)/100:parseFloat(part)/255);
+                        }
+                        match=value.match(/^color\\(srgb\\s+(.+)\\)$/i);
+                        if(match){
+                          return match[1].split(/[\\s/]+/).filter(Boolean)
+                            .slice(0,3).map(Number);
+                        }
+                        throw new Error('Unsupported color: '+value);
+                      };
+                      const luminance=color=>parse(color).reduce((sum,channel,index)=>{
+                        const linear=channel<=.04045
+                          ?channel/12.92:Math.pow((channel+.055)/1.055,2.4);
+                        return sum+linear*[.2126,.7152,.0722][index];
+                      },0);
+                      const contrast=(a,b)=>{
+                        const first=luminance(a),second=luminance(b);
+                        return (Math.max(first,second)+.05)/(Math.min(first,second)+.05);
+                      };
+                      const styles=getComputedStyle(document.documentElement);
+                      return contrast(
+                        styles.getPropertyValue('--surface').trim(),
+                        styles.getPropertyValue('--faint').trim()
+                      );
+                    }
+                    """
+                )
+                self.assertGreaterEqual(ratio, 4.5, f"--faint contrast in {theme} theme")
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
         finally:
             context.close()
 

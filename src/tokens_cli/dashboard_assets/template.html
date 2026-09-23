@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang=en><head><meta charset=utf-8>
+<html lang=zh-CN><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Token Usage Dashboard</title>
 <style>__STYLE__</style>
 <script>/* Apply persisted display preferences before rendering. */
 try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}
-try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.lang='zh-CN';}catch(e){}
+try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.lang='zh-CN';else if(l==='en')document.documentElement.lang='en';}catch(e){}
 </script></head><body>
 <div class=wrap>
 
@@ -93,6 +93,7 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
      <div class=v><span id=k-cache-pct></span><small>%</small></div>
      <div class=l>缓存命中 · Read <span id=k-saved></span></div>
      <div class=gauge aria-hidden=true><i id=gauge-fill style="width:0"></i></div>
+     <div id=caliber-cache></div>
    </div>
    <div class=kpi><div class=v><span id=k-calls></span></div><div class=l>调用次数</div></div>
    <div class=kpi><div class=v><span id=k-models></span></div><div class=l>命中模型数</div></div>
@@ -111,6 +112,7 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  </div>
  <div class=filters id=filters aria-label="模型筛选"></div>
  <div class=filter-ledger id=filter-ledger><span class=summary id=filter-summary aria-live=polite></span><button class=ghostbtn id=filter-all type=button>全选</button><button class=ghostbtn id=filter-none type=button>清空</button><button class=ghostbtn id=filter-undo type=button disabled>撤销</button></div>
+ <div id=caliber-ledger></div>
 </section>
 
 <section class=card id=section-trend>
@@ -119,6 +121,8 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
    <div class=trend-tools><button class="ghostbtn comparebtn" id=compare-btn type=button aria-pressed=false title="按住预览上一期轮廓；点击固定对比">◫ 按住对比</button><span class=sub id=bar-hint>拖动或用方向键预览 · Enter / Space / 点击提交</span></div>
  </div>
  <div id=bar class=trend-chart style=margin-top:14px aria-describedby="bar-hint scrub-status"></div>
+ <div class=trend-legend id=trend-legend role=group aria-label="模型图例，点击筛选"></div>
+ <p class=trend-readout id=trend-readout aria-hidden=true></p>
  <div class=scrub-status id=scrub-status role=status aria-live=polite aria-atomic=true></div>
  <div class=table-panel>
   <div class=row-between>
@@ -184,11 +188,12 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  </section>
  <section class=card data-module=block>
   <div class=row-between>
-   <h2 style=margin:0>5h 计费窗口 · 近 5 小时</h2>
+   <h2 style=margin:0>近 6 个小时桶，非计费窗口</h2>
    <span class=sub id=block-total style=margin:0;color:var(--faint)></span>
   </div>
   <div class=block-bars id=block-bars></div>
   <div class=block-now id=block-now></div>
+  <div id=caliber-block></div>
  </section>
 </div>
 
