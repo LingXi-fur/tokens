@@ -689,6 +689,105 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("section-fingerprint", template)
         self.assertIn("clearFocus(true)", template)
 
+    def test_achievement_archive_attribution_and_story_contracts(self):
+        template = report_dashboard._TEMPLATE
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        for marker in (
+            "id=section-delta", "id=delta-list", "id=ach-copy",
+            "单独打开完整成就册", "LOCAL ACHIEVEMENT ARCHIVE",
+        ):
+            self.assertIn(marker, template)
+        for marker in (
+            "function deltaWindowInfo(rows)", "function attributionFor(rows)",
+            "function renderAttribution()", "renderTrendLegend();renderAttribution();",
+            "function achievementStory(b)", "b.story=achievementStory(b)",
+            "<strong class=ach-story data-i18n-skip>", "达成条件：", "achievementStoryText(b)+' '+b.story+' '+b.d",
+            "if(auxView==='achievements')p.set('view','achievements')",
+            "tokensAuxView:'achievements'", "function syncAuxViewFromState()",
+            "history.pushState({tokensAuxView:'achievements'}",
+            "copyText(portableViewURL())",
+        ):
+            self.assertIn(marker, script)
+        self.assertIn("masked?'隐藏':esc(achievementStoryText(b))", script)
+        self.assertIn("masked?'???':esc(name)", script)
+        self.assertIn(".delta-zero", css)
+        self.assertIn(".ach-detail .ach-story", css)
+        self.assertIn(".ach-bar .ghostbtn,.ach-bar .ach-filter,.ach-bar .ach-search{min-height:44px}", css)
+
+    def test_attribution_helpers_reconcile_with_shared_delta_window(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+
+        def extract_function(name):
+            start = script.index(f"function {name}(")
+            paren = script.index("(", start)
+            paren_depth = 0
+            brace = None
+            for index in range(paren, len(script)):
+                if script[index] == "(":
+                    paren_depth += 1
+                elif script[index] == ")":
+                    paren_depth -= 1
+                    if paren_depth == 0:
+                        brace = script.index("{", index)
+                        break
+            self.assertIsNotNone(brace, name)
+            depth = 0
+            for index in range(brace, len(script)):
+                if script[index] == "{":
+                    depth += 1
+                elif script[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return script[start:index + 1]
+            self.fail(name)
+
+        agg_start = script.index("const sumList=")
+        agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
+        helpers = "\n".join(extract_function(name) for name in (
+            "selectedDayModelTotals", "selectedDayTotal", "deltaWindowInfo",
+            "periodDelta", "attributionFor",
+        ))
+        node_script = script[agg_start:agg_end] + "\n" + r'''
+const DATA={models:['alpha','beta'],generated:'2026-07-31 12:00',range:{until:'2026-07-31'},day_details:{}};
+const state={gran:'month',models:new Set(DATA.models)};
+function periodDays(){return [];}
+''' + helpers + r'''
+const rows=[
+  {period:'2026-06',total:100,models:{alpha:80,beta:20}},
+  {period:'2026-07',total:145,models:{alpha:90,beta:55}},
+];
+const result=attributionFor(rows);
+if(!result)throw new Error('missing attribution');
+const sum=result.parts.reduce((total,part)=>total+part.delta,0);
+if(sum!==result.currTotal-result.prevTotal)throw new Error(`parts ${sum} != net ${result.currTotal-result.prevTotal}`);
+if(periodDelta(rows).value!==45)throw new Error('headline window drift');
+state.models=new Set(['beta']);
+const filtered=attributionFor(rows);
+if(filtered.parts.length!==1||filtered.parts[0].model!=='beta'||filtered.parts[0].delta!==35)throw new Error('model filter drift');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_achievement_story_keeps_story_separate_from_exact_condition(self):
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        start = script.index("function achievementStory(")
+        end = script.index("\nfunction finalizeAchievements", start)
+        node_script = "function human(v){return String(v)}\n" + script[start:end] + r'''
+const special=achievementStory({n:'Hello World',category:'彩蛋',tier:'gold'});
+if(!special.includes('第一束 Token'))throw new Error('special story missing');
+const ladder=achievementStory({n:'门槛',category:'累计 token',target:1000,tier:'bronze'});
+if(!ladder.includes('1000 Token'))throw new Error('target anchor missing');
+const fallback=achievementStory({n:'未知',category:'未知',tier:'prismatic'});
+if(!fallback.includes('彩钻'))throw new Error('tier fallback missing');
+'''
+        result = subprocess.run(
+            ["node", "-e", node_script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_scrub_probe_contracts_keep_preview_memory_only_and_commit_explicit(self):
         template = report_dashboard._TEMPLATE
         for marker in (
@@ -731,10 +830,13 @@ class DashboardTests(unittest.TestCase):
 
     def test_p1_table_sort_keyboard_and_donut_legend_contracts(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
-        self.assertIn("const tableSort={key:null,dir:null}", script)
+        self.assertIn("const tableSort={key:null,dir:null,model:null}", script)
         self.assertIn("function reuseShares(){", script)
-        self.assertIn("function cycleTableSort(key){", script)
+        self.assertIn("function cycleTableSort(key,model=null){", script)
         self.assertIn("data-sort-key=", script)
+        self.assertIn("data-sort-model=", script)
+        self.assertIn("x.dataset.sortModel===model", script)
+        self.assertNotIn("[data-sort-model=\"'+model", script)
         self.assertIn("aria-sort=", script)
         self.assertIn("commitScrub(row.dataset.period,false)", script)
         self.assertIn("event.stopPropagation();clearScrub()", script)
@@ -1117,7 +1219,9 @@ if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical
         helpers = "\n".join(extract_function(name) for name in (
             "localISO",
             "periodDays",
+            "selectedDayModelTotals",
             "selectedDayTotal",
+            "deltaWindowInfo",
             "periodDelta",
         ))
         agg_start = script.index("const sumList=")
@@ -1126,7 +1230,7 @@ if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical
 let DATA, state;
 function detail(total){return {hourly_models:{a:[total,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}};}
 state={gran:'month',models:new Set(['a'])};
-DATA={generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
+DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
 for(let day=1;day<=25;day++){
   const current=`2026-08-${String(day).padStart(2,'0')}`;
   const previous=`2026-07-${String(day).padStart(2,'0')}`;
@@ -1135,10 +1239,10 @@ for(let day=1;day<=25;day++){
 }
 let result=periodDelta([{period:'2026-07',total:3100},{period:'2026-08',total:5050}]);
 if(!result||result.label!=='较上期同期'||Math.abs(result.value-100)>.0001)throw new Error('open month comparison');
-DATA={generated:'2026-08-26 12:00',range:{until:'2026-07-31'},day_details:{}};
+DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:'2026-07-31'},day_details:{}};
 result=periodDelta([{period:'2026-06',total:100},{period:'2026-07',total:125}]);
 if(!result||result.label!=='环比'||Math.abs(result.value-25)>.0001)throw new Error('complete period comparison');
-state.gran='day';DATA={generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
+state.gran='day';DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
 if(periodDelta([{period:'2026-08-25',total:100},{period:'2026-08-26',total:50}])!==null)throw new Error('partial day should be hidden');
 '''
         result = subprocess.run(
@@ -1178,7 +1282,7 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
             "function trapModalFocus(e,modal)",
             "function activeModal()",
             "openModal(document.getElementById('share-modal')",
-            "openModal(document.getElementById('ach-modal')",
+            "openModal(modal,document.getElementById('ach-search'))",
             "openModal(modal,document.getElementById('help-close'))",
             "openModal(modal,document.getElementById('replay-x'))",
             "role=dialog aria-modal=true aria-label=\"Token 分享卡\"",

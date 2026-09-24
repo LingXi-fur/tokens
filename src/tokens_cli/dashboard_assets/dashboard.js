@@ -17,12 +17,15 @@ function decodeWire(wire){
 }
 let DATA = decodeWire(WIRE);
 const I18N_EXACT = Object.freeze({
+  '归因':'Attribution','CHANGE ATTRIBUTION · 变化归因':'CHANGE ATTRIBUTION','这一期，变化从哪里来':'What drove this period’s change','与趋势卡共用比较窗口':'Uses the same comparison window as Trend','需要连续两期且上期 Token 大于 0':'Requires two consecutive periods and a previous total above 0','暂无可比窗口':'No comparable window','当前范围无法形成可靠归因；切换到有连续数据的周或月再看。':'This range cannot support reliable attribution. Switch to a week or month with consecutive data.','没有足够的同期数据可拆解。':'Not enough comparable data to attribute.','各模型与上一比较窗口持平。':'All models are unchanged from the previous comparison window.','单独打开完整成就册':'Open full achievement archive','📜 单独打开完整成就册 →':'📜 Open full achievement archive →','LOCAL ACHIEVEMENT ARCHIVE · 本地成就档案':'LOCAL ACHIEVEMENT ARCHIVE','搜索成就':'Search achievements','搜索成就（名称/故事/条件/分类）…':'Search achievements (name/story/condition/category)…','⧉ 复制链接':'⧉ Copy link','环比':'vs prior period','较上期同期':'vs same point in prior period','其余':'Other','已恢复时间序':'Restored chronological order','达成条件：':'Unlock condition: ','报告范围开始时已达成':'Already unlocked at report start','解锁日期不可从当前聚合数据还原':'Unlock date cannot be reconstructed from current aggregate data','范围语义：当前报告快照。阶位不是全球用户稀有度。':'Scope: current report snapshot. Tiers do not represent global user rarity.','一枚新坐标已进入图鉴。':'A new coordinate has entered the archive.','稳定积累开始显出自己的轮廓。':'Steady accumulation is beginning to reveal its shape.','跨过高门槛，留下值得回看的金色刻度。':'Cross a high threshold and leave a golden marker worth revisiting.','抵达阶梯远端，让这枚印记折射出彩钻光谱。':'Reach the far end of the track and let this mark refract a prismatic spectrum.',
+  '第一束 Token 已点亮，故事从终端光标后开始。':'The first Token glow is on; the story begins beyond the terminal cursor.','穿过亿级洪流，工作区和理智都还在线。':'Survive a hundred-million-token flood with workspace and sanity still intact.','把重复计算埋进缓存，让下一次回答从捷径醒来。':'Bury repeated work in cache so the next answer wakes on a shortcut.','输出比输入更辽阔，一句咒语召来整片文本星云。':'Make output wider than input; one incantation summons a nebula of text.','跨项目、跨模型、跨昼夜，把整座技术栈飞成轨道站。':'Cross projects, models, and nights until the whole stack becomes an orbital station.','夜色最深时，调用计数仍像机房指示灯一样闪烁。':'At the darkest hour, call counts still blink like server-room lights.','十亿 Token 在同一天越过视界，连刻度都开始弯曲。':'A billion Tokens cross the horizon in one day, bending even the scale.','微小的一粒输入，已经让这座本地宇宙开始运转。':'One tiny input has already set this local universe in motion.','万亿 Token 堆成大陆；这里不再是记录，而是一部编年史。':'A trillion Tokens form a continent; this is no longer a log, but a chronicle.','图鉴青铜阶位':'Catalog Bronze tier','图鉴白银阶位':'Catalog Silver tier','图鉴黄金阶位':'Catalog Gold tier','图鉴彩钻阶位':'Catalog Prismatic tier',
   '点我有惊喜':'Click for a surprise','点我':'Click me','Token 用量':'Token Usage','查看数据可信度':'View data provenance','数据体检 —':'Data Health —','用量状态计算中':'Calculating usage status','状态 —':'Status —','切换主题':'Switch theme','主题：自动':'Theme: Auto','环境动效强度':'Ambient motion intensity','动效 · 自动':'Motion · Auto','动效 · 完整':'Motion · Full','动效 · 克制':'Motion · Low','动效 · 关闭':'Motion · Off','模块开关':'Module settings','显示模块':'Visible Modules','趣味换算':'Fun Conversions','5h 计费块':'5h Usage Blocks','每天趋势':'Daily Trend','作息织锦':'Activity Tapestry','每模型趋势':'Per-model Trend','数据可信度':'Data Provenance','项目透镜':'Project Lens','复用之河':'Reuse River','Token 流光图':'Token Flow Map','Token 年鉴':'Token Almanac','成就徽章':'Achievements','Top 榜':'Top Lists','Dashboard 区域导航':'Dashboard section navigation','总览':'Overview','趋势':'Trend','体检':'Health','年鉴':'Almanac','项目':'Projects','节奏':'Rhythm','复用':'Reuse','流光':'Flow','成就':'Achievements','查看当前视图状态':'View current state','月 · 全部模型 · 全景':'Month · All models · Overview','Current View · 当前视图':'Current View','⧉ 复制视图链接':'⧉ Copy view link','↺ 恢复全景':'↺ Reset view','Signal Dock 信号坞':'Signal Dock','悬停或聚焦数据以 Peek':'Hover or focus data to Peek','还没有选择信号':'No signal selected','清除固定信号':'Clear pinned signal','模型、周期、项目与会话可以先 Peek；固定 Pin 后，继续比较兼容的本地聚合证据。':'Peek models, periods, projects, and sessions. Pin one to compare compatible local aggregate evidence.','未固定信号':'No pinned signal','悬停或聚焦以查看':'Hover or focus to inspect','固定后再 Peek 一个兼容信号':'Pin, then Peek a compatible signal','选择一个信号':'Select a signal','按住 Alt / Option 临时查看精确值':'Hold Alt / Option to reveal exact values','⌥ 精确层':'⌥ Exact values','沿当前范围开始数据寻迹（I）':'Start a Data Trail for the current scope (I)','⌁ 开始寻迹':'⌁ Start Trail','退出回看（Esc）':'Exit time probe (Esc)','退出时光探针':'Exit time probe','数据寻迹':'Data Trail','沿当前范围检查模型、项目、会话与 Context 证据；不会改变筛选，除非你明确选择。':'Inspect model, project, session, and context evidence in the current scope. Filters change only when you explicitly choose.','← 上一步':'← Back','关闭数据寻迹':'Close Data Trail','关闭':'Close','数据寻迹步骤':'Data Trail steps','总 token':'Total tokens','复制总 Token 精确值':'Copy exact total Token value','复制精确值':'Copy exact value','缓存命中 · Read':'Cache share · Read','调用次数':'Calls','命中模型数':'Models used','主力模型':'Primary model','粒度与筛选':'Granularity & Filters','统计粒度':'Aggregation granularity','按日':'Daily','按周':'Weekly','按月':'Monthly','模型筛选':'Model filters','全选':'Select all','清空':'Clear','撤销':'Undo','每期 token（按模型堆叠）':'Tokens per period (stacked by model)','按住预览上一期轮廓；点击固定对比':'Hold to preview the prior period; click to pin comparison','◫ 按住对比':'◫ Hold to Compare','拖动或用方向键预览 · Enter / Space / 点击提交':'Drag or use arrow keys to preview · Enter / Space / click to commit','数据可信度实验室 · DATA PROVENANCE':'DATA PROVENANCE LAB','解释这份快照能支持哪些分析，以及某些视图为什么可能稀疏':'Explains which analyses this snapshot supports and why some views may be sparse','复制体检摘要':'Copy health summary','Token 年鉴 · 会记得你的 Dashboard':'Token Almanac · Local Dashboard Memory','✦ 打开时间胶囊':'✦ Open Time Capsule','导出年鉴':'Export Almanac','清除本地年鉴':'Clear Local Almanac','赛季星图':'Season Atlas','Token 赛季，使用方向键浏览':'Token seasons; use arrow keys to browse','🏆 Achievement Center · 成就中心':'🏆 Achievement Center','解锁日期以本报告范围为界；阶位表示图鉴门槛，不代表全球用户稀有度':'Unlock dates are bounded by this report. Tiers describe catalog thresholds, not global rarity.','LAST UNLOCK · 最近解锁':'LAST UNLOCK','最近达成':'Recent Unlocks','距离最近的目标':'Nearest Goals','每个阶梯只推荐下一枚':'Only the next goal in each track is recommended','收藏与阶位':'Collection & Tiers','📜 查看完整图鉴与详情 →':'📜 View Full Catalog & Details →','项目透镜 · Project Lens':'Project Lens','追踪一个项目在当前粒度、模型筛选与时光探针下的 Token 轨迹':'Track one project across the current granularity, model filters, and time probe','选择项目':'Select project','项目 Token 趋势':'Project Token trend','项目趋势明细，可横向滚动':'Project trend details; horizontally scrollable','趣味换算 · 你的 token 约等于':'Fun Conversions · Your tokens are roughly','换一组':'Shuffle','🎲 换一组':'🎲 Shuffle','近 6 个小时桶，非计费窗口':'Last 6 Hourly Buckets · Not a Billing Window','每天 · 近 14 天':'Daily · Recent 14 Days','作息织锦 · 14 天 × 24 小时':'Activity Tapestry · 14 Days × 24 Hours','每一个方格，都是一小时留下的算力纹理':'Each cell represents one hour of Token activity','静':'Quiet','沸':'Peak','今日 token 运势':'Today’s Token Fortune','模型占比':'Model Share','Context Reuse River · 上下文复用之河':'Context Reuse River','Input / Output / Cache Read / Cache Write 随时间流动，观察上下文何时开始被记住':'Input / Output / Cache Read / Cache Write over time, showing when context starts being reused','上下文复用构成随时间变化':'Context reuse composition over time','悬停或用方向键检查每一期的 Token 构成。':'Hover or use arrow keys to inspect each period’s Token composition.','Token 流光图 · 项目 → 模型 → 会话':'Token Flow Map · Project → Model → Session','光带宽度对应真实 Token 流量；悬停或聚焦 Peek，点击 Pin 到 Signal Dock':'Band width represents actual Token flow. Hover or focus to Peek; click to Pin in Signal Dock.','保存当前流光图为 SVG':'Save current flow map as SVG','保存 SVG':'Save SVG','项目到模型再到会话的 Token 流光图':'Token flow from projects to models to sessions','悬停或聚焦节点查看真实流向，点击项目或模型可锁定链路。':'Hover or focus nodes to inspect actual flow; click a project or model to lock the path.','保存 SVG':'Save SVG','每模型趋势 · 日':'Per-model Trend · Daily','▶ 播放':'▶ Play','明细':'Details','下载当前明细为 Markdown':'Download current details as Markdown','◇ 导出 MD':'◇ Export MD','下载当前明细为 CSV':'Download current details as CSV','⤓ 导出 CSV':'⤓ Export CSV','Token 明细，可横向滚动':'Token details; horizontally scrollable','Top 项目 / 会话':'Top Projects / Sessions','烧 token 的项目（cwd）':'Projects by tokens (cwd)','烧 token 的会话':'Sessions by tokens','✦ 生成 Token 护照':'✦ Generate Token Passport','▤ 打印 Token 收据':'▤ Print Token Receipt','返回数据宇宙顶部':'Return to the top','返回顶部':'Back to top','Token 分享卡':'Token share card','关闭分享卡':'Close share card','保存为 HTML':'Save as HTML','命令面板':'Command palette','输入命令或搜索…（例如：月、暗、导出）':'Type a command or search… (for example: month, dark, export)','关闭时间胶囊':'Close time capsule','来自过去快照的数据来信':'A Message from Past Snapshots','← 上一页':'← Previous','下一页 →':'Next →','🏆 成就图鉴':'🏆 Achievement Catalog','搜索成就':'Search achievements','搜索 2000+ 成就（名称/描述/分类）…':'Search 2,000+ achievements (name, description, category)…','筛选成就':'Filter achievements','全部':'All','已解锁':'Unlocked','未解锁':'Locked','隐藏':'Hidden','青铜':'Bronze','白银':'Silver','黄金':'Gold','彩钻':'Prismatic','庆祝成就进度':'Celebrate achievement progress','选择一枚成就查看状态、日期、目标与图鉴阶位。':'Select an achievement to inspect status, date, target, and catalog tier.','快捷键与交互说明':'Keyboard Shortcuts & Interaction Guide','关闭快捷键帮助':'Close keyboard shortcuts','切换日 / 周 / 月':'Switch day / week / month','打开命令面板':'Open command palette','切换主题':'Switch theme','导出当前 CSV':'Export current CSV','退出时光探针 / 关闭弹层':'Exit time probe / close overlay','打开本帮助':'Open this guide','流光节点锁定 / 回放':'Pin flow node / replay','浏览年鉴赛季 / 胶囊章节':'Browse Almanac seasons / capsule chapters','打开 / 返回数据寻迹':'Open / return to Data Trail','寻迹步骤前后移动':'Move between trail steps','寻迹选项浏览':'Browse trail options','选择线索 / 打开证据':'Select clue / open evidence','寻迹返回上一步':'Go back one trail step','先关闭寻迹，再退出时光探针':'Close Data Trail before exiting the time probe','悬停 / 聚焦 · 点击':'Hover / focus · click','清除 Pin / 精确层':'Clear Pin / exact layer','临时显露精确值与分母':'Temporarily reveal exact values and denominators','按住 ⌥ Alt':'Hold ⌥ Alt','临时查看上一期轮廓':'Temporarily view prior-period outline','按住 C':'Hold C','固定 / 取消上一期对比':'Pin / unpin prior-period comparison','点击“按住对比”':'Click “Hold to Compare”','点击 · 全选 / 清空 / 撤销':'Click · select all / clear / undo','复制总 Token 精确值':'Copy exact total Token value','⧉ 复制按钮':'⧉ Copy button','会话回放':'Session Replay','会话回放轮次':'Session replay turn','无数据':'No data','暂无足够数据':'Not enough data yet','当前范围没有记录':'No records in the current scope','没有选择模型':'No models selected','当前时光探针没有活动':'No activity in the current time probe','当前日志缺少所需字段':'Required fields are missing from current logs','当前范围没有可显示数据':'No displayable data in the current scope','恢复全部模型':'Restore all models','查看数据体检':'View data health','自动':'Auto','亮色':'Light','暗色':'Dark','全景':'Overview','已固定':'Pinned','临时预览':'Preview','全部模型':'All models','时光探针':'Time Probe','时间范围':'Date range','已恢复月度全景':'Monthly overview restored','当前视图链接已复制':'Current view link copied','复制失败，请从地址栏复制':'Copy failed; copy from the address bar','精确层已固定':'Exact values pinned','精确层已取消固定':'Exact values unpinned','幻影对比已固定':'Prior-period comparison pinned','幻影对比已取消':'Prior-period comparison unpinned','正在临时预览上一期轮廓':'Previewing the prior-period outline','已复制':'Copied','复制失败':'Copy failed','调用':'Calls','Markdown 报告已生成':'Markdown report generated','分享卡已保存为 HTML':'Share card saved as HTML','当前范围':'Current scope','模型线索':'Model clue','证据分支':'Evidence branch','深入模块':'Open module','当前全景':'Current overview','无可比较上一期':'No comparable prior period','先选择一个模型线索。':'Select a model clue first.','范围':'Scope','粒度':'Granularity','模型覆盖':'Model coverage','调用记录':'Call records','项目证据':'Project evidence','会话证据':'Session evidence','Context 证据':'Context evidence','当前不可用':'Unavailable','证据边界':'Evidence boundary','需要 Pin 与 Peek 两个信号':'Pin and Peek are both required','混合类型仅并排查看，不计算 Delta':'Mixed types are shown side by side without Delta','同类型本地聚合可比较':'Same-type local aggregates are comparable','模型':'Model','周期':'Period','信号':'Signal','起始':'Start','至今':'Present','当前筛选无观察值':'No observations under current filters','无上一期':'No prior period','无百分比变化':'No percentage change','无上一期绝对变化':'No prior-period absolute change','无上一期百分比变化':'No prior-period percentage change','无模型构成':'No model composition','当前探针范围':'Current probe scope','当前报告范围':'Current report scope','最多最近 200 轮':'Most recent 200 turns maximum','完整保留序列':'Complete retained series','横轴是轮次，不代表耗时':'Horizontal axis is turn number, not elapsed time','未触及 200 轮边界':'Did not reach the 200-turn limit','回放不按模型或时光探针裁剪':'Replay is not clipped by model or time probe','当前信号没有可比较 Token 聚合':'Current signal has no comparable Token aggregate','缺少可比较聚合':'No comparable aggregate','Peek 相对 Pin':'Peek relative to Pin','只看此模型':'Show only this model','打开会话回放':'Open Session Replay','本地上下文':'Local context','当前范围信号':'Current-scope signal','已清除 Pin':'Pin cleared','已退出时光探针':'Time probe exited','已恢复全部模型':'All models restored','跟随系统主题':'Follow system theme','亮色主题':'Light theme','暗色主题':'Dark theme','导出 CSV':'Export CSV','导出 Markdown':'Export Markdown','查看快捷键与交互说明':'View keyboard shortcuts and interaction guide','打开模块开关':'Open module settings','无匹配结果 · 试试 whoami、42、matrix、coffee':'No matches · Try whoami, 42, matrix, or coffee','范围快照':'Scope snapshot','日期未知':'Date unknown','缺少可比较的日期范围':'No comparable date range','刚刚同步':'Just synced','最后数据日与生成日一致':'Last data day matches generation day','近期快照':'Recent snapshot','历史快照':'Historical snapshot','等待数据':'Waiting for data','当前范围没有可体检的已解析记录。':'No parsed records to inspect in the current scope.','项目透镜':'Project Lens','会话回放':'Session Replay','作息分析':'Activity Analysis','复用之河':'Reuse River','流光关系':'Flow Relationships','当前范围缺少所需数据。':'Required data is unavailable in the current scope.','时间戳':'Timestamps','项目字段':'Project fields','会话字段':'Session fields','标准化组成字段':'Normalized composition fields','已解析记录':'Parsed records','回放保留':'Replay retention','当前筛选下无项目':'No projects under current filters','项目 Token':'Project Tokens','当前占比':'Current share','活跃期':'Active periods','峰值期':'Peak period','范围内首次观察':'First observed in scope','主力模型':'Primary model','当前筛选没有可导出的流向':'No exportable flow under current filters','当前流光图已保存为 SVG':'Current flow map saved as SVG','数据不足':'Insufficient data','截至':'Through','最高 Token 日':'Highest-token day','最活跃时刻':'Most active hour','▶ 播放':'▶ Play','⏸ 暂停':'⏸ Pause','至少需要两期数据才能计算状态':'At least two periods are required to calculate status','升温':'Rising','此前均值为 0，本期出现新活动':'Prior average was zero; new activity appeared this period','平稳':'Steady','本期与此前均值均为 0':'Both this period and the prior average are zero','降温':'Falling','数据体检摘要已复制':'Data health summary copied','继续':'Continue','开始':'Start','跳转 · 总览':'Go to · Overview','跳转 · 趋势':'Go to · Trend','跳转 · 数据可信度实验室':'Go to · Data Provenance Lab','跳转 · Token 年鉴':'Go to · Token Almanac','打开 · 数据时间胶囊':'Open · Data Time Capsule','跳转 · 项目透镜':'Go to · Project Lens','跳转 · 节奏':'Go to · Rhythm','跳转 · Context Reuse River':'Go to · Context Reuse River','跳转 · Token 流光图':'Go to · Token Flow Map','跳转 · 成就':'Go to · Achievements','跳转 · Top':'Go to · Top','下一个数据时刻':'Next data moment','当前筛选没有可回看的数据时刻':'No data moments under current filters','切换幻影对比':'Toggle prior-period comparison','复制当前视图链接':'Copy current view link','成就未找到':'Achievement not found','不可用':'Unavailable','当前报告没有可划分的活跃赛季。':'No active seasons can be derived from this report.','本地年鉴已导出为 JSON':'Local Almanac exported as JSON','Token 年鉴历史已清除，并以当前快照重新建立基线':'Token Almanac history cleared; current snapshot is now the new baseline','图鉴':'Catalog','阶位':'Tier','来源':'Source','已解锁':'Unlocked','未解锁':'Locked','隐藏成就，达成自动揭晓':'Hidden achievement; revealed when unlocked','已达成':'Unlocked','这是什么：':'What this is:','怎么读：':'How to read:','成就 = 本地日志聚合指标的阶梯门槛（累计、连续、缓存、模型 / 项目 / 会话、作息节奏、数字彩蛋…）。当前报告范围内指标首次 ≥ 门槛即解锁；点击任意徽章可查看指标、阈值与达成日期。':'Achievements are ladder thresholds over metrics aggregated from your local logs (totals, streaks, cache, models / projects / sessions, rhythm, number eggs…). Within the current report range, a metric first crossing a threshold unlocks it; click any badge to inspect its metric, threshold, and unlock date.','青铜 → 白银 → 黄金 → 彩钻只表示门槛在阶梯中的位置；隐藏成就达成后自动揭晓；「本设备新观察」= 与上一次快照对比新增。全部计算仅在本机完成，不参与任何全球排名。':'Bronze → Silver → Gold → Prismatic only marks a threshold\\\'s position in its ladder. Hidden achievements reveal themselves on unlock; "new on this device" means new since the previous snapshot. Everything is computed locally — no global ranking.','把本地日志聚合出的指标（累计、连续、缓存、模型、作息、彩蛋）拆成 3000+ 道阶梯门槛，报告范围内首次越过即解锁；纯本地收藏，阶位不代表全球用户稀有度':'Turns metrics aggregated from your local logs (totals, streaks, cache, models, rhythm, eggs) into 3,000+ ladder thresholds — first crossing within the report range unlocks one. A purely local collection; tiers are not global rarity.','本地快照收藏':'Local snapshot collection','最早':'Earliest','最新':'Latest','当前报告全部数据':'All data in current report','还没有可展示的已解锁成就。':'No unlocked achievements to display yet.','当前聚合快照无法还原精确达成日期。':'The current aggregate snapshot cannot reconstruct exact unlock dates.','当前没有适合推荐的单调目标。':'No suitable monotonic goals to recommend.','已解锁':'Unlocked','最高阶位':'Highest tier','图鉴总数':'Catalog total','尚未达成':'Not unlocked yet','当前显示':'Currently shown','个分类':'categories','总图鉴':'Catalog total','展开分类时按需渲染':'Categories render on demand when expanded','该会话无逐轮数据':'No per-turn data for this session','（最近 200 轮）':'(most recent 200 turns)','轮':'turn','当前轮':'Current turn','累计':'Cumulative','累计占比':'Cumulative share','稳定':'Stable','tk · 紧凑显示':'tk · compact','已选':'Selected','个模型 · 覆盖':'models · coverage','实体分析较完整':'Strong entity coverage','在已解析记录中，时间、项目、会话和标准化 Token 组成字段可用性较高。':'Parsed records have strong coverage for time, project, session, and normalized Token composition.','每个会话最多保留最近 200 轮':'Each session retains at most the most recent 200 turns','Claude total 由 input、output、cache read/write 组成；通常保留 cwd 与 session。':'Claude totals include input, output, cache read, and cache write; cwd and session are usually available.','近 6 个小时桶（按生成时刻往前）':'Recent 6 hourly buckets (counting back from generation time)','日间稳定型':'Daytime Steady','算力主要沿着白昼平稳展开。':'Token activity is spread steadily through daylight hours.','运势':'Fortune','宜':'Do','忌':'Avoid','峰值时段':'Peak hour','算力最常在':'Activity most often peaks at','亮起。':'peaks.','最近 14 天每小时 Token 作息织锦':'Hourly Token activity tapestry for the recent 14 days','每小时 token 分布':'Hourly Token distribution','需要已解析记录包含 cwd 项目路径':'Requires parsed records with cwd project paths','需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中':'Requires parsed records attributable to sessions with per-turn values retained in replay','需要已解析记录含可解析时间戳':'Requires parsed records with parseable timestamps','需要标准化 input/output/cache read/cache write 组成字段可用':'Requires normalized input/output/cache read/cache write composition fields','需要已解析记录包含项目或会话 identity':'Requires parsed records with project or session identity'
 });
 const I18N_CORE_EXACT = Object.freeze({
   '月份':'Month','已解析记录':'parsed records','自动':'Auto','静态快照':'Static snapshot','静态离线快照':'Static offline snapshot','本地实时':'Live locally','正在检查':'Checking','刚刚更新':'Just updated','刷新已暂停':'Refresh paused','实时刷新频率':'Live refresh frequency','刷新 · 1 分钟':'Refresh · 1 minute','刷新 · 5 分钟':'Refresh · 5 minutes','刷新 · 15 分钟':'Refresh · 15 minutes','刷新 · 30 分钟':'Refresh · 30 minutes','刷新 · 暂停':'Refresh · Paused','暂时断开':'Temporarily disconnected','同步错误':'Sync error','0 条流光链路':'0 flow links','Token 流光图，可横向滚动':'Token Flow; horizontally scrollable'
 });
 const I18N_LABS_EXACT = Object.freeze({
+  '初心':'First Spark',
   'FIRST OBSERVATION · 初次装订':'FIRST OBSERVATION · BASELINE','年鉴已安静地记住这份快照':'The Almanac quietly saved this snapshot','首次打开只建立基线，不会把旧数据假装成刚刚发生。下一份不同快照到来时，时间胶囊才会回信。':'The first visit only establishes a baseline; old data is never presented as newly occurring. The time capsule responds after a different snapshot arrives.','月界或 ≥7 日静默切季':'A month boundary or ≥7 silent days starts a new season','初生':'Dawn','最长连续活跃':'Longest active streak','单会话累计轮数':'Most turns in one session','单日缓存量峰值':'Daily cache-read peak','单日调用峰值':'Daily call peak','单日输入峰值':'Daily input peak','单日输出峰值':'Daily output peak','单日 Token 峰值':'Daily Token peak','单小时峰值':'Hourly peak','单日模型多样性':'Daily model diversity','首次观察':'First observed','报告范围开始时已在保持':'Already held at report start','本地快照收藏':'Local snapshot collection','小成':'Early Progress','摸鱼':'Getting Started','顺手':'Comfortable','坚持':'Persistent','起步':'First Steps','连胜':'Streak','上手':'Getting the Hang of It','熟练':'Proficient','还差':'Remaining','图鉴阶位与“该阶梯前 X% 门槛”只描述本地目录中的门槛位置，不是全球用户稀有度。':'Catalog tiers and “top X% of thresholds” describe positions within the local catalog only, not global user rarity.','总 Token':'Total Tokens','形态':'Form','按':'Press','复制项目 Token 精确值':'Copy exact project Token value','次':'calls','种':'models','轮':'turns','· 全景':'· Overview','幻影对比':'Prior-period comparison','· 关闭':'· Off','数据时刻已并入趋势注释轨道；悬停、聚焦或固定一个信号，可查看跨模块上下文。':'Data moments now appear on the trend annotation rail. Hover, focus, or pin a signal to inspect cross-module context.','悬停 Peek · 点击 Pin 信号':'Hover to Peek · Click to Pin','① 悬停或聚焦 Peek　② 点击 Pin 到 Signal Dock　③ 在信号坞中选择深入动作':'① Hover or focus to Peek　② Click to Pin in Signal Dock　③ Choose a deeper action in the dock','单日峰值':'Daily peak','连续天数':'Consecutive days','累计活跃天':'Total active days','活跃小时数':'Active hours','模型种类':'Model count','项目足迹':'Project footprint','会话数量':'Session count','缓存命中':'Cache share','缓存读取量':'Cache read volume','单会话轮数':'Turns per session','日均 token':'Daily average tokens','累计输入':'Total input','累计输出':'Total output','缓存写入':'Cache writes','每次调用密度':'Tokens per call','每日调用密度':'Calls per day','平均会话体量':'Average session size','会话中位数':'Median session size','最大会话':'Largest session','每日会话密度':'Sessions per day','平均项目体量':'Average project size','最大项目':'Largest project','夜猫指数':'Night-owl index','晨光指数':'Morning index','工时集中度':'Work-hour concentration','黄昏指数':'Evening index','波动指数':'Volatility index','增长连击':'Growth streak','回落连击':'Decline streak','近期加速度':'Recent acceleration','七日均值':'Seven-day average','三十日均值':'Thirty-day average','活跃小时跨度':'Active-hour span','活跃小时均值':'Average active hour','主力模型占比':'Primary-model share','模型专注指数':'Model focus index','星期时空坐标':'Weekday coordinates','月份四时':'Seasonal months','模型时段羁绊':'Model-time affinity','复合炼金术':'Composite alchemy','时刻战士':'Time-of-day warrior','星期人格':'Weekday persona','月份里程碑':'Monthly milestones','模型图鉴':'Model catalog','奇思妙想 · 隐藏':'Curiosities · Hidden','枚':'items','时间胶囊已建立基线':'Time capsule baseline established','这是本设备在当前作用域第一次观察这份年鉴。等下一份不同快照到来后，它才会展开真实的前后变化。':'This is the first Almanac observation for the current scope on this device. It will show real changes after a different snapshot arrives.','没有伪造过去':'No fabricated history','本页装载了':'This page holds','Token 的痕迹。':'traces of Tokens.','本地数据宇宙居民':'Resident of the local data universe','及格':'On Track','晨光启动型':'Morning Starter','范围末端仍活跃':'Active through the end of the range','起点为报告边界':'Starts at the report boundary','终点为报告边界':'Ends at the report boundary','工作模式图鉴':'Work Mode Atlas','累计 Token':'Cumulative Tokens','按每日聚合特征描述使用形态；不评价生产力、代码质量或工作表现。':'Describes usage patterns from daily aggregates; it does not evaluate productivity, code quality, or work performance.','每日工作模式，使用方向键浏览':'Daily work modes; use arrow keys to browse','当前模型筛选 · 全部日期':'Current model filters · All dates','当前时光探针':'Current time probe','缓存园丁':'Cache Gardener','上下文复用在当天占据明显份额。':'Context reuse represents a notable share of the day.','探索巡游':'Exploration Roam','多个模型或项目共同参与了当天活动。':'Multiple models or projects contributed to the day.','集中深潜':'Focused Dive','大部分 Token 集中在少数连续小时。':'Most Tokens are concentrated in a few consecutive hours.','高能冲刺':'High-energy Sprint','当天总量明显高于当前范围的典型活跃日。':'The day is notably above a typical active day in the current scope.','稳定巡航':'Steady Cruise','活动达到可分析规模，但没有单一特征占据主导。':'Activity is large enough to analyze, without one feature dominating.','当天 Token 未达到模式分类的最低样本量。':'The day did not reach the minimum Token sample for classification.','达到样本量，且缓存、探索、集中度与冲刺规则均未优先命中。':'The sample is large enough, and no cache, exploration, concentration, or sprint rule took priority.','当前日期均未达到 ':'No dates reached ',' 的分类样本量。':' required for classification.','规则顺序：Cache Read ≥35% → ≥3 模型或 ≥4 项目 → ≤6 活跃小时且最集中 4 小时 ≥72% → ≥活跃日中位数 1.8× → 稳定巡航。最低样本量 1,000 Token；只描述使用形态。':'Rule order: Cache Read ≥35% → ≥3 models or ≥4 projects → ≤6 active hours with ≥72% in the busiest 4 hours → ≥1.8× the active-day median → Steady Cruise. Minimum sample: 1,000 Tokens; patterns only.','回看这一天':'Inspect this day','只描述使用形态。':'Describes usage patterns only.'
 });
 
@@ -30,6 +33,26 @@ const I18N_REPLACEMENTS = Object.freeze([
 ['当前来源：','Current sources: '],['起始','Start'],['至今','Present'],['最后数据距生成日 ','Last data is '],['分母仅包含读取器已经接受并标准化的记录','The denominator includes only records accepted and normalized by readers'],['被解析器拒绝的原始事件不在其中','Raw events rejected by parsers are excluded'],['本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证','This does not guarantee absolute completeness or accuracy of raw logs, privacy, or security'],['已解析记录','parsed records'],['算力主要沿着白昼平稳展开','Token activity is spread steadily through daylight hours'],['点击查看数据可信度','Click to view data provenance'],['至少需要两期数据才能计算状态','At least two periods are required to calculate status'],['新观察项目 ','Newly observed project '],['需要已解析记录包含 cwd 项目路径','Requires parsed records with cwd project paths'],['需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中','Requires parsed records attributable to sessions with per-turn values retained in replay'],['需要已解析记录含可解析时间戳','Requires parsed records with parseable timestamps'],['需要标准化 input/output/cache read/cache write 组成字段可用','Requires normalized input/output/cache read/cache write composition fields'],['需要已解析记录包含项目或会话 identity','Requires parsed records with project or session identity'],[' · 自包含 HTML，离线可用 · 亮/暗随系统 · 按 ',' · Self-contained HTML · Works offline · Light/dark follows system · Press '],[' 唤起命令面板',' to open the command palette'],['随时打开 · 所有操作都在本地完成','to open anytime · Everything stays local'],['期 · 拖动或用方向键预览 · Enter / Space / 点击提交',' periods · Drag or use arrow keys to preview · Enter / Space / click to commit'],[' · Enter / Space / 点击提交',' · Enter / Space / click to commit'],['预览 ','Preview '],['。提交后进入时光探针。','. Commit to enter the time probe.'],['正在预览 ','Previewing '],[' tk · 松开仍为预览，点击或按 Enter 提交',' tk · Release to keep previewing; click or press Enter to commit'],[' · 尚未提交',' · Not committed'],[' · 主力 ',' · Primary '],['% 较上期同期','% vs same point in prior period'],['% 环比','% vs prior'],['预计月末 ','Projected month-end '],['%进度','% elapsed'],['上一期 ','Prior period '],['，峰值',', peak'],['，当前时光探针',', current time probe'],['，按 Enter 回看',', press Enter to inspect'],['▲峰值 ','▲ Peak '],['点击提交回看 ','Click to inspect '],['数据时刻，','Data moment, '],['，按 Enter 回看 ',']; press Enter to inspect '],[' 个模型',' models'],['已选 <b>','Selected <b>'],['</b> 个模型','</b> models'],['覆盖 <b>','Coverage <b>'],['点击切换模型筛选','Click to toggle model filter'],['已选择全部模型','All models selected'],['已清空模型筛选','Model filters cleared'],['已撤销上一次模型筛选','Previous model filter restored'],['主力 ','Primary '],[' · 当前模型筛选构成',' · Current model-filter composition'],['当前回看期 · ','Current probe period · '],['按当前模型筛选重新计算 Top · 悬停 Peek，点击 Pin 后从 Signal Dock 深入','Top lists recomputed for current model filters · Hover to Peek; Pin to explore from Signal Dock'],['最猛烈的一天是 ','Your highest-token day was '],['，单日燃烧 ', ', with '],['相当于日均值的 ','That is '],[' 倍','× the daily average'],['就贡献了全部 Token 的 ',' contributed '],['你的算力生物最喜欢在 ','Your activity peaks around '],['这个小时累计 ','This hour accumulated '],['夜色承载了你 ','Nighttime accounts for '],['% 的 Token','% of Tokens'],[' 是你的主力引擎，独自承载 ',' is your primary engine, handling '],['你使用过 ','You used '],[' 种模型',' models'],['累计 ','Cumulative '],['缓存占比 ','Cache share '],['最近七天的日均 Token 比此前七天 ','The recent seven-day Token average is '],[' 个会话',' sessions'],['纯本地生成 · 没有任何数据离开这台电脑。','Generated locally · No data left this computer.'],[' 枚成就',' achievements'],['生成于 ','Generated at '],[' · 脱敏导出（标识已替换）',' · Pseudonymized export (identifiers replaced)'],['项目路径、会话标识与自然语言标题已替换；精确日期、Token、模型与逐轮序列仍保留。','Project paths, session identifiers, and natural-language titles are replaced; exact dates, Tokens, models, and per-turn series remain.'],['主题：','Theme: '],['（点击切换）','(click to switch)'],['本地生成于 ','Generated locally at '],['，未上传任何数据。', '; no data was uploaded.'],['数据还在沉睡，等第一批 Token 落下后，故事会从这里开始。','No Token data yet. The story starts here after the first records arrive.'],['调整日期范围或来源后重新生成报告。','Regenerate the report after adjusting the date range or sources.'],['恢复模型后可重新计算当前视图。','Restore models to recalculate the current view.'],['退出回看后查看完整范围。','Exit the time probe to view the full scope.'],['尝试调整日期范围、来源或模型筛选。','Try adjusting the date range, sources, or model filters.'],['达到 ','Reached '],['当前范围与时光探针下的完整模型聚合；Pin 不会修改模型筛选。','Complete model aggregate under the current scope and time probe. Pinning does not change model filters.'],[' 条调用记录',' calls'],['分子 ','Numerator '],[' / 分母 ',' / denominator '],[' 个模型分量',' model components'],[' 轮已保留',' retained turns'],['保留边界：最近 200 轮','Retention boundary: most recent 200 turns'],['已 Pin ','Pinned '],['模型线索已选择：','Model clue selected: '],['已展开','Opened '],['证据。',' evidence.'],['统计粒度已切换为 ','Granularity changed to '],['当前占比','Current share'],['活跃期','Active periods'],['峰值期','Peak period'],['范围内首次观察','First observed in scope'],[' 个项目',' projects'],[' 个会话',' sessions'],[' 条真实流向',' actual flows'],[' Token，占比 ',' Tokens, share '],['当前筛选总量 ','current filtered total '],['截至 ','Through '],['，第 ', ', period '],[' 期',''],['最后一期 ','Latest period '],[' Token；此前均值 ',' Tokens; prior average '],['；', '; '],[' · 点击查看趋势',' · Click to view trend'],[' 个活跃日',' active days'],[' 个自然日',' calendar days'],['峰值 ','Peak '],[' · 最近一天无记录',' · No records on the most recent day'],['主力占比 ','Primary share '],['最长连续 ','Longest streak '],[' 天',' days'],['本报告范围内记录于 ','Recorded within this report on '],[' · 比此前高 ',' · Above prior by '],[' 个章节',' chapters'],[' 份紧凑快照',' compact snapshots'],['不保存 cwd、session、标题或逐轮 Token。','No cwd, session identifiers, titles, or per-turn Tokens are stored.'],['当前 <b>','Current <b>'],['</b> / 目标 <b>','</b> / target <b>'],[' · 还差 <b>',' · remaining <b>'],[' 枚已解锁成就',' unlocked achievements'],[' token · 横轴为轮次，不代表真实耗时',' tokens · Horizontal axis is turn number, not elapsed time'],['第 ','Turn '],[' 轮，', ', '],[' Token，累计 ',' Tokens, cumulative '],[' tk</span><span>累计 ',' tk</span><span>Cumulative ']
 ]);
 const I18N_PATTERNS = Object.freeze([
+  [/^([\d,.]+(?:[KMBT])?) (天|小时|模型|项目|会话|次|轮)$/,(_,value,unit)=>`${value} ${{'天':value==='1'?'day':'days','小时':value==='1'?'hour':'hours','模型':value==='1'?'model':'models','项目':value==='1'?'project':'projects','会话':value==='1'?'session':'sessions','次':value==='1'?'call':'calls','轮':value==='1'?'turn':'turns'}[unit]}`],
+  [/^(环比|较上期同期) · 当前 ([\d,.]+) vs 上期 ([\d,.]+)$/,(_,label,current,previous)=>`${I18N_EXACT[label]||label} · current ${current} vs previous ${previous}`],
+  [/^(.+) 是最大变化来源，(增加|减少) ([\d,.]+) Token；全部模型合计(增加|减少) ([\d,.]+)。$/,(_,model,direction,amount,netDirection,net)=>`${model} drove the largest change, ${{'增加':'up','减少':'down'}[direction]} ${amount} Tokens; all models combined are ${{'增加':'up','减少':'down'}[netDirection]} ${net}.`],
+  [/^其余 (\d+) 个模型$/,(_,count)=>`Other ${count} models`],
+  [/^已按 (.+) (降序|升序)$/,(_,name,direction)=>`Sorted by ${name} ${{'降序':'descending','升序':'ascending'}[direction]}`],
+  [/^让 ([\d,.]+(?:[KMBT])?|这枚独特印记) Token 沉积成一层清晰可见的数字地层。$/,(_,target)=>`Let ${target} Tokens settle into a clearly visible digital stratum.`],
+  [/^在一个太阳升落之间，点燃 ([\d,.]+(?:[KMBT])?|这枚独特印记) Token 的高能核心。$/,(_,target)=>`Ignite a ${target}-Token core between one sunrise and sunset.`],
+  [/^让创造不中断，连续 ([\d,.]+(?:[KMBT])?|这枚独特印记) (?:天|days)把火种交给明天。$/,(_,target)=>`Keep creation unbroken and pass the flame forward for ${target} consecutive days.`],
+  [/^日历留下 ([\d,.]+(?:[KMBT])?|这枚独特印记) 个发光坐标，每一个都证明你来过。$/,(_,target)=>`Leave ${target} glowing coordinates on the calendar, each proving you were here.`],
+  [/^把灵感铺进 ([\d,.]+(?:[KMBT])?|这枚独特印记) 个小时格，让时间拥有自己的纹理。$/,(_,target)=>`Spread inspiration across ${target} hours and give time its own texture.`],
+  [/^集齐 ([\d,.]+(?:[KMBT])?|这枚独特印记) 种模型声线，组成一支会思考的合奏。$/,(_,target)=>`Gather ${target} model voices into an ensemble that thinks.`],
+  [/^让代码足迹跨过 ([\d,.]+(?:[KMBT])?|这枚独特印记) 个项目，每座仓库都留下一枚坐标。$/,(_,target)=>`Carry your code trail across ${target} projects, leaving a coordinate in every repository.`],
+  [/^开启 ([\d,.]+(?:[KMBT])?|这枚独特印记) 段对话，把零散问题连成探索航线。$/,(_,target)=>`Open ${target} conversations and connect scattered questions into an exploration route.`],
+  [/^完成 ([\d,.]+(?:[KMBT])?|这枚独特印记) 次调用，让每次往返都成为系统脉搏。$/,(_,target)=>`Complete ${target} calls until every round trip becomes a system pulse.`],
+  [/^从缓存取回 ([\d,.]+(?:[KMBT])?|这枚独特印记) Token，让旧火花再次照亮新答案。$/,(_,target)=>`Recover ${target} Tokens from cache and let old sparks illuminate new answers.`],
+  [/^写下 ([\d,.]+(?:[KMBT])?|这枚独特印记) Token 的捷径，为未来的自己提前铺路。$/,(_,target)=>`Write a ${target}-Token shortcut and pave the road for your future self.`],
+  [/^送入 ([\d,.]+(?:[KMBT])?|这枚独特印记) Token 的问题、上下文与世界碎片。$/,(_,target)=>`Send in ${target} Tokens of questions, context, and fragments of the world.`],
+  [/^让模型吐露 ([\d,.]+(?:[KMBT])?|这枚独特印记) Token，把想法锻造成可见成果。$/,(_,target)=>`Draw out ${target} Tokens and forge ideas into visible results.`],
+  [/^在同一场对话里走过 ([\d,.]+(?:[KMBT])?|这枚独特印记) 轮，把问题一路追到深水区。$/,(_,target)=>`Travel ${target} turns in one conversation and follow the question into deep water.`],
+  [/^让 ([\d,.]+(?:[KMBT])?|这枚独特印记) Token 从 (.+) 汇入这张本地星图。$/,(_,target,source)=>`Let ${target} Tokens from ${source} flow into this local star map.`],
   [/^(.+) · 悬停 Peek · 点击 Pin 信号$/,(_,label)=>`${label} · Hover to Peek · Click to Pin`],
   [/^(\d{1,2})月(\d{1,2})日星期([一二三四五六日])$/,(_,month,day,weekday)=>`${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']['一二三四五六日'.indexOf(weekday)]}, ${month}/${day}`],
   [/^(\d{4}-\d{2}-\d{2}) · ([\d,.]+) tk（([\d,.]+) 次）$/,(_,date,tokens,calls)=>`${date} · ${tokens} tk (${calls} calls)`],
@@ -348,19 +371,39 @@ function animateNum(el, to, dur, formatter=fmt){
   requestAnimationFrame(tick);
 }
 
-function selectedDayTotal(day){
-  const detail=DATA.day_details?.[day];if(!detail)return 0;
-  let total=0;Object.entries(detail.hourly_models||{}).forEach(([model,hours])=>{if(state.models.has(model))total+=sumList(hours);});return total;
+function selectedDayModelTotals(day){
+  const totals={};DATA.models.forEach(model=>totals[model]=0);const detail=DATA.day_details?.[day];
+  Object.entries(detail?.hourly_models||{}).forEach(([model,hours])=>{if(state.models.has(model))totals[model]=sumList(hours);});return totals;
 }
-function periodDelta(rows){
+function selectedDayTotal(day){return sumList(Object.values(selectedDayModelTotals(day)));}
+function deltaWindowInfo(rows){
   if(rows.length<2)return null;
   const current=rows[rows.length-1],previous=rows[rows.length-2],generatedDay=String(DATA.generated||'').slice(0,10),until=DATA.range?.until;
   const currentDays=periodDays(current.period,state.gran),open=currentDays.includes(generatedDay)&&(!until||until>=generatedDay);
-  if(!open)return previous.total>0?{value:(current.total-previous.total)/previous.total*100,label:'环比'}:null;
+  if(!open)return {label:'环比',current,previous,currentDays:null,previousDays:null,currTotal:current.total,prevTotal:previous.total};
   if(state.gran==='day')return null;
   const elapsed=currentDays.filter(day=>day<generatedDay).length;if(!elapsed)return null;
-  const currentComparable=currentDays.slice(0,elapsed).reduce((sum,day)=>sum+selectedDayTotal(day),0),previousComparable=periodDays(previous.period,state.gran).slice(0,elapsed).reduce((sum,day)=>sum+selectedDayTotal(day),0);
-  return previousComparable>0?{value:(currentComparable-previousComparable)/previousComparable*100,label:'较上期同期'}:null;
+  const previousDays=periodDays(previous.period,state.gran).slice(0,elapsed),comparableDays=currentDays.slice(0,elapsed);
+  const currTotal=comparableDays.reduce((sum,day)=>sum+selectedDayTotal(day),0),prevTotal=previousDays.reduce((sum,day)=>sum+selectedDayTotal(day),0);
+  return {label:'较上期同期',current,previous,currentDays:comparableDays,previousDays,currTotal,prevTotal};
+}
+function periodDelta(rows){
+  const window=deltaWindowInfo(rows);return window&&window.prevTotal>0?{value:(window.currTotal-window.prevTotal)/window.prevTotal*100,label:window.label}:null;
+}
+function attributionFor(rows){
+  const window=deltaWindowInfo(rows);if(!window||window.prevTotal<=0)return null;
+  const totals=(row,days)=>{if(!days)return Object.fromEntries(DATA.models.map(model=>[model,state.models.has(model)?(row.models?.[model]||0):0]));const out=Object.fromEntries(DATA.models.map(model=>[model,0]));days.forEach(day=>{const values=selectedDayModelTotals(day);DATA.models.forEach(model=>out[model]+=values[model]||0);});return out;};
+  const curr=totals(window.current,window.currentDays),prev=totals(window.previous,window.previousDays),parts=DATA.models.filter(model=>state.models.has(model)).map(model=>({model,curr:curr[model]||0,prev:prev[model]||0,delta:(curr[model]||0)-(prev[model]||0)})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)||a.model.localeCompare(b.model));
+  return {label:window.label,currTotal:window.currTotal,prevTotal:window.prevTotal,parts};
+}
+
+function renderAttribution(){
+  const result=attributionFor(selectedRows()),list=document.getElementById('delta-list'),story=document.getElementById('delta-story'),total=document.getElementById('delta-total'),windowLabel=document.getElementById('delta-window');if(!list)return;
+  if(!result){windowLabel.textContent='需要连续两期且上期 Token 大于 0';total.textContent='暂无可比窗口';story.textContent='当前范围无法形成可靠归因；切换到有连续数据的周或月再看。';list.innerHTML='<div class=delta-empty role=listitem>没有足够的同期数据可拆解。</div>';return;}
+  const net=result.currTotal-result.prevTotal,changed=result.parts.filter(part=>part.delta!==0),top=changed.slice(0,5),rest=changed.slice(5),shown=rest.length?[...top,{model:'其余',curr:sumBy(rest,'curr'),prev:sumBy(rest,'prev'),delta:sumBy(rest,'delta'),other:true}]:top,max=Math.max(1,...shown.map(part=>Math.abs(part.delta))),leader=changed[0];
+  windowLabel.textContent=result.label+' · 当前 '+fmt(result.currTotal)+' vs 上期 '+fmt(result.prevTotal);total.innerHTML='<b>'+(net>0?'+':'')+fmt(net)+'</b><span> Token</span>';
+  story.textContent=leader?(pretty(leader.model)+' 是最大变化来源，'+(leader.delta>=0?'增加 ':'减少 ')+fmt(Math.abs(leader.delta))+' Token；全部模型合计'+(net>=0?'增加 ':'减少 ')+fmt(Math.abs(net))+'。'):'各模型与上一比较窗口持平。';
+  list.innerHTML=shown.map(part=>{const pct=Math.abs(part.delta)/max*50,side=part.delta>=0?'pos':'neg',color=part.other?'var(--faint)':modelColor(part.model),name=part.other?'其余 '+rest.length+' 个模型':pretty(part.model);return '<div class="delta-row '+side+'" role=listitem><span class=delta-name><i style="background:'+esc(color)+'"></i><span>'+esc(name)+'</span></span><span class=delta-track><i class=delta-zero></i><b style="width:'+pct.toFixed(1)+'%;--delta-color:'+esc(color)+'"></b></span><span class=delta-value>'+(part.delta>0?'+':'')+fmt(part.delta)+'</span></div>';}).join('')||'<div class=delta-empty role=listitem>各模型与上一比较窗口持平。</div>';
 }
 
 function forecastForLatestMonth(rows){
@@ -589,7 +632,7 @@ donutLegend.addEventListener('click',event=>{
 });
 /* 明细表键盘与移动详情：detail 行无 data-period，不参与 roving/联动 */
 const tableHead=document.getElementById('thead');
-tableHead.addEventListener('click',event=>{const button=event.target.closest('[data-sort-key]');if(button)cycleTableSort(button.dataset.sortKey);});
+tableHead.addEventListener('click',event=>{const button=event.target.closest('[data-sort-key]');if(button)cycleTableSort(button.dataset.sortKey,button.dataset.sortModel||null);});
 const tableBody=document.getElementById('tbody');
 tableBody.addEventListener('focusin',event=>{
   const row=event.target.closest('tr[data-period]');if(!row)return;
@@ -626,7 +669,7 @@ tableBody.addEventListener('click',event=>{
 });
 
 /* 明细表排序：纯展示态，不进 state/stateKey/URL；导出与柱体仍按规范时间序 */
-const tableSort={key:null,dir:null};
+const tableSort={key:null,dir:null,model:null};
 const tableFocus={period:null,suppressPreview:false};
 function reuseShares(){
   return memoDerived('shares|'+stateKey(),()=>{
@@ -638,7 +681,8 @@ function reuseShares(){
     return map;
   });
 }
-function sortValue(row,key){
+function sortValue(row,key,model=tableSort.model){
+  if(key==='m')return row.models?.[model]||0;
   if(key==='cache'||key==='output'){const share=reuseShares()[row.period];return share?share[key]:null;}
   return row[key];
 }
@@ -655,30 +699,32 @@ function sortedRows(rows){
     return (av-bv)*sign;
   }).map(pair=>pair[0]);
 }
-function thSort(key,label,i18nKey){
-  const active=tableSort.key===key;
-  const dir=active?(tableSort.dir==='asc'?'ascending':'descending'):'none';
-  return '<th class="num" aria-sort="'+dir+'"><button type="button" class="th-sort" data-sort-key="'+key+'"'+(i18nKey?' data-i18n-key="'+esc(i18nKey)+'"':'')+' aria-label="'+esc(label)+'，点击排序">'+esc(label)+'</button></th>';
+function thSort(key,label,i18nKey,model=null){
+  const active=tableSort.key===key&&(key!=='m'||tableSort.model===model);
+  const dir=active?(tableSort.dir==='asc'?'ascending':'descending'):'none',modelAttr=model===null?'':' data-sort-model="'+esc(model)+'"';
+  return '<th class="num'+(key==='m'?' col-model':'')+'" aria-sort="'+dir+'"><button type="button" class="th-sort" data-sort-key="'+key+'"'+modelAttr+(i18nKey?' data-i18n-key="'+esc(i18nKey)+'"':'')+' aria-label="'+esc(label)+'，点击排序">'+esc(label)+'</button></th>';
 }
-function cycleTableSort(key){
-  if(tableSort.key!==key){tableSort.key=key;tableSort.dir='desc';}
+function cycleTableSort(key,model=null){
+  const same=tableSort.key===key&&(key!=='m'||tableSort.model===model);
+  if(!same){tableSort.key=key;tableSort.model=key==='m'?model:null;tableSort.dir='desc';}
   else if(tableSort.dir==='desc')tableSort.dir='asc';
-  else{tableSort.key=null;tableSort.dir=null;}
+  else{tableSort.key=null;tableSort.model=null;tableSort.dir=null;}
   renderTable();
-  /* thead innerHTML 被整体替换，必须重找按钮还焦 */
-  const button=document.querySelector('#thead [data-sort-key="'+key+'"]');
+  /* thead innerHTML 被整体替换，模型名不进入 selector，避免特殊字符改变查询语义 */
+  const button=[...document.querySelectorAll('#thead [data-sort-key]')].find(x=>x.dataset.sortKey===key&&(key!=='m'||x.dataset.sortModel===model));
   if(button)button.focus();
-  const names={total:'总 token',calls:'调用',cache:'缓存占比',output:'输出占比'};
-  toast(tableSort.key?'已按 '+names[key]+' '+(tableSort.dir==='desc'?'降序':'升序'):'已恢复时间序');
+  const names={total:'总 token',calls:'调用',cache:'缓存占比',output:'输出占比'},name=key==='m'?pretty(model):names[key];
+  toast(tableSort.key?'已按 '+name+' '+(tableSort.dir==='desc'?'降序':'升序'):'已恢复时间序');
 }
 function renderTable(){
   const rows=selectedRows();
   const cols=DATA.models.filter(m=>state.models.has(m));
+  if(tableSort.key==='m'&&!cols.includes(tableSort.model)){tableSort.key=null;tableSort.dir=null;tableSort.model=null;}
   const shares=reuseShares(),ordered=sortedRows(rows);
   /* 重渲染焦点恢复：只在原焦点确在行内时还原，绝不抢页面焦点 */
   const focusRow=document.activeElement?.closest?.('#tbody tr[data-period]');
   const focusBefore=focusRow?focusRow.dataset.period:null;
-  const th=cols.map(m=>'<th class="num col-model">'+esc(pretty(m))+'</th>').join('');
+  const th=cols.map(m=>thSort('m',pretty(m),null,m)).join('');
   const shareCell=share=>share==null?'<td class=num><span class=dim>·</span></td>':'<td class=num>'+(share*100).toFixed(1)+'%</td>';
   const anchor=ordered.some(r=>r.period===tableFocus.period)?tableFocus.period:null;
   const body=ordered.map((r,i)=>{
@@ -931,6 +977,8 @@ document.getElementById('probe-close').addEventListener('click',clearFocus);
 const THEMES=[['auto','🌗','自动'],['light','☀️','亮色'],['dark','🌙','暗色']];
 const themeMedia=window.matchMedia('(prefers-color-scheme: dark)');
 let restoringView=true;
+let auxView=null;
+let achievementHistoryOwned=false;
 let themeVisualsReady=false;
 function currentTheme(){return document.documentElement.getAttribute('data-theme')||'auto';}
 function effectiveTheme(){const selected=currentTheme();return selected==='light'||selected==='dark'?selected:(themeMedia.matches?'dark':'light');}
@@ -943,17 +991,19 @@ function viewParams(){
   if(state.models.size!==DATA.models.length)DATA.models.filter(m=>state.models.has(m)).forEach(m=>p.append('model',m));
   if(state.focusPeriod)p.set('focus',state.focusPeriod);
   if(state.compare)p.set('compare','1');
+  if(auxView==='achievements')p.set('view','achievements');
   const theme=currentTheme();if(theme!=='auto')p.set('t',theme);
   return p;
 }
 function viewURL(){const u=new URL(location.href);u.search=viewParams().toString();u.hash='';return u.toString();}
 function portableViewURL(){if(location.protocol!=='file:')return viewURL();const q=viewParams().toString(),name=location.pathname.split('/').pop()||'dashboard.html';return name+(q?'?'+q:'');}
-function syncViewURL(replace=true){if(restoringView||!history.replaceState)return;const u=viewURL();history[replace?'replaceState':'pushState'](null,'',u);}
+function syncViewURL(replace=true){if(restoringView||!history.replaceState)return;const u=viewURL(),marker=achievementHistoryOwned&&auxView==='achievements'?{tokensAuxView:'achievements'}:history.state;history[replace?'replaceState':'pushState'](marker,'',u);}
 function restoreViewFromURL(){
   const p=new URLSearchParams(location.search),g=p.get('gran')||((location.hash||'').replace('#',''));
   if(['day','week','month'].includes(g))state.gran=g;
   const requested=p.getAll('model'),legacy=p.get('models');if(requested.length||legacy!==null){const allowed=new Set(DATA.models),models=(requested.length?requested:(legacy?legacy.split(','):[])).filter(m=>allowed.has(m));state.models=new Set(models);}else state.models=new Set(DATA.models);previousModels=null;
-  const focus=p.get('focus');state.focusPeriod=validFocus(focus,state.gran)?focus:null;state.compare=p.get('compare')==='1';
+  const focus=p.get('focus');state.focusPeriod=validFocus(focus,state.gran)?focus:null;state.compare=p.get('compare')==='1';auxView=p.get('view')==='achievements'?'achievements':null;
+  achievementHistoryOwned=auxView==='achievements'&&history.state?.tokensAuxView==='achievements';
   const theme=(p.get('t')||'').toLowerCase();if(['auto','light','dark'].includes(theme))applyTheme(theme);
 }
 function viewDescription(){const gran={day:'按日',week:'按周',month:'按月'}[state.gran],modelCount=state.models.size,focus=state.focusPeriod?fmtLabel(state.focusPeriod,state.gran):'全景',compare=state.compare?'已固定':signalState.compareHeld?'临时预览':'关闭';return {gran,modelCount,focus,compare};}
@@ -972,7 +1022,7 @@ document.getElementById('view-capsule').addEventListener('click',e=>{e.stopPropa
 document.getElementById('view-copy').addEventListener('click',copyViewLink);document.getElementById('view-reset').addEventListener('click',resetView);document.addEventListener('click',e=>{if(!e.target.closest('.view-wrap')){document.getElementById('view-pop').classList.remove('open');document.getElementById('view-capsule').setAttribute('aria-expanded','false');}if(!e.target.closest('#signal-dock')){document.getElementById('signal-pop').classList.remove('open');document.getElementById('signal-main').setAttribute('aria-expanded','false');}});
 document.getElementById('signal-main').addEventListener('click',event=>{event.stopPropagation();const pop=document.getElementById('signal-pop'),open=!pop.classList.contains('open');pop.classList.toggle('open',open);event.currentTarget.setAttribute('aria-expanded',String(open));if(open){renderSignalDock();setTimeout(()=>{const action=document.getElementById('signal-action');(action&&!action.disabled?action:document.getElementById('exact-btn'))?.focus();},0);}});
 document.getElementById('signal-pop').addEventListener('click',event=>event.stopPropagation());document.getElementById('signal-clear').addEventListener('click',()=>clearSignal());document.getElementById('signal-action').addEventListener('click',event=>{const run=event.currentTarget.__signalRun;if(run)run();});document.getElementById('exact-btn').addEventListener('click',()=>{signalState.exactPinned=!signalState.exactPinned;syncExactness();renderSignalDock();document.getElementById('signal-status').textContent=signalState.exactPinned?'精确层已固定':'精确层已取消固定';});
-window.addEventListener('popstate',()=>{clearScrub();restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderDataViews();restoringView=false;});
+window.addEventListener('popstate',()=>{clearScrub();restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderDataViews();syncAuxViewFromState();restoringView=false;});
 
 const compareButton=document.getElementById('compare-btn');let compareHoldTimer=null,compareHoldReached=false;
 function togglePinnedCompare(){state.compare=!state.compare;setCompareHeld(false);renderBar();renderViewCapsule();syncViewURL();announceViewChange(state.compare?'幻影对比已固定':'幻影对比已取消',['section-trend']);}
@@ -1015,7 +1065,7 @@ function initLazyRendering(){
   const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{const name=entry.target.dataset.lazy;lazyState[name]=Object.assign({},lazyState[name],{visible:entry.isIntersecting});if(entry.isIntersecting&&(lazyState[name].dirty||!lazyState[name].rendered))renderLazy(name,true);}),{rootMargin:'500px 0px'});
   document.querySelectorAll('[data-lazy]').forEach(card=>observer.observe(card));
 }
-function renderCoreViews(){renderKPI();renderBar();renderTrendLegend();renderDonut();renderTable();renderTop();renderStatusPulse();renderViewCapsule();}
+function renderCoreViews(){renderKPI();renderBar();renderTrendLegend();renderAttribution();renderDonut();renderTable();renderTop();renderStatusPulse();renderViewCapsule();}
 function renderTimeViews(){renderProbe();renderRhythm();renderBlock();}
 function renderModelViews(){markLazyDirty();markStaticLazyDirty();}
 function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderFooter();renderDataTrail();applySignalLens();syncViewURL();}
@@ -1461,7 +1511,7 @@ function secretCommand(q){
 }
 
 function scrollToSection(id){const el=document.getElementById(id);if(!el)return;const lazy=el.dataset.lazy;if(lazy){lazyState[lazy]=Object.assign({},lazyState[lazy],{visible:true});renderLazy(lazy,true);}el.scrollIntoView({behavior:scrollBehavior(),block:'start'});}
-const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-provenance','体检'],['section-almanac','年鉴'],['section-project','项目'],['section-rhythm','节奏'],['section-reuse','复用'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
+const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-delta','归因'],['section-provenance','体检'],['section-almanac','年鉴'],['section-project','项目'],['section-rhythm','节奏'],['section-reuse','复用'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
 function initSectionDock(){
   const dock=document.getElementById('section-dock');dock.addEventListener('click',e=>{const b=e.target.closest('button[data-target]');if(b)scrollToSection(b.dataset.target);});
   const mark=id=>dock.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.target===id));
@@ -1487,7 +1537,7 @@ function cmdActions(){ return [
   {ic:'◫',t:'跳转 · 节奏',k:'',run:()=>scrollToSection('section-rhythm')},
   {ic:'≈',t:'跳转 · Context Reuse River',k:'',run:()=>scrollToSection('section-reuse')},
   {ic:'≋',t:'跳转 · Token 流光图',k:'',run:()=>scrollToSection('section-flow')},
-  {ic:'◇',t:'跳转 · 成就',k:'',run:()=>scrollToSection('section-achievements')},
+  {ic:'◇',t:'打开 · 成就图鉴',k:'',run:()=>openAchievements()},
   {ic:'№',t:'跳转 · Top',k:'',run:()=>scrollToSection('section-top')},
   {ic:'📅',t:'按日',k:'1',run:()=>setGran('day')},
   {ic:'📆',t:'按周',k:'2',run:()=>setGran('week')},
@@ -1661,6 +1711,38 @@ function achievementMetric(snapshot,category){
   if(category.startsWith('来源 · '))return snapshot.sources[category.slice(5)]||0;
   return null;
 }
+const ACHIEVEMENT_STORY_EN = Object.freeze({
+  '累计 token':target=>`Let ${target} Tokens settle into a clearly visible digital stratum.`,
+  '单日峰值':target=>`Ignite a ${target}-Token core between one sunrise and sunset.`,
+  '连续天数':target=>`Keep creation unbroken and pass the flame forward for ${target} consecutive days.`,
+  '累计活跃天':target=>`Leave ${target} glowing coordinates on the calendar, each proving you were here.`,
+  '活跃小时数':target=>`Spread inspiration across ${target} hours and give time its own texture.`,
+  '模型种类':target=>`Gather ${target} model voices into an ensemble that thinks.`,
+  '项目足迹':target=>`Carry your code trail across ${target} projects, leaving a coordinate in every repository.`,
+  '会话数量':target=>`Open ${target} conversations and connect scattered questions into an exploration route.`,
+  '调用次数':target=>`Complete ${target} calls until every round trip becomes a system pulse.`,
+  '缓存读取量':target=>`Recover ${target} Tokens from cache and let old sparks illuminate new answers.`,
+  '缓存写入':target=>`Write a ${target}-Token shortcut and pave the road for your future self.`,
+  '累计输入':target=>`Send in ${target} Tokens of questions, context, and fragments of the world.`,
+  '累计输出':target=>`Draw out ${target} Tokens and forge ideas into visible results.`,
+  '单会话轮数':target=>`Travel ${target} turns in one conversation and follow the question into deep water.`,
+});
+function achievementStoryEnglish(b){
+  const target=b.target==null?'this singular mark':human(b.target),category=b.category||'',theme=ACHIEVEMENT_STORY_EN[category];
+  if(theme)return theme(target);
+  if(category.startsWith('来源 · '))return `Let ${target} Tokens from ${category.slice(5)} flow into this local star map.`;
+  return null;
+}
+function achievementStory(b){
+  const special={
+    'Hello World':'第一束 Token 已点亮，故事从终端光标后开始。','rm -rf 幸存者':'穿过亿级洪流，工作区和理智都还在线。','缓存播种者':'把重复计算埋进缓存，让下一次回答从捷径醒来。','Prompt 巫师':'输出比输入更辽阔，一句咒语召来整片文本星云。','全栈宇航员':'跨项目、跨模型、跨昼夜，把整座技术栈飞成轨道站。','真正的程序员':'夜色最深时，调用计数仍像机房指示灯一样闪烁。','Token 黑洞':'十亿 Token 在同一天越过视界，连刻度都开始弯曲。','第一粒 Token':'微小的一粒输入，已经让这座本地宇宙开始运转。','数字文明':'万亿 Token 堆成大陆；这里不再是记录，而是一部编年史。'
+  };if(special[b.n])return special[b.n];
+  const target=b.target==null?'这枚独特印记':human(b.target),category=b.category||'',themes={
+    '累计 token':'让 '+target+' Token 沉积成一层清晰可见的数字地层。','单日峰值':'在一个太阳升落之间，点燃 '+target+' Token 的高能核心。','连续天数':'让创造不中断，连续 '+target+' 天把火种交给明天。','累计活跃天':'日历留下 '+target+' 个发光坐标，每一个都证明你来过。','活跃小时数':'把灵感铺进 '+target+' 个小时格，让时间拥有自己的纹理。','模型种类':'集齐 '+target+' 种模型声线，组成一支会思考的合奏。','项目足迹':'让代码足迹跨过 '+target+' 个项目，每座仓库都留下一枚坐标。','会话数量':'开启 '+target+' 段对话，把零散问题连成探索航线。','调用次数':'完成 '+target+' 次调用，让每次往返都成为系统脉搏。','缓存读取量':'从缓存取回 '+target+' Token，让旧火花再次照亮新答案。','缓存写入':'写下 '+target+' Token 的捷径，为未来的自己提前铺路。','累计输入':'送入 '+target+' Token 的问题、上下文与世界碎片。','累计输出':'让模型吐露 '+target+' Token，把想法锻造成可见成果。','单会话轮数':'在同一场对话里走过 '+target+' 轮，把问题一路追到深水区。'
+  };if(themes[category])return themes[category];
+  if(category.startsWith('来源 · '))return '让 '+target+' Token 从 '+category.slice(5)+' 汇入这张本地星图。';
+  const fallback={bronze:'一枚新坐标已进入图鉴。',silver:'稳定积累开始显出自己的轮廓。',gold:'跨过高门槛，留下值得回看的金色刻度。',prismatic:'抵达阶梯远端，让这枚印记折射出彩钻光谱。'};return fallback[b.tier]||fallback.bronze;
+}
 function finalizeAchievements(cats){
   const snapshots=achievementSnapshots(),seen=new Set();
   cats.forEach(c=>c.items.forEach((b,index)=>{
@@ -1670,6 +1752,7 @@ function finalizeAchievements(cats){
     b.thresholdRank=b.thresholdCount?Math.max(1,Math.round((b.thresholdCount-b.thresholdIndex)/b.thresholdCount*100)):null;
     b.nearEligible=!!(b.target!=null&&!b.secret&&(ACH_TRACKED.has(c.name)||c.name.startsWith('来源 · ')));
     if(b.ok&&b.target!=null&&(ACH_TRACKED.has(c.name)||c.name.startsWith('来源 · '))){const hit=snapshots.find(s=>achievementMetric(s,c.name)>=b.target);if(hit){b.unlockDay=hit.day;b.unlockPrecision=hit===snapshots[0]?'range-boundary':'range-day';}}
+    b.story=achievementStory(b);b.storyEn=achievementStoryEnglish(b);
   }));
   return cats;
 }
@@ -1910,10 +1993,18 @@ function compareAchievementSnapshot(all){
   store[scope]={generated,ids};const entries=Object.entries(store).sort((a,b)=>String(b[1].generated).localeCompare(String(a[1].generated))).slice(0,8);try{localStorage.setItem(key,JSON.stringify(Object.fromEntries(entries)));}catch(e){}
   return fresh;
 }
+function achievementStoryText(b){return dashboardLanguage==='en'?(b.storyEn||englishText(b.story||b.d)):(b.story||b.d);}
+function achievementNameText(b){
+  if(dashboardLanguage!=='en')return b.n;
+  const translated=englishText(b.n);
+  if(!/[㐀-鿿]/.test(translated))return translated;
+  const suffix=String(b.n).match(/ · (\d+)$/),category=englishText(b.category||''),base=category&&!/[㐀-鿿]/.test(category)?category:'Achievement';
+  return suffix?base+' · '+suffix[1]:base;
+}
 function badgeCell(b){
-  const masked=b.secret&&!b.ok,cls='badge '+(b.ok?('on tier-'+b.tier):'off')+(b.secret?' secret':'')+(b.isNew?' is-new':''),status=b.ok?'已解锁':'未解锁',date=b.ok?'，'+achievementDateLabel(b):'',progress=b.target!=null?'，当前 '+fmt(Math.round(b.current||0))+'，目标 '+fmt(Math.round(b.target)):'',label=masked?'隐藏成就，达成自动揭晓':b.n+'，'+status+'，'+b.prestige+date+progress;
+  const masked=b.secret&&!b.ok,cls='badge '+(b.ok?('on tier-'+b.tier):'off')+(b.secret?' secret':'')+(b.isNew?' is-new':''),status=b.ok?'已解锁':'未解锁',date=b.ok?'，'+achievementDateLabel(b):'',progress=b.target!=null?'，当前 '+fmt(Math.round(b.current||0))+'，目标 '+fmt(Math.round(b.target)):'',name=achievementNameText(b),label=masked?'隐藏成就，达成自动揭晓':name+'，'+status+'，'+b.prestige+date+progress;
   const meta=masked?'':(b.ok?(b.unlockDay?'达成于 '+b.unlockDay:'已达成'):(b.target!=null?(b.target>=1?Math.round(b.progress*100)+'% · 还差 '+human(Math.ceil(b.remaining)):Math.round(b.progress*100)+'%'):''));
-  return '<button type=button class="'+cls+'" data-ach-id="'+esc(b.id)+'" aria-label="'+esc(label)+'"'+(masked?' disabled':'')+'><span class=ring>'+(masked?'❓':(b.ok?b.e:'🔒'))+'</span><span class=nm>'+(masked?'???':esc(b.n))+'</span><span class=dc>'+(masked?'隐藏':esc(b.d))+'</span>'+(meta?'<span class=bd>'+esc(meta)+'</span>':'')+'</button>';
+  return '<button type=button class="'+cls+'" data-ach-id="'+esc(b.id)+'" aria-label="'+esc(label)+'"'+(masked?' disabled':'')+'><span class=ring>'+(masked?'❓':(b.ok?b.e:'🔒'))+'</span><span class=nm>'+(masked?'???':esc(name))+'</span><span class=dc>'+(masked?'隐藏':esc(achievementStoryText(b)))+'</span>'+(meta?'<span class=bd>'+esc(meta)+'</span>':'')+'</button>';
 }
 let _ach=null,_newAchievements=new Set();
 function renderBadges(){
@@ -1921,7 +2012,7 @@ function renderBadges(){
   const timeline=achievementTimeline(a.all),latest=timeline[0]||a.all.filter(b=>b.ok).sort((x,y)=>({prismatic:3,gold:2,silver:1,bronze:0}[y.tier]-{prismatic:3,gold:2,silver:1,bronze:0}[x.tier]))[0],goals=nextAchievementGoals(a.all);
   document.getElementById('ach-meta').innerHTML='已解锁 <b>'+fmt(a.got)+'</b> 枚 · '+(_newAchievements.size?'<b>'+_newAchievements.size+'</b> 枚本设备新观察':'本地快照收藏');
   document.getElementById('ach-scope').textContent=(DATA.range?.since||DATA.range?.until)?'范围 '+(DATA.range.since||'最早')+' → '+(DATA.range.until||'最新'):'当前报告全部数据';
-  document.getElementById('ach-latest').innerHTML=latest?'<div class=ach-latest-card><div class="ach-latest-icon tier-'+latest.tier+'">'+latest.e+'</div><div class=ach-latest-copy><h3>'+esc(latest.n)+'</h3><p>'+esc(latest.d)+(latest.crossed>1?' · 同日跨越 '+latest.crossed+' 个门槛':'')+'</p></div><div class=ach-latest-meta><span class=ach-rank>'+esc(latest.prestige)+(latest.thresholdRank?' · 该阶梯前 '+latest.thresholdRank+'% 门槛':'')+'</span><span class=ach-date>'+esc(achievementDateLabel(latest))+'</span>'+(_newAchievements.has(latest.id)?'<span class=ach-new>本设备新观察到</span>':'')+'</div></div>':'<div class=ach-empty>还没有可展示的已解锁成就。</div>';
+  document.getElementById('ach-latest').innerHTML=latest?'<div class=ach-latest-card><div class="ach-latest-icon tier-'+latest.tier+'">'+latest.e+'</div><div class=ach-latest-copy><h3>'+esc(latest.n)+'</h3><p>'+esc(achievementStoryText(latest))+(latest.crossed>1?' · 同日跨越 '+latest.crossed+' 个门槛':'')+'</p></div><div class=ach-latest-meta><span class=ach-rank>'+esc(latest.prestige)+(latest.thresholdRank?' · 该阶梯前 '+latest.thresholdRank+'% 门槛':'')+'</span><span class=ach-date>'+esc(achievementDateLabel(latest))+'</span>'+(_newAchievements.has(latest.id)?'<span class=ach-new>本设备新观察到</span>':'')+'</div></div>':'<div class=ach-empty>还没有可展示的已解锁成就。</div>';
   document.getElementById('ach-timeline').innerHTML=timeline.slice(0,5).map(b=>'<li><span class=ati>'+b.e+'</span><span><b>'+esc(b.n)+'</b><small>'+esc(b.prestige)+(b.crossed>1?' · 同日跨越 '+b.crossed+' 个门槛':'')+'</small></span><time datetime="'+b.unlockDay+'">'+b.unlockDay+'</time></li>').join('')||'<li class=ach-empty>当前聚合快照无法还原精确达成日期。</li>';
   document.getElementById('ach-goals').innerHTML=goals.map(b=>'<article class=ach-goal><div class=ach-goal-head><b>'+b.e+' '+esc(b.n)+'</b><span>'+esc(b.prestige)+'</span></div><div class=ach-goal-track aria-label="'+esc(b.n)+' 进度 '+Math.round(b.progress*100)+'%"><i style="width:'+Math.max(2,b.progress*100).toFixed(1)+'%"></i></div><div class=ach-goal-foot><span>'+fmt(Math.round(b.current))+' / '+fmt(Math.round(b.target))+'</span><strong>还差 '+fmt(Math.ceil(b.remaining))+'</strong></div></article>').join('')||'<div class=ach-empty>当前没有适合推荐的单调目标。</div>';
   const TCOL={bronze:'#c08457',silver:'#b8c0cc',gold:'#f0b429',prismatic:'linear-gradient(90deg,#5b8def,#a78bfa,#f472b6,#14b8a6)'},TLB={bronze:'青铜',silver:'白银',gold:'黄金',prismatic:'彩钻'},TORD=['prismatic','gold','silver','bronze'],trows=TORD.map(t=>{const bs=a.all.filter(b=>b.tier===t),g=bs.filter(b=>b.ok).length;return {t,g,n:bs.length,pct:bs.length?g/bs.length:0};}),top=TORD.find(t=>trows.find(r=>r.t===t&&r.g>0))||'bronze';
@@ -1930,7 +2021,11 @@ function renderBadges(){
   document.getElementById('ach-prestige-note').textContent='图鉴阶位与“该阶梯前 X% 门槛”只描述本地目录中的门槛位置，不是全球用户稀有度。';
   if(_newAchievements.size){const strongest=a.all.filter(b=>_newAchievements.has(b.id)).sort((x,y)=>({prismatic:3,gold:2,silver:1,bronze:0}[y.tier]-{prismatic:3,gold:2,silver:1,bronze:0}[x.tier]))[0],card=document.getElementById('section-achievements');card.classList.remove('ach-celebrate');void card.offsetWidth;card.classList.add('ach-celebrate');toast('🏆 本设备新观察到 '+_newAchievements.size+' 枚成就');if(strongest&&['gold','prismatic'].includes(strongest.tier)&&document.documentElement.dataset.motion==='full')confetti();}
 }
-function achievementDetail(b){const date=b.ok?achievementDateLabel(b):'尚未达成',progress=b.target!=null?'当前 <b>'+fmt(Math.round(b.current||0))+'</b> / 目标 <b>'+fmt(Math.round(b.target))+'</b>'+(b.ok?'':' · 还差 <b>'+fmt(Math.ceil(b.remaining))+'</b>'):'';document.getElementById('ach-detail').innerHTML='<b>'+esc(b.e+' '+b.n)+'</b> · '+esc(b.ok?'已解锁':'未解锁')+' · '+esc(b.prestige)+(b.thresholdRank?' · 该阶梯前 '+b.thresholdRank+'% 门槛':'')+'<br>'+esc(date)+(progress?' · '+progress:'')+'<br><span>'+esc(b.d)+'；范围语义：当前报告快照。阶位不是全球用户稀有度。</span>';}
+function achievementDetail(b){
+  const english=dashboardLanguage==='en',date=b.ok?(english?englishText(achievementDateLabel(b)):achievementDateLabel(b)):(english?'Not unlocked yet':'尚未达成'),progress=b.target!=null?(english?'Current <b>'+fmt(Math.round(b.current||0))+'</b> / target <b>'+fmt(Math.round(b.target))+'</b>'+(b.ok?'':' · <b>'+fmt(Math.ceil(b.remaining))+'</b> remaining'):'当前 <b>'+fmt(Math.round(b.current||0))+'</b> / 目标 <b>'+fmt(Math.round(b.target))+'</b>'+(b.ok?'':' · 还差 <b>'+fmt(Math.ceil(b.remaining))+'</b>')):'';
+  const status=english?(b.ok?'Unlocked':'Locked'):(b.ok?'已解锁':'未解锁'),prestige=english?englishText(b.prestige):b.prestige,rank=b.thresholdRank?(english?' · Top '+b.thresholdRank+'% threshold in this track':' · 该阶梯前 '+b.thresholdRank+'% 门槛'):'',name=achievementNameText(b);
+  document.getElementById('ach-detail').innerHTML='<b>'+esc(b.e+' '+name)+'</b> · '+esc(status)+' · '+esc(prestige)+rank+'<strong class=ach-story data-i18n-skip>'+esc(achievementStoryText(b))+'</strong><span class=ach-condition>'+(english?'Unlock condition: ':'达成条件：')+esc(english?englishText(b.d):b.d)+'</span><span>'+esc(date)+(progress?' · '+progress:'')+'</span><small>'+(english?'Scope: current report snapshot. Tiers do not represent global user rarity.':'范围语义：当前报告快照。阶位不是全球用户稀有度。')+'</small>';
+}
 function achievementCategory(c,items,open,index){
   const g=items.filter(b=>b.ok).length,collapsed=open?'':' collapsed',contentId='ach-cat-'+index;
   return '<div class="cat'+collapsed+'" data-ach-cat="'+esc(c.name)+'"><button type=button class=cat-h aria-expanded="'+(open?'true':'false')+'" aria-controls="'+contentId+'"><span class=ce>'+c.e+'</span><span>'+c.name+'</span><span class=cc><b>'+g+'</b> / '+items.length+'</span><span class=chev aria-hidden=true>▼</span></button><div class=cat-grid id="'+contentId+'">'+(open?items.map(badgeCell).join(''):'')+'</div></div>';
@@ -1938,14 +2033,25 @@ function achievementCategory(c,items,open,index){
 function renderAchievements(q){
   if(!_ach)_ach=getBadgeData();const a=_ach;q=(q||'').trim().toLowerCase();const filter=document.getElementById('ach-filter').value,okFilter=b=>filter==='all'||(filter==='on'&&b.ok)||(filter==='off'&&!b.ok)||(filter==='secret'&&b.secret)||b.tier===filter;
   document.getElementById('ach-modal-meta').innerHTML='已解锁 <b>'+a.got+'</b> / '+a.all.length+' · 图鉴阶位并非全球稀有度';let shown=0,visibleCats=0;const forceOpen=!!q||filter!=='all';
-  const body=a.cats.map((c,index)=>{let items=c.items.filter(okFilter);if(q)items=items.filter(b=>(c.name+' '+b.n+' '+b.d).toLowerCase().includes(q));if(!items.length)return '';shown+=items.length;visibleCats++;return achievementCategory(c,items,forceOpen,index);}).join('');
+  const body=a.cats.map((c,index)=>{let items=c.items.filter(okFilter);if(q)items=items.filter(b=>(c.name+' '+b.n+' '+achievementStoryText(b)+' '+b.story+' '+b.d).toLowerCase().includes(q));if(!items.length)return '';shown+=items.length;visibleCats++;return achievementCategory(c,items,forceOpen,index);}).join('');
   document.getElementById('ach-body').innerHTML='<div class=ach-stats><span>当前显示 <b>'+shown+'</b> 枚</span><span><b>'+visibleCats+'</b> 个分类</span><span>总图鉴 <b>'+a.all.length+'</b> 枚</span><span>展开分类时按需渲染</span></div>'+body;
   const bindBadges=root=>root.querySelectorAll('.badge[data-ach-id]').forEach(el=>{const b=a.all.find(x=>x.id===el.dataset.achId);if(b)el.addEventListener('click',()=>achievementDetail(b));});bindBadges(document.getElementById('ach-body'));
-  document.querySelectorAll('#ach-body .cat-h').forEach(h=>h.addEventListener('click',()=>{const cat=h.parentElement,grid=cat.querySelector('.cat-grid');if(cat.classList.contains('collapsed')){const c=a.cats.find(x=>x.name===cat.dataset.achCat);if(!c)return;let items=c.items.filter(okFilter);if(q)items=items.filter(b=>(c.name+' '+b.n+' '+b.d).toLowerCase().includes(q));if(!grid.childElementCount){grid.innerHTML=items.map(badgeCell).join('');bindBadges(grid);}cat.classList.remove('collapsed');h.setAttribute('aria-expanded','true');}else{cat.classList.add('collapsed');h.setAttribute('aria-expanded','false');}}));
+  document.querySelectorAll('#ach-body .cat-h').forEach(h=>h.addEventListener('click',()=>{const cat=h.parentElement,grid=cat.querySelector('.cat-grid');if(cat.classList.contains('collapsed')){const c=a.cats.find(x=>x.name===cat.dataset.achCat);if(!c)return;let items=c.items.filter(okFilter);if(q)items=items.filter(b=>(c.name+' '+b.n+' '+achievementStoryText(b)+' '+b.story+' '+b.d).toLowerCase().includes(q));if(!grid.childElementCount){grid.innerHTML=items.map(badgeCell).join('');bindBadges(grid);}cat.classList.remove('collapsed');h.setAttribute('aria-expanded','true');}else{cat.classList.add('collapsed');h.setAttribute('aria-expanded','false');}}));
 }
-function openAchievements(){renderAchievements(document.getElementById('ach-search').value);openModal(document.getElementById('ach-modal'),document.getElementById('ach-search'));}
-function closeAchievements(){closeModal(document.getElementById('ach-modal'));}
+function showAchievements(){renderAchievements(document.getElementById('ach-search').value);const modal=document.getElementById('ach-modal');if(!modal.classList.contains('open'))openModal(modal,document.getElementById('ach-search'));}
+function hideAchievements(){const modal=document.getElementById('ach-modal');if(modal.classList.contains('open'))closeModal(modal);}
+function syncAuxViewFromState(){if(auxView==='achievements')showAchievements();else hideAchievements();}
+function openAchievements(){
+  if(auxView==='achievements'){showAchievements();return;}
+  auxView='achievements';achievementHistoryOwned=true;showAchievements();if(!restoringView&&history.pushState)history.pushState({tokensAuxView:'achievements'},'',viewURL());
+}
+function closeAchievements(){
+  if(auxView!=='achievements'){hideAchievements();return;}
+  if(achievementHistoryOwned&&history.length>1){history.back();return;}
+  auxView=null;achievementHistoryOwned=false;hideAchievements();syncViewURL(true);
+}
 document.getElementById('ach-open').addEventListener('click',openAchievements);
+document.getElementById('ach-copy').addEventListener('click',()=>copyText(portableViewURL()).then(ok=>toast(ok?'成就册链接已复制':'复制失败，请从地址栏复制')));
 document.getElementById('ach-x').addEventListener('click',closeAchievements);
 document.getElementById('ach-modal').addEventListener('click',e=>{if(e.target.id==='ach-modal')closeAchievements();});document.getElementById('ach-modal').addEventListener('keydown',e=>trapModalFocus(e,e.currentTarget));
 document.getElementById('ach-search').addEventListener('input',e=>renderAchievements(e.target.value));
@@ -2084,4 +2190,4 @@ applyLanguage(dashboardLanguage,false);
 bindSignalLens();
 applyMods();
 initLazyRendering();
-restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderCaliberNotes();render();themeVisualsReady=true;restoringView=false;syncViewURL();initLiveDashboard();
+restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderCaliberNotes();render();syncAuxViewFromState();themeVisualsReady=true;restoringView=false;syncViewURL();initLiveDashboard();

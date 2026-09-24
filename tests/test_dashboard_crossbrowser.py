@@ -19,6 +19,15 @@ class DashboardCrossBrowserTests(unittest.TestCase):
     test_table_sort_tri_state = (
         runtime.DashboardRuntimeTests.test_table_sort_cycles_three_states_and_returns_to_time_order
     )
+    test_model_column_sort_tri_state = (
+        runtime.DashboardRuntimeTests.test_model_column_sort_cycles_safely_and_resets_when_filtered
+    )
+    test_achievement_archive_direct_url = (
+        runtime.DashboardRuntimeTests.test_achievement_archive_direct_url_history_and_details
+    )
+    test_achievement_archive_mobile_geometry = (
+        runtime.DashboardRuntimeTests.test_achievement_archive_copy_and_mobile_geometry
+    )
     test_donut_legend_sync = (
         runtime.DashboardRuntimeTests.test_donut_legend_syncs_surfaces_and_recovers_from_all_off
     )

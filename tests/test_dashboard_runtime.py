@@ -171,7 +171,11 @@ class DashboardRuntimeTests(unittest.TestCase):
             if message.type == "error"
             else None,
         )
-        page.goto((path or self._path).as_uri(), wait_until="load")
+        target = path or self._path
+        page.goto(
+            target if isinstance(target, str) and "://" in target else target.as_uri(),
+            wait_until="load",
+        )
         return context, page, page_errors, console_errors
 
     def wait_for_flow(self, page):
@@ -477,6 +481,91 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_new_attribution_and_archive_labels_localize_to_english(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("applyLanguage('en',false)")
+            page.locator("#ach-open").scroll_into_view_if_needed()
+            page.locator("#ach-open").click()
+            labels = page.evaluate(
+                """
+                () => ({
+                  dock:[...document.querySelectorAll('.section-links button')]
+                    .find(item=>item.dataset.target==='section-delta').textContent.trim(),
+                  title:document.querySelector('#section-delta h2').textContent.trim(),
+                  window:document.getElementById('delta-window').textContent.trim(),
+                  archive:document.querySelector('.ach-archive-k').textContent.trim(),
+                  copy:document.getElementById('ach-copy').textContent.trim(),
+                  search:document.getElementById('ach-search').placeholder,
+                  opener:document.getElementById('ach-open').textContent.trim(),
+                })
+                """
+            )
+            self.assertEqual("Attribution", labels["dock"])
+            self.assertEqual("What drove this period’s change", labels["title"])
+            self.assertEqual(
+                "Requires two consecutive periods and a previous total above 0",
+                labels["window"],
+            )
+            self.assertEqual("LOCAL ACHIEVEMENT ARCHIVE", labels["archive"])
+            self.assertEqual("⧉ Copy link", labels["copy"])
+            self.assertEqual(
+                "Search achievements (name/story/condition/category)…",
+                labels["search"],
+            )
+            self.assertEqual("📜 Open full achievement archive →", labels["opener"])
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_dynamic_attribution_sort_and_achievement_details_localize_to_english(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("applyLanguage('en',false)")
+            page.locator('#tabs [data-gran="day"]').click()
+            model_button = page.locator('#thead [data-sort-key="m"]').first
+            model_button.click()
+            page.wait_for_function(
+                "document.getElementById('toast').textContent.includes('Sorted by')"
+            )
+            toast = page.locator("#toast").inner_text()
+
+            page.locator("#ach-open").scroll_into_view_if_needed()
+            page.locator("#ach-open").click()
+            page.locator("#ach-filter").select_option("on")
+            page.locator("#ach-body .badge.on").first.click()
+            texts = page.evaluate(
+                """
+                () => ({
+                  window:document.getElementById('delta-window').textContent.trim(),
+                  story:document.getElementById('delta-story').textContent.trim(),
+                  names:[...document.querySelectorAll('#delta-list .delta-name')]
+                    .map(item=>item.textContent.trim()),
+                  achievementStory:document.querySelector('#ach-detail .ach-story').textContent.trim(),
+                  condition:document.querySelector('#ach-detail .ach-condition').textContent.trim(),
+                  detail:document.getElementById('ach-detail').textContent.trim(),
+                  fallbackName:achievementNameText({n:'初窥门径 · 01',category:'累计 token'}),
+                })
+                """
+            )
+            self.assertIn("current 200 vs previous 250", texts["window"])
+            self.assertIn("drove the largest change", texts["story"])
+            self.assertEqual("Sorted by model-a descending", toast)
+            self.assertTrue(texts["condition"].startswith("Unlock condition: "))
+            self.assertNotEqual("", texts["achievementStory"])
+            for value in [toast, *texts.values()]:
+                if isinstance(value, list):
+                    value = " ".join(value)
+                self.assertIsNone(
+                    __import__("re").search(r"[㐀-鿿]", value),
+                    value,
+                )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
     def test_mobile_flow_region_scrolls_from_keyboard_without_page_overflow(self):
         context, page, page_errors, console_errors = self.new_page(
             viewport={"width": 390, "height": 760}
@@ -662,6 +751,157 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertEqual([], console_errors)
         finally:
             context.close()
+
+
+    def test_model_column_sort_cycles_safely_and_resets_when_filtered(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            button = page.locator('#thead [data-sort-key="m"][data-sort-model="model-a"]')
+            header = button.locator("xpath=..")
+            model_values = page.evaluate(
+                "() => selectedRows(true).map(r => [r.period, r.models['model-a'] || 0])"
+            )
+            displayed = lambda: page.locator("#tbody tr[data-period]").evaluate_all(
+                "els => els.map(el => el.dataset.period)"
+            )
+            chronological = displayed()
+            button.click()
+            self.assertEqual("descending", header.get_attribute("aria-sort"))
+            self.assertEqual(
+                [period for period, _ in sorted(model_values, key=lambda item: -item[1])],
+                displayed(),
+            )
+            button.click()
+            self.assertEqual("ascending", header.get_attribute("aria-sort"))
+            button.click()
+            self.assertEqual(chronological, displayed())
+            button = page.locator('#thead [data-sort-key="m"][data-sort-model="model-a"]')
+            button.click()
+            page.evaluate("setModels(['model-b'],'test filter')")
+            self.assertEqual(
+                {"key": None, "dir": None, "model": None},
+                page.evaluate("tableSort"),
+            )
+            self.assertEqual(0, page.locator('#thead [aria-sort="descending"], #thead [aria-sort="ascending"]').count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_malicious_model_name_is_safe_in_model_sort_attributes(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._malicious_path)
+        try:
+            model_name = "<img src=x onerror=window.__paletteXss=1>"
+            button = page.locator('#thead [data-sort-key="m"]').filter(has_text=model_name)
+            self.assertEqual(1, button.count())
+            button.click()
+            self.assertEqual("descending", button.locator("xpath=..").get_attribute("aria-sort"))
+            self.assertEqual(0, page.locator("#thead img, #tbody img").count())
+            self.assertIsNone(page.evaluate("window.__paletteXss"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_attribution_reconciles_and_tracks_model_filter(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            result = page.evaluate("attributionFor(selectedRows())")
+            self.assertIsNotNone(result)
+            self.assertEqual(
+                result["currTotal"] - result["prevTotal"],
+                sum(part["delta"] for part in result["parts"]),
+            )
+            page.evaluate("setModels(['model-a'],'test attribution filter')")
+            filtered = page.evaluate("attributionFor(selectedRows())")
+            self.assertEqual(["model-a"], [part["model"] for part in filtered["parts"]])
+            self.assertIn("model-a", page.locator("#delta-list").inner_text())
+            self.assertNotIn("model-b", page.locator("#delta-list").inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_achievement_archive_direct_url_history_and_details(self):
+        direct = self._path.as_uri() + "?view=achievements"
+        context, page, page_errors, console_errors = self.new_page(path=direct)
+        try:
+            modal = page.locator("#ach-modal")
+            self.assertTrue(modal.evaluate("el => el.classList.contains('open')"))
+            self.assertTrue(page.locator("#ach-search").evaluate("el => document.activeElement === el"))
+            self.assertIn("view=achievements", page.url)
+            page.locator("#ach-x").click()
+            self.assertFalse(modal.evaluate("el => el.classList.contains('open')"))
+            self.assertNotIn("view=achievements", page.url)
+
+            opener = page.locator("#ach-open")
+            opener.scroll_into_view_if_needed()
+            opener.click()
+            self.assertIn("view=achievements", page.url)
+            self.assertTrue(modal.evaluate("el => el.classList.contains('open')"))
+            page.go_back(wait_until="load")
+            self.assertFalse(modal.evaluate("el => el.classList.contains('open')"))
+            page.go_forward(wait_until="load")
+            self.assertTrue(modal.evaluate("el => el.classList.contains('open')"))
+
+            page.locator("#ach-filter").select_option("on")
+            unfiltered_count = page.locator("#ach-body .badge").count()
+            badge = page.locator("#ach-body .badge.on").first
+            badge.click()
+            self.assertNotEqual("", page.locator("#ach-detail .ach-story").inner_text())
+            self.assertTrue(page.locator("#ach-detail .ach-condition").inner_text().startswith("达成条件："))
+            story_text = page.locator("#ach-detail .ach-story").inner_text()
+            page.locator("#ach-search").fill(story_text)
+            filtered_count = page.locator("#ach-body .badge").count()
+            self.assertGreater(filtered_count, 0)
+            self.assertLess(filtered_count, unfiltered_count)
+            page.locator("#ach-search").fill("")
+            page.keyboard.press("Escape")
+            page.wait_for_function("!document.getElementById('ach-modal').classList.contains('open')")
+            self.assertTrue(opener.evaluate("el => document.activeElement === el"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_achievement_archive_copy_and_mobile_geometry(self):
+        for width in (390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                viewport={"width": width, "height": 760}
+            )
+            try:
+                page.evaluate("window.__copied=null;copyText=text=>{window.__copied=text;return Promise.resolve(true)}")
+                page.locator("#ach-open").scroll_into_view_if_needed()
+                page.locator("#ach-open").click()
+                page.locator("#ach-copy").click()
+                page.wait_for_function("window.__copied !== null")
+                self.assertIn("view=achievements", page.evaluate("window.__copied"))
+                metrics = page.evaluate(
+                    """
+                    () => {
+                      const controls=[...document.querySelectorAll('#ach-modal .ach-bar input, #ach-modal .ach-bar select, #ach-modal .ach-bar button')]
+                        .filter(el=>getComputedStyle(el).display!=='none');
+                      const delta=document.getElementById('section-delta').getBoundingClientRect();
+                      return {
+                        pageWidth:document.documentElement.scrollWidth,
+                        viewportWidth:document.documentElement.clientWidth,
+                        minControlHeight:Math.min(...controls.map(el=>el.getBoundingClientRect().height)),
+                        sheetWidth:document.querySelector('#ach-modal .ach-sheet').getBoundingClientRect().width,
+                        deltaRight:delta.right,
+                      };
+                    }
+                    """
+                )
+                self.assertGreaterEqual(metrics["minControlHeight"], 43.9)
+                self.assertLessEqual(metrics["pageWidth"], metrics["viewportWidth"] + 1)
+                self.assertLessEqual(metrics["sheetWidth"], metrics["viewportWidth"])
+                self.assertLessEqual(metrics["deltaRight"], metrics["viewportWidth"] + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
 
     def test_table_row_keyboard_previews_clears_and_commits(self):
         context, page, page_errors, console_errors = self.new_page()
