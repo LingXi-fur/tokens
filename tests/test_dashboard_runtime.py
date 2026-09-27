@@ -941,11 +941,19 @@ class DashboardRuntimeTests(unittest.TestCase):
                         .filter(el=>getComputedStyle(el).display!=='none');
                       const delta=document.getElementById('section-delta').getBoundingClientRect();
                       const project=document.getElementById('section-project');
+                      const projectChildren=[...project.querySelectorAll('*')].map(el=>{
+                        const rect=el.getBoundingClientRect();
+                        return {element:el.tagName.toLowerCase()+(el.id?'#'+el.id:'.'+String(el.className).trim().split(/\s+/)[0]),
+                          right:Math.round(rect.right),width:Math.round(rect.width),
+                          scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,
+                          overflow:getComputedStyle(el).overflowX};
+                      }).filter(item=>item.right>project.getBoundingClientRect().right+1||item.scrollWidth>item.clientWidth+1).slice(0,20);
                       return {
                         pageWidth:document.documentElement.scrollWidth,
                         viewportWidth:document.documentElement.clientWidth,
                         projectWidth:project.scrollWidth,
                         projectClientWidth:project.clientWidth,
+                        projectChildren,
                         minControlHeight:Math.min(...controls.map(el=>el.getBoundingClientRect().height)),
                         sheetWidth:document.querySelector('#ach-modal .ach-sheet').getBoundingClientRect().width,
                         deltaRight:delta.right,
