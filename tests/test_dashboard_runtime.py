@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -20,6 +21,8 @@ except ImportError:
 
 @unittest.skipIf(sync_playwright is None, "Playwright is not installed")
 class DashboardRuntimeTests(unittest.TestCase):
+    BROWSER = "chromium"
+
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
@@ -121,13 +124,68 @@ class DashboardRuntimeTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+
+        # Synthetic multi-month fixture for the interval lens / peak profile.
+        # All periods are complete relative to the fixed generated_at, the peak
+        # day (2026-02-04) has a consecutive complete previous day, and the peak
+        # month (2026-02, first complete month) has no comparable prior period.
+        def interval_record(date, model, total, session):
+            return {
+                "source": "claude",
+                "ts": date + "T09:00:00+08:00",
+                "date": date,
+                "model": model,
+                "input": total // 2,
+                "output": total // 4,
+                "cache_read": total // 4,
+                "cache_write": 0,
+                "total": total,
+                "session": session,
+                "cwd": "/synthetic/interval-fixture",
+            }
+
+        interval_records = [
+            interval_record("2026-02-03", "model-a", 300, "synthetic-session-i1"),
+            interval_record("2026-02-04", "model-b", 900, "synthetic-session-i1"),
+            interval_record("2026-03-05", "model-a", 600, "synthetic-session-i2"),
+            interval_record("2026-04-07", "model-a", 350, "synthetic-session-i3"),
+            interval_record("2026-05-09", "model-b", 200, "synthetic-session-i4"),
+            interval_record("2026-06-01", "model-a", 100, "synthetic-session-i5"),
+            interval_record("2026-06-02", "model-b", 120, "synthetic-session-i5"),
+            interval_record("2026-06-03", "model-a", 80, "synthetic-session-i5"),
+            interval_record("2026-06-04", "model-b", 90, "synthetic-session-i5"),
+        ]
+        with mock.patch(
+            "tokens_cli.dashboard_payload.readers.build_session_index",
+            return_value={},
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title",
+            return_value="",
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.load_session_summaries",
+            return_value={},
+        ):
+            interval_payload = report_dashboard.build_payload(
+                interval_records,
+                since="2026-02-01",
+                until="2026-06-30",
+                sources=["claude"],
+                generated_at=datetime(2026, 7, 15, 12, 0),
+            )
+        cls._interval_path = Path(cls._tmp.name) / "synthetic-dashboard-interval.html"
+        cls._interval_path.write_text(
+            report_dashboard.render_dashboard(
+                dashboard_wire.encode_payload(interval_payload)
+            ),
+            encoding="utf-8",
+        )
         cls._playwright = sync_playwright().start()
         try:
-            cls._browser = cls._playwright.chromium.launch(headless=True)
+            cls._browser = getattr(cls._playwright, cls.BROWSER).launch(headless=True)
         except Exception as exc:
             cls._playwright.stop()
             cls._tmp.cleanup()
-            raise unittest.SkipTest(f"Chromium is unavailable: {exc}")
+            raise unittest.SkipTest(f"{cls.BROWSER} is unavailable: {exc}")
 
     @classmethod
     def tearDownClass(cls):
@@ -169,7 +227,11 @@ class DashboardRuntimeTests(unittest.TestCase):
             if message.type == "error"
             else None,
         )
-        page.goto((path or self._path).as_uri(), wait_until="load")
+        target = path or self._path
+        page.goto(
+            target if isinstance(target, str) and "://" in target else target.as_uri(),
+            wait_until="load",
+        )
         return context, page, page_errors, console_errors
 
     def wait_for_flow(self, page):
@@ -220,6 +282,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             self.wait_for_flow(page)
+            page.evaluate("applyLanguage('en',false)")
             visible = page.evaluate("""
                 () => {
                   const section=document.getElementById('section-flow');
@@ -265,8 +328,8 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertGreater(visible["pathLength"], 0)
             self.assertGreaterEqual(visible["pathOpacity"], 0.45)
             self.assertIn("actual flows", visible["stats"])
-
             page.evaluate("applyLanguage('zh',false)")
+
             page.wait_for_function("""
                 [...document.querySelectorAll('#flow-map .flow-node.project')]
                   .some(item=>item.querySelector('title').textContent.includes('悬停 Peek'))
@@ -474,6 +537,91 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_new_attribution_and_archive_labels_localize_to_english(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("applyLanguage('en',false)")
+            page.locator("#ach-open").scroll_into_view_if_needed()
+            page.locator("#ach-open").click()
+            labels = page.evaluate(
+                """
+                () => ({
+                  dock:[...document.querySelectorAll('.section-links button')]
+                    .find(item=>item.dataset.target==='section-delta').textContent.trim(),
+                  title:document.querySelector('#section-delta h2').textContent.trim(),
+                  window:document.getElementById('delta-window').textContent.trim(),
+                  archive:document.querySelector('.ach-archive-k').textContent.trim(),
+                  copy:document.getElementById('ach-copy').textContent.trim(),
+                  search:document.getElementById('ach-search').placeholder,
+                  opener:document.getElementById('ach-open').textContent.trim(),
+                })
+                """
+            )
+            self.assertEqual("Attribution", labels["dock"])
+            self.assertEqual("What drove this period’s change", labels["title"])
+            self.assertEqual(
+                "Requires two consecutive periods and a previous total above 0",
+                labels["window"],
+            )
+            self.assertEqual("LOCAL ACHIEVEMENT ARCHIVE", labels["archive"])
+            self.assertEqual("⧉ Copy link", labels["copy"])
+            self.assertEqual(
+                "Search achievements (name/story/condition/category)…",
+                labels["search"],
+            )
+            self.assertEqual("📜 Open full achievement archive →", labels["opener"])
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_dynamic_attribution_sort_and_achievement_details_localize_to_english(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("applyLanguage('en',false)")
+            page.locator('#tabs [data-gran="day"]').click()
+            model_button = page.locator('#thead [data-sort-key="m"]').first
+            model_button.click()
+            page.wait_for_function(
+                "document.getElementById('toast').textContent.includes('Sorted by')"
+            )
+            toast = page.locator("#toast").inner_text()
+
+            page.locator("#ach-open").scroll_into_view_if_needed()
+            page.locator("#ach-open").click()
+            page.locator("#ach-filter").select_option("on")
+            page.locator("#ach-body .badge.on").first.click()
+            texts = page.evaluate(
+                """
+                () => ({
+                  window:document.getElementById('delta-window').textContent.trim(),
+                  story:document.getElementById('delta-story').textContent.trim(),
+                  names:[...document.querySelectorAll('#delta-list .delta-name')]
+                    .map(item=>item.textContent.trim()),
+                  achievementStory:document.querySelector('#ach-detail .ach-story').textContent.trim(),
+                  condition:document.querySelector('#ach-detail .ach-condition').textContent.trim(),
+                  detail:document.getElementById('ach-detail').textContent.trim(),
+                  fallbackName:achievementNameText({n:'初窥门径 · 01',category:'累计 token'}),
+                })
+                """
+            )
+            self.assertIn("current 200 vs previous 250", texts["window"])
+            self.assertIn("drove the largest change", texts["story"])
+            self.assertEqual("Sorted by model-a descending", toast)
+            self.assertTrue(texts["condition"].startswith("Unlock condition: "))
+            self.assertNotEqual("", texts["achievementStory"])
+            for value in [toast, *texts.values()]:
+                if isinstance(value, list):
+                    value = " ".join(value)
+                self.assertIsNone(
+                    __import__("re").search(r"[㐀-鿿]", value),
+                    value,
+                )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
     def test_mobile_flow_region_scrolls_from_keyboard_without_page_overflow(self):
         context, page, page_errors, console_errors = self.new_page(
             viewport={"width": 390, "height": 760}
@@ -583,6 +731,865 @@ class DashboardRuntimeTests(unittest.TestCase):
                 message == "[tokens] lazy renderer failed: flow"
                 for message in console_errors
             ))
+        finally:
+            context.close()
+
+    def test_trend_legend_isolates_models_and_recovers_from_empty(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            buttons = page.locator("#trend-legend [data-model-toggle]")
+            self.assertGreaterEqual(buttons.count(), 2)
+            pressed = [buttons.nth(i).get_attribute("aria-pressed") for i in range(buttons.count())]
+            self.assertTrue(all(value == "true" for value in pressed))
+            buttons.nth(1).click()
+            self.assertEqual(
+                "false", buttons.nth(1).get_attribute("aria-pressed"), "legend click must toggle only its own model"
+            )
+            self.assertEqual("true", buttons.nth(0).get_attribute("aria-pressed"))
+            for i in range(buttons.count()):
+                if buttons.nth(i).get_attribute("aria-pressed") == "true":
+                    buttons.nth(i).click()
+            self.assertEqual(
+                0,
+                page.locator("#trend-legend [data-model-toggle][aria-pressed=true]").count(),
+            )
+            self.assertIn(
+                "0/2 个模型", page.locator("#filter-summary").inner_text().split(" · ")[0]
+            )
+            buttons.first.click()
+            self.assertEqual("true", buttons.first.get_attribute("aria-pressed"))
+            self.assertGreater(
+                page.locator("#tbody tr[data-period]").count(), 0, "empty legend selection must stay recoverable"
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_table_sort_cycles_three_states_and_returns_to_time_order(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            chronological = page.locator("#tbody tr[data-period]").evaluate_all(
+                "els => els.map(el => el.dataset.period)"
+            )
+            totals = page.evaluate("() => selectedRows(true).map(r => [r.period, r.total])")
+            self.assertGreaterEqual(len(chronological), 2)
+            button = page.locator('#thead [data-sort-key="total"]')
+            header = page.locator("#thead th").nth(1)
+            self.assertEqual("none", header.get_attribute("aria-sort"))
+            displayed = lambda: page.locator("#tbody tr[data-period]").evaluate_all(
+                "els => els.map(el => el.dataset.period)"
+            )
+            button.click()
+            self.assertEqual("descending", header.get_attribute("aria-sort"))
+            self.assertTrue(button.evaluate("el => document.activeElement === el"))
+            self.assertEqual(
+                [period for period, _ in sorted(totals, key=lambda item: -item[1])],
+                displayed(),
+            )
+            button.click()
+            self.assertEqual("ascending", header.get_attribute("aria-sort"))
+            self.assertEqual(
+                [period for period, _ in sorted(totals, key=lambda item: item[1])],
+                displayed(),
+            )
+            button.click()
+            self.assertEqual("none", header.get_attribute("aria-sort"))
+            self.assertEqual(chronological, displayed())
+            page.locator('#thead [data-sort-key="cache"]').click()
+            self.assertEqual(
+                1,
+                page.locator('#thead th[aria-sort="descending"], #thead th[aria-sort="ascending"]').count(),
+                "exactly one header may carry a non-none aria-sort",
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+
+    def test_model_column_sort_cycles_safely_and_resets_when_filtered(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            button = page.locator('#thead [data-sort-key="m"][data-sort-model="model-a"]')
+            header = button.locator("xpath=..")
+            model_values = page.evaluate(
+                "() => selectedRows(true).map(r => [r.period, r.models['model-a'] || 0])"
+            )
+            displayed = lambda: page.locator("#tbody tr[data-period]").evaluate_all(
+                "els => els.map(el => el.dataset.period)"
+            )
+            chronological = displayed()
+            button.click()
+            self.assertEqual("descending", header.get_attribute("aria-sort"))
+            self.assertEqual(
+                [period for period, _ in sorted(model_values, key=lambda item: -item[1])],
+                displayed(),
+            )
+            button.click()
+            self.assertEqual("ascending", header.get_attribute("aria-sort"))
+            button.click()
+            self.assertEqual(chronological, displayed())
+            button = page.locator('#thead [data-sort-key="m"][data-sort-model="model-a"]')
+            button.click()
+            page.evaluate("setModels(['model-b'],'test filter')")
+            self.assertEqual(
+                {"key": None, "dir": None, "model": None},
+                page.evaluate("tableSort"),
+            )
+            self.assertEqual(0, page.locator('#thead [aria-sort="descending"], #thead [aria-sort="ascending"]').count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_malicious_model_name_is_safe_in_model_sort_attributes(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._malicious_path)
+        try:
+            model_name = "<img src=x onerror=window.__paletteXss=1>"
+            button = page.locator('#thead [data-sort-key="m"]').filter(has_text=model_name)
+            self.assertEqual(1, button.count())
+            button.click()
+            self.assertEqual("descending", button.locator("xpath=..").get_attribute("aria-sort"))
+            self.assertEqual(0, page.locator("#thead img, #tbody img").count())
+            self.assertIsNone(page.evaluate("window.__paletteXss"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_attribution_reconciles_and_tracks_model_filter(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            result = page.evaluate("attributionFor(selectedRows())")
+            self.assertIsNotNone(result)
+            self.assertEqual(
+                result["currTotal"] - result["prevTotal"],
+                sum(part["delta"] for part in result["parts"]),
+            )
+            page.evaluate("setModels(['model-a'],'test attribution filter')")
+            filtered = page.evaluate("attributionFor(selectedRows())")
+            self.assertEqual(["model-a"], [part["model"] for part in filtered["parts"]])
+            self.assertIn("model-a", page.locator("#delta-list").inner_text())
+            self.assertNotIn("model-b", page.locator("#delta-list").inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_achievement_archive_direct_url_history_and_details(self):
+        direct = self._path.as_uri() + "?view=achievements"
+        context, page, page_errors, console_errors = self.new_page(path=direct)
+        try:
+            modal = page.locator("#ach-modal")
+            self.assertTrue(modal.evaluate("el => el.classList.contains('open')"))
+            self.assertTrue(page.locator("#ach-search").evaluate("el => document.activeElement === el"))
+            self.assertIn("view=achievements", page.url)
+            page.locator("#ach-x").click()
+            self.assertFalse(modal.evaluate("el => el.classList.contains('open')"))
+            self.assertNotIn("view=achievements", page.url)
+
+            opener = page.locator("#ach-open")
+            opener.scroll_into_view_if_needed()
+            opener.click()
+            self.assertIn("view=achievements", page.url)
+            self.assertTrue(modal.evaluate("el => el.classList.contains('open')"))
+            page.go_back(wait_until="load")
+            self.assertFalse(modal.evaluate("el => el.classList.contains('open')"))
+            page.go_forward(wait_until="load")
+            self.assertTrue(modal.evaluate("el => el.classList.contains('open')"))
+
+            page.locator("#ach-filter").select_option("on")
+            unfiltered_count = page.locator("#ach-body .badge").count()
+            badge = page.locator("#ach-body .badge.on").first
+            badge.click()
+            self.assertNotEqual("", page.locator("#ach-detail .ach-story").inner_text())
+            self.assertTrue(page.locator("#ach-detail .ach-condition").inner_text().startswith("达成条件："))
+            story_text = page.locator("#ach-detail .ach-story").inner_text()
+            page.locator("#ach-search").fill(story_text)
+            filtered_count = page.locator("#ach-body .badge").count()
+            self.assertGreater(filtered_count, 0)
+            self.assertLess(filtered_count, unfiltered_count)
+            page.locator("#ach-search").fill("")
+            page.keyboard.press("Escape")
+            page.wait_for_function("!document.getElementById('ach-modal').classList.contains('open')")
+            self.assertTrue(opener.evaluate("el => document.activeElement === el"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_achievement_archive_copy_and_mobile_geometry(self):
+        for width in (390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                viewport={"width": width, "height": 760}
+            )
+            try:
+                page.evaluate("window.__copied=null;copyText=text=>{window.__copied=text;return Promise.resolve(true)}")
+                page.locator("#ach-open").scroll_into_view_if_needed()
+                page.locator("#ach-open").click()
+                page.locator("#ach-copy").click()
+                page.wait_for_function("window.__copied !== null")
+                self.assertIn("view=achievements", page.evaluate("window.__copied"))
+                metrics = page.evaluate(
+                    """
+                    () => {
+                      const controls=[...document.querySelectorAll('#ach-modal .ach-bar input, #ach-modal .ach-bar select, #ach-modal .ach-bar button')]
+                        .filter(el=>getComputedStyle(el).display!=='none');
+                      const delta=document.getElementById('section-delta').getBoundingClientRect();
+                      const project=document.getElementById('section-project');
+                      const picker=project.querySelector('.project-picker');
+                      return {
+                        pageWidth:document.documentElement.scrollWidth,
+                        viewportWidth:document.documentElement.clientWidth,
+                        projectWidth:project.scrollWidth,
+                        projectClientWidth:project.clientWidth,
+                        pickerRight:picker.getBoundingClientRect().right,
+                        selectRight:picker.querySelector('select').getBoundingClientRect().right,
+                        minControlHeight:Math.min(...controls.map(el=>el.getBoundingClientRect().height)),
+                        sheetWidth:document.querySelector('#ach-modal .ach-sheet').getBoundingClientRect().width,
+                        deltaRight:delta.right,
+                      };
+                    }
+                    """
+                )
+                self.assertGreaterEqual(metrics["minControlHeight"], 43.9)
+                self.assertLessEqual(metrics["selectRight"], metrics["pickerRight"] + 1, metrics)
+                self.assertLessEqual(metrics["projectWidth"], metrics["projectClientWidth"] + 1, metrics)
+                self.assertLessEqual(metrics["pageWidth"], metrics["viewportWidth"] + 1, metrics)
+                self.assertLessEqual(metrics["sheetWidth"], metrics["viewportWidth"])
+                self.assertLessEqual(metrics["deltaRight"], metrics["viewportWidth"] + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
+    def test_table_row_keyboard_previews_clears_and_commits(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            row = page.locator("#tbody tr[data-period]").first
+            row.focus()
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(1, page.locator("#bar .barstack.scrub-preview").count())
+            page.keyboard.press("Escape")
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(0, page.locator("#bar .barstack.scrub-preview").count())
+            page.keyboard.press("ArrowDown")
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            period = page.locator("#tbody tr.row-linked").get_attribute("data-period")
+            page.keyboard.press("Enter")
+            focused = page.locator("#tbody tr.row-focused")
+            self.assertEqual(1, focused.count())
+            self.assertEqual(period, focused.get_attribute("data-period"))
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(1, page.locator("#bar .barstack.scrub-preview").count())
+            page.keyboard.press("Escape")
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(0, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_donut_legend_syncs_surfaces_and_recovers_from_all_off(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            donut = page.locator("#donut-legend [data-model-toggle]")
+            trend = page.locator("#trend-legend [data-model-toggle]")
+            slices = page.locator("#donut .slice[data-model]")
+            count = donut.count()
+            self.assertGreaterEqual(count, 2)
+            self.assertEqual(count, trend.count())
+            self.assertEqual(count, slices.count())
+            donut.nth(1).click()
+            self.assertEqual("false", donut.nth(1).get_attribute("aria-pressed"))
+            self.assertEqual("false", trend.nth(1).get_attribute("aria-pressed"))
+            self.assertEqual(count - 1, slices.count())
+            for index in range(count):
+                if donut.nth(index).get_attribute("aria-pressed") == "true":
+                    donut.nth(index).click()
+            self.assertEqual(
+                0, page.locator("#donut-legend [data-model-toggle][aria-pressed=true]").count()
+            )
+            self.assertEqual(0, slices.count(), "all-off must empty the donut but keep its legend")
+            donut.first.click()
+            self.assertEqual("true", donut.first.get_attribute("aria-pressed"))
+            self.assertGreaterEqual(slices.count(), 1)
+            self.assertGreater(page.locator("#tbody tr[data-period]").count(), 0)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_footer_and_share_cards_link_to_project_without_tracking(self):
+        project_url = "https://github.com/LingXi-fur/tokens"
+        for width in (1280, 390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                viewport={"width": width, "height": 820}
+            )
+            try:
+                footer_link = page.locator("#dynamic-footer a.project-link")
+                self.assertEqual(project_url, footer_link.get_attribute("href"))
+                self.assertEqual("_blank", footer_link.get_attribute("target"))
+                self.assertEqual(
+                    "noopener noreferrer",
+                    footer_link.get_attribute("rel"),
+                )
+                for card_type in ("passport", "receipt"):
+                    page.evaluate("kind => openShare(kind)", card_type)
+                    card = page.locator("#share-card")
+                    link = card.locator("a.share-project-link")
+                    self.assertEqual(project_url, link.get_attribute("href"))
+                    self.assertEqual("_blank", link.get_attribute("target"))
+                    self.assertEqual("noopener noreferrer", link.get_attribute("rel"))
+                    self.assertIn(project_url, card.evaluate("el => el.outerHTML"))
+                    box = card.bounding_box()
+                    self.assertLessEqual(box["width"], width + 1)
+                    page.evaluate("closeShare()")
+                metrics = page.evaluate(
+                    "() => ({scroll:document.documentElement.scrollWidth,"
+                    "client:document.documentElement.clientWidth})"
+                )
+                self.assertLessEqual(metrics["scroll"], metrics["client"] + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
+    def test_mobile_table_detail_expands_without_horizontal_overflow(self):
+        for width in (390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                viewport={"width": width, "height": 760}
+            )
+            try:
+                toggle = page.locator("#tbody tr[data-period] .row-toggle").first
+                self.assertTrue(toggle.is_visible(), f"row toggle must be visible at {width}px")
+                self.assertGreaterEqual(toggle.bounding_box()["height"], 44)
+                self.assertEqual(0, page.locator("#tbody .col-model:visible").count())
+                header_cells = page.locator("#thead th").count()
+                row_cells = page.locator("#tbody tr[data-period]").first.locator("td").count()
+                self.assertEqual(header_cells, row_cells)
+                detail = page.locator("#tbody tr.row-detail").first
+                self.assertTrue(detail.is_hidden())
+                toggle.scroll_into_view_if_needed()
+                toggle.hover()
+                page.wait_for_timeout(150)
+                toggle.click()
+                self.assertEqual("true", toggle.get_attribute("aria-expanded"))
+                self.assertFalse(detail.is_hidden())
+                self.assertTrue(detail.locator(".dl-grid").is_visible())
+                metrics = page.evaluate(
+                    "() => ({ scroll: document.documentElement.scrollWidth,"
+                    " client: document.documentElement.clientWidth })"
+                )
+                self.assertLessEqual(metrics["scroll"], metrics["client"] + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
+    def test_scrub_links_exactly_one_table_row_and_drops_false_aria_current(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            period = page.evaluate("selectedRows(true)[0].period")
+            page.evaluate("setScrubPreview(0,'test',false,false)")
+            linked = page.locator("#tbody tr.row-linked")
+            self.assertEqual(1, linked.count())
+            self.assertEqual(period, linked.first.get_attribute("data-period"))
+            self.assertEqual(
+                1,
+                page.evaluate(
+                    "[...document.querySelectorAll('#bar .barstack')]"
+                    ".filter(el=>el.getAttribute('aria-current')==='true').length"
+                ),
+            )
+            self.assertEqual(
+                0,
+                page.evaluate(
+                    "[...document.querySelectorAll('#bar .barstack')]"
+                    ".filter(el=>el.getAttribute('aria-current')==='false').length"
+                ),
+            )
+            page.evaluate("clearScrub()")
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+            self.assertTrue(
+                page.evaluate(
+                    "[...document.querySelectorAll('#bar .barstack')]"
+                    ".every(el=>el.getAttribute('aria-current')===null)"
+                )
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_table_hover_previews_trend_without_commit(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            row = page.locator("#tbody tr[data-period]").first
+            row.dispatch_event("pointerenter")
+            self.assertEqual(1, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual(0, page.locator("#tbody tr.row-focused").count())
+            self.assertNotEqual("", page.locator("#trend-readout").inner_text())
+            row.dispatch_event("pointerleave")
+            self.assertEqual(0, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_mobile_trend_touch_targets_readout_and_no_overflow(self):
+        context, page, page_errors, console_errors = self.new_page(
+            viewport={"width": 390, "height": 760}
+        )
+        try:
+            metrics = page.evaluate(
+                """
+                () => {
+                  const targets=[...document.querySelectorAll('.tl-item,.chip,#tabs button')]
+                    .filter(el=>getComputedStyle(el).display!=='none')
+                    .map(el=>el.getBoundingClientRect().height);
+                  const legend=getComputedStyle(document.getElementById('trend-legend'));
+                  return {
+                    minHeight:Math.min(...targets),
+                    pageWidth:document.documentElement.scrollWidth,
+                    viewportWidth:document.documentElement.clientWidth,
+                    legendOverflowX:legend.overflowX,
+                    readoutDisplay:getComputedStyle(document.getElementById('trend-readout')).display,
+                  };
+                }
+                """
+            )
+            self.assertGreaterEqual(metrics["minHeight"], 44)
+            self.assertLessEqual(metrics["pageWidth"], metrics["viewportWidth"] + 1)
+            self.assertEqual("auto", metrics["legendOverflowX"])
+            self.assertNotEqual("none", metrics["readoutDisplay"])
+            desktop, desktop_page, _, _ = self.new_page()
+            try:
+                self.assertEqual(
+                    "none",
+                    desktop_page.evaluate(
+                        "getComputedStyle(document.getElementById('trend-readout')).display"
+                    ),
+                )
+            finally:
+                desktop.close()
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_faint_color_contrast_meets_aa_in_both_themes(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            for theme in ("light", "dark"):
+                page.evaluate("theme => applyTheme(theme)", theme)
+                ratio = page.evaluate(
+                    """
+                    () => {
+                      const parse=color=>{
+                        const value=color.trim();
+                        let match=value.match(/^#([0-9a-f]{6})$/i);
+                        if(match){
+                          return [0,2,4].map(index=>parseInt(match[1].slice(index,index+2),16)/255);
+                        }
+                        match=value.match(/^#([0-9a-f]{3})$/i);
+                        if(match){
+                          return [...match[1]].map(part=>parseInt(part+part,16)/255);
+                        }
+                        match=value.match(/^rgba?\\((.+)\\)$/i);
+                        if(match){
+                          const parts=match[1].replace(/,/g,' ').split(/[\\s/]+/)
+                            .filter(Boolean).slice(0,3);
+                          return parts.map(part=>part.endsWith('%')
+                            ?parseFloat(part)/100:parseFloat(part)/255);
+                        }
+                        match=value.match(/^color\\(srgb\\s+(.+)\\)$/i);
+                        if(match){
+                          return match[1].split(/[\\s/]+/).filter(Boolean)
+                            .slice(0,3).map(Number);
+                        }
+                        throw new Error('Unsupported color: '+value);
+                      };
+                      const luminance=color=>parse(color).reduce((sum,channel,index)=>{
+                        const linear=channel<=.04045
+                          ?channel/12.92:Math.pow((channel+.055)/1.055,2.4);
+                        return sum+linear*[.2126,.7152,.0722][index];
+                      },0);
+                      const contrast=(a,b)=>{
+                        const first=luminance(a),second=luminance(b);
+                        return (Math.max(first,second)+.05)/(Math.min(first,second)+.05);
+                      };
+                      const styles=getComputedStyle(document.documentElement);
+                      return contrast(
+                        styles.getPropertyValue('--surface').trim(),
+                        styles.getPropertyValue('--faint').trim()
+                      );
+                    }
+                    """
+                )
+                self.assertGreaterEqual(ratio, 4.5, f"--faint contrast in {theme} theme")
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+
+    # --- interval lens / peak profile ---------------------------------
+
+    def interval_url(self, query=""):
+        return self._interval_path.as_uri() + query
+
+    def click_bar(self, page, period):
+        page.locator(f".bar-hit[data-period='{period}']").click()
+
+    def press_bar(self, page, period, key):
+        # Keyboard activation parked on a bar. Scrub is cleared first so the
+        # keydown handler resolves the period from the focused bar itself.
+        # The pointer is also parked off-chart: scrolling a bar into view can
+        # fire a pointer-driven setScrubPreview for whatever sits under the
+        # stale cursor, and onkeydown prefers scrubState.period over the
+        # focused bar, which would silently retarget the lens.
+        page.mouse.move(2, 2)
+        page.evaluate("clearScrub()")
+        page.focus(f".barstack[data-period='{period}']")
+        page.locator(f".barstack[data-period='{period}']").dispatch_event(
+            "keydown", {"key": key}
+        )
+
+    def interval_snapshot(self, page):
+        return page.evaluate(
+            """
+            () => {
+              const result = intervalResult();
+              return {
+                active: intervalState.active,
+                start: intervalState.start,
+                end: intervalState.end,
+                bStart: intervalState.bStart,
+                a: result ? result.a.map(row => row.period) : null,
+                b: result ? result.b.map(row => row.period) : null,
+              };
+            }
+            """
+        )
+
+    def test_interval_month_granularity_builds_equal_length_cross_month_span(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url()
+        )
+        try:
+            self.assertEqual("month", page.evaluate("state.gran"))
+            self.assertEqual(
+                [
+                    "2026-02-01",
+                    "2026-03-01",
+                    "2026-04-01",
+                    "2026-05-01",
+                    "2026-06-01",
+                ],
+                page.evaluate("completeIntervalRows().map(row => row.period)"),
+            )
+            month_tab = page.locator('#tabs [data-gran="month"]')
+            self.assertIn("on", month_tab.get_attribute("class"))
+            self.assertEqual("true", month_tab.get_attribute("aria-pressed"))
+            page.locator("#interval-btn").click()
+            self.assertEqual(
+                "true", page.locator("#interval-btn").get_attribute("aria-pressed")
+            )
+            for period in ("2026-02-01", "2026-03-01", "2026-04-01"):
+                self.click_bar(page, period)
+            snapshot = self.interval_snapshot(page)
+            self.assertEqual("2026-02-01", snapshot["start"])
+            self.assertEqual("2026-03-01", snapshot["end"])
+            self.assertEqual("2026-04-01", snapshot["bStart"])
+            self.assertEqual(["2026-02-01", "2026-03-01"], snapshot["a"])
+            self.assertEqual(["2026-04-01", "2026-05-01"], snapshot["b"])
+            self.assertEqual(
+                "A 2026-02 → 2026-03 · B 2026-04 → 2026-05",
+                page.inner_text("#interval-prompt"),
+            )
+            self.assertIn(
+                "interval=1&a=2026-02-01&aEnd=2026-03-01&b=2026-04-01",
+                page.evaluate("viewParams().toString()"),
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_interval_day_granularity_keyboard_and_click_select_same_span(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            self.assertEqual(
+                [
+                    "2026-02-03",
+                    "2026-02-04",
+                    "2026-03-05",
+                    "2026-04-07",
+                    "2026-05-09",
+                    "2026-06-01",
+                    "2026-06-02",
+                    "2026-06-03",
+                    "2026-06-04",
+                ],
+                page.evaluate("completeIntervalRows().map(row => row.period)"),
+            )
+            page.locator("#interval-btn").click()
+            for period in ("2026-06-01", "2026-06-02", "2026-06-03"):
+                self.click_bar(page, period)
+            clicked = self.interval_snapshot(page)
+            self.assertEqual(["2026-06-01", "2026-06-02"], clicked["a"])
+            self.assertEqual(["2026-06-03", "2026-06-04"], clicked["b"])
+            self.assertEqual(
+                "A 06-01 → 06-02 · B 06-03 → 06-04",
+                page.inner_text("#interval-prompt"),
+            )
+            self.assertEqual(
+                "gran=day&interval=1&a=2026-06-01&aEnd=2026-06-02&b=2026-06-03",
+                page.evaluate("viewParams().toString()"),
+            )
+            self.assertIn(
+                "interval-a",
+                page.locator(".barstack[data-period='2026-06-01']").get_attribute("class"),
+            )
+            self.assertIn(
+                "interval-b",
+                page.locator(".barstack[data-period='2026-06-03']").get_attribute("class"),
+            )
+            self.assertIn(
+                "已选 A 时段",
+                page.locator(".barstack[data-period='2026-06-01']").get_attribute("aria-label"),
+            )
+            self.assertIn(
+                "已选 B 时段",
+                page.locator(".barstack[data-period='2026-06-03']").get_attribute("aria-label"),
+            )
+            self.assertEqual(
+                1,
+                page.evaluate(
+                    """document.querySelectorAll('#bar .barstack[tabindex="0"]').length"""
+                ),
+            )
+            self.assertEqual(9, page.locator("#bar .barstack[role=button]").count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+        # The keyboard path over the same bars must produce the same span.
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            page.locator("#interval-btn").click()
+            for period in ("2026-06-01", "2026-06-02", "2026-06-03"):
+                self.press_bar(page, period, "Enter")
+            self.assertEqual(clicked, self.interval_snapshot(page))
+            page.keyboard.press("Escape")
+            self.assertFalse(page.evaluate("intervalState.active"))
+            self.assertIsNone(page.evaluate("intervalState.start"))
+            self.assertEqual(
+                "false", page.locator("#interval-btn").get_attribute("aria-pressed")
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_mouse_drag_selects_a_then_click_selects_b(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            page.locator("#interval-btn").click()
+            page.locator(".bar-hit[data-period='2026-06-01']").scroll_into_view_if_needed()
+            start = page.locator(".bar-hit[data-period='2026-06-01']").bounding_box()
+            end = page.locator(".bar-hit[data-period='2026-06-02']").bounding_box()
+            page.mouse.move(start["x"] + start["width"] / 2, start["y"] + 30)
+            page.mouse.down()
+            page.mouse.move(end["x"] + end["width"] / 2, end["y"] + 30, steps=5)
+            page.mouse.up()
+            self.assertEqual("2026-06-01", page.evaluate("intervalState.start"))
+            self.assertEqual("2026-06-02", page.evaluate("intervalState.end"))
+            self.click_bar(page, "2026-06-03")
+            self.assertEqual(
+                ["2026-06-03", "2026-06-04"], self.interval_snapshot(page)["b"]
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_interval_and_peak_copy_is_english_in_browser(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            page.evaluate("applyLanguage('en',false)")
+            page.locator("#interval-btn").click()
+            for period in ("2026-06-01", "2026-06-02", "2026-06-03"):
+                self.click_bar(page, period)
+            self.assertEqual(
+                "A 06-01 → 06-02 · B 06-03 → 06-04",
+                page.inner_text("#interval-prompt"),
+            )
+            page.locator("#peak-btn").click()
+            self.assertIn(
+                "Previous period 300", page.inner_text("#peak-content .peak-lead")
+            )
+            untranslated = page.evaluate(
+                """() => {
+                  const visible = element => element.getClientRects().length &&
+                    !element.closest('script,style,[hidden]') &&
+                    getComputedStyle(element).display !== 'none';
+                  const leftovers = [];
+                  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                  while (walker.nextNode()) {
+                    const node = walker.currentNode;
+                    if (node.parentElement && visible(node.parentElement) &&
+                        /[㐀-鿿]/.test(node.nodeValue) &&
+                        node.parentElement.id !== 'lang-btn')
+                      leftovers.push(node.nodeValue.trim());
+                  }
+                  for (const element of document.querySelectorAll('[aria-label],[title],[placeholder]')) {
+                    if (!visible(element)) continue;
+                    for (const name of ['aria-label','title','placeholder']) {
+                      const value = element.getAttribute(name);
+                      if (value && /[㐀-鿿]/.test(value)) leftovers.push(name + ': ' + value);
+                    }
+                  }
+                  return leftovers;
+                }"""
+            )
+            self.assertEqual([], untranslated)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_peak_profile_previous_period_and_empty_state(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            self.assertEqual("2026-02-04", page.evaluate("peakPeriod()"))
+            self.assertEqual("false", page.locator("#peak-btn").get_attribute("aria-expanded"))
+            self.press_bar(page, "2026-02-04", "p")
+            self.assertEqual("2026-02-04", page.evaluate("peakState.period"))
+            self.assertEqual("峰值剖面 · 02-04", page.inner_text("#peak-heading"))
+            self.assertEqual("true", page.locator("#peak-btn").get_attribute("aria-expanded"))
+            self.assertFalse(page.locator("#peak-profile").is_hidden())
+            lead = page.inner_text("#peak-content .peak-lead")
+            self.assertIn("900 Token", lead)
+            self.assertIn("前一期 300", lead)
+            self.assertIn("+600", lead)
+            page.keyboard.press("Escape")
+            self.assertIsNone(page.evaluate("peakState.period"))
+            self.assertTrue(page.locator("#peak-profile").is_hidden())
+            self.assertEqual("false", page.locator("#peak-btn").get_attribute("aria-expanded"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url()
+        )
+        try:
+            # Default month view: the peak is the first complete month, so there
+            # is no complete consecutive prior period and the empty state shows.
+            self.assertEqual("2026-02-01", page.evaluate("peakPeriod()"))
+            self.assertEqual(
+                "2026-02-01",
+                page.evaluate("completeIntervalRows().map(row => row.period)[0]"),
+            )
+            page.locator("#peak-btn").click()
+            self.assertEqual("true", page.locator("#peak-btn").get_attribute("aria-expanded"))
+            self.assertEqual("峰值剖面 · 2026-02", page.inner_text("#peak-heading"))
+            self.assertIn("无完整相邻前期可比", page.inner_text("#peak-content .peak-lead"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_interval_and_peak_restore_from_url(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url(
+                "?gran=day&interval=1&a=2026-06-01&aEnd=2026-06-02&b=2026-06-03"
+            )
+        )
+        try:
+            snapshot = self.interval_snapshot(page)
+            self.assertTrue(snapshot["active"])
+            self.assertEqual("2026-06-01", snapshot["start"])
+            self.assertEqual("2026-06-02", snapshot["end"])
+            self.assertEqual("2026-06-03", snapshot["bStart"])
+            self.assertEqual(["2026-06-01", "2026-06-02"], snapshot["a"])
+            self.assertEqual(["2026-06-03", "2026-06-04"], snapshot["b"])
+            self.assertEqual(
+                "true", page.locator("#interval-btn").get_attribute("aria-pressed")
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?peak=2026-02-01")
+        )
+        try:
+            self.assertEqual("2026-02-01", page.evaluate("peakState.period"))
+            self.assertFalse(page.locator("#peak-profile").is_hidden())
+            self.assertEqual("峰值剖面 · 2026-02", page.inner_text("#peak-heading"))
+            self.assertIn("无完整相邻前期可比", page.inner_text("#peak-content .peak-lead"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_interval_lens_leaves_normal_scrub_untouched(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            # Lens closed: a bar click still commits the time probe.
+            self.click_bar(page, "2026-06-02")
+            self.assertEqual("2026-06-02", page.evaluate("state.focusPeriod"))
+            page.evaluate("clearFocus()")
+            self.assertIsNone(page.evaluate("state.focusPeriod"))
+
+            # Preview plumbing still works while the lens is closed.
+            page.evaluate("setScrubPreview(5,'test',false,false)")
+            self.assertEqual(1, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            page.evaluate("clearScrub()")
+            self.assertEqual(0, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+
+            # Lens open: a bar click feeds the lens instead of the probe.
+            page.locator("#interval-btn").click()
+            self.click_bar(page, "2026-06-03")
+            self.assertIsNone(page.evaluate("state.focusPeriod"))
+            self.assertEqual("2026-06-03", page.evaluate("intervalState.start"))
+            self.assertFalse(
+                page.evaluate("!!document.querySelector('#tbody tr.row-focused')")
+            )
+
+            page.keyboard.press("Escape")
+            self.assertFalse(page.evaluate("intervalState.active"))
+            self.assertIsNone(page.evaluate("state.focusPeriod"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
         finally:
             context.close()
 

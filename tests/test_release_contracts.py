@@ -121,6 +121,18 @@ class ReleaseContractsTests(unittest.TestCase):
             set(re.findall(r'"([^"]+)"', tokens_assets.group(1))),
         )
 
+    def test_dashboard_javascript_contract_tests_are_node_guarded(self):
+        expected = {
+            ROOT / "tests" / "test_dashboard.py": 18,
+            ROOT / "tests" / "test_dashboard_exports.py": 1,
+        }
+        for path, minimum_guards in expected.items():
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(test_file=path.name):
+                self.assertIn('shutil.which("node")', text)
+                self.assertIn("requires_node = unittest.skipUnless", text)
+                self.assertGreaterEqual(text.count("@requires_node"), minimum_guards)
+
     def test_readme_preview_is_tracked_synthetic_png(self):
         readme = README.read_text(encoding="utf-8")
         self.assertIn("docs/assets/readme-preview.png", readme)

@@ -1,5 +1,6 @@
 import re
 import unittest
+import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -7,6 +8,7 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
+PUBLIC_DEMO = DOCS / "demo" / "index.html"
 DASHBOARD_ASSETS = ROOT / "src" / "tokens_cli" / "dashboard_assets"
 ENGLISH_PAGES = {
     "index.html",
@@ -22,6 +24,7 @@ CHINESE_PAGES = {f"zh/{name}" for name in ENGLISH_PAGES}
 REQUIRED_ASSETS = {
     "assets/site.css",
     "assets/site.js",
+    "assets/readme-preview.png",
     "assets/readme-preview.svg",
     "favicon.svg",
     "robots.txt",
@@ -71,6 +74,8 @@ class DocumentParser(HTMLParser):
             rel = set(attrs.get("rel", "").lower().split())
             if rel & {"stylesheet", "icon", "preload", "modulepreload"}:
                 self.resources.append(attrs["href"])
+        elif tag == "img" and attrs.get("src"):
+            self.resources.append(attrs["src"])
         elif tag == "script" and attrs.get("src"):
             self.resources.append(attrs["src"])
 
@@ -154,6 +159,18 @@ class DocsTests(unittest.TestCase):
                     missing.append(f"{path.name}: {raw_href}")
         self.assertEqual([], missing, "无效内部链接:\n" + "\n".join(missing))
 
+    def test_in_page_anchors_resolve(self):
+        missing = []
+        for path, parser in self.parsers.items():
+            ids = set(parser.ids)
+            for raw_href in parser.links:
+                parts = urlsplit(raw_href)
+                if parts.path or not parts.fragment:
+                    continue
+                if unquote(parts.fragment) not in ids:
+                    missing.append(f"{path.name}: {raw_href}")
+        self.assertEqual([], missing, "无效页内锚点:\n" + "\n".join(missing))
+
     def test_referenced_static_resources_exist(self):
         missing = []
         for path, parser in self.parsers.items():
@@ -189,8 +206,15 @@ class DocsTests(unittest.TestCase):
         self.assertEqual([], violations, "检测到可能的本机/会话泄漏:\n" + "\n".join(violations))
 
     def test_interactive_controls_are_accessible(self):
+        # The public demo is a full application dashboard, not a docs page;
+        # its control labeling is covered by the dashboard asset test suite.
+        allowed_skips = {PUBLIC_DEMO}
+        skipped = []
         violations = []
         for path, parser in self.parsers.items():
+            if path == PUBLIC_DEMO:
+                skipped.append(path)
+                continue
             for tag, css_class in parser.missing_labels:
                 violations.append(f"{path.name}: {tag}.{css_class} 缺少 aria-label")
             for tag, control_id in parser.controls:
@@ -202,6 +226,11 @@ class DocsTests(unittest.TestCase):
             if duplicates:
                 violations.append(f"{path.name}: 重复 id {duplicates}")
         self.assertEqual([], violations, "无障碍属性问题:\n" + "\n".join(violations))
+        self.assertLessEqual(
+            set(skipped),
+            allowed_skips,
+            "无障碍豁免只允许覆盖公开 Demo 页",
+        )
 
     def test_mobile_escape_resets_expanded_state(self):
         script = (DOCS / "assets/site.js").read_text(encoding="utf-8")
@@ -219,15 +248,90 @@ class DocsTests(unittest.TestCase):
         self.assertIn("repoBase='/'+segments[0]+'/'", page)
         self.assertIn("document.getElementById('home-button').href=base", page)
 
-    def test_pages_workflow_runs_tests_and_watches_them(self):
+    def test_pages_workflow_builds_demo_tests_then_uploads(self):
         workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
-        self.assertIn('"tests/test_docs.py"', workflow)
-        self.assertIn("python3 -m unittest discover -s tests", workflow)
+        build = "python3 scripts/build_docs_demo.py"
+        tests = "python3 -m unittest discover -s tests"
+        upload = "actions/upload-pages-artifact"
+        for watched in (
+            '"scripts/build_docs_demo.py"',
+            '"src/tokens_cli/demo.py"',
+            '"src/tokens_cli/dashboard_payload.py"',
+            '"src/tokens_cli/dashboard_wire.py"',
+            '"src/tokens_cli/report_dashboard.py"',
+            '"tests/test_docs.py"',
+            '"tests/test_docs_demo.py"',
+        ):
+            self.assertIn(watched, workflow)
+        self.assertIn("PYTHONPATH: src", workflow[workflow.index(build):workflow.index(build) + 160])
+        self.assertLess(workflow.index(build), workflow.index(tests))
         self.assertLess(
-            workflow.index("python3 -m unittest discover -s tests"),
-            workflow.index("actions/upload-pages-artifact"),
+            workflow.index(tests),
+            workflow.index(upload),
             "测试应在上传 Pages artifact 之前运行",
         )
+
+    def test_public_demo_conversion_links_are_present(self):
+        demo_url = "https://lingxi-fur.github.io/tokens/demo/"
+        expected = {
+            DOCS / "index.html": 2,
+            DOCS / "zh" / "index.html": 2,
+            DOCS / "dashboard.html": 1,
+            DOCS / "zh" / "dashboard.html": 1,
+            DOCS / "getting-started.html": 1,
+            DOCS / "zh" / "getting-started.html": 1,
+            DOCS / "faq.html": 1,
+            DOCS / "zh" / "faq.html": 1,
+            DOCS / "assets" / "site.js": 2,
+        }
+        for path, minimum in expected.items():
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertGreaterEqual(
+                    path.read_text(encoding="utf-8").count(demo_url),
+                    minimum,
+                )
+
+    def test_public_readmes_are_demo_first(self):
+        demo_url = "https://lingxi-fur.github.io/tokens/demo/"
+        preview_url = (
+            "https://raw.githubusercontent.com/LingXi-fur/tokens/main/"
+            "docs/assets/readme-preview.png"
+        )
+        readmes = (
+            (ROOT / "README.md", "without installing",
+             "[![Live demo](https://img.shields.io/badge/demo-try%20in%20browser-2f6fd6)]"),
+            (ROOT / "README.zh-CN.md", "无需安装",
+             "[![在线 Demo](https://img.shields.io/badge/demo-在线体验-2f6fd6)]"),
+        )
+        for path, no_install, badge in readmes:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertGreaterEqual(text.count(demo_url), 5)
+                self.assertIn(badge + f"({demo_url})", text)
+                self.assertIn(preview_url, text)
+                self.assertIn(no_install, text)
+                self.assertIn(
+                    "git clone https://github.com/LingXi-fur/tokens.git",
+                    text,
+                )
+                self.assertLess(text.index(demo_url), text.index("## "))
+
+    def test_sitemap_and_project_metadata_advertise_demo(self):
+        demo_url = "https://lingxi-fur.github.io/tokens/demo/"
+        sitemap = ET.parse(DOCS / "sitemap.xml")
+        namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+        locations = [
+            element.text
+            for element in sitemap.findall("sm:url/sm:loc", namespace)
+        ]
+        self.assertIn(demo_url, locations)
+        self.assertEqual(1, locations.count(demo_url))
+
+        pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        project_urls = pyproject.split("[project.urls]", 1)[1].split(
+            "[project.scripts]", 1
+        )[0]
+        self.assertIn(f'Demo = "{demo_url}"', project_urls)
 
     def test_workflow_tests_can_import_src_package(self):
         workflows = (
@@ -246,6 +350,36 @@ class DocsTests(unittest.TestCase):
                 environment,
                 f"{filename} tests must import the src-layout package",
             )
+
+    def test_test_running_workflows_pin_node_22(self):
+        workflows = (
+            ("ci.yml", "python -m unittest discover -s tests"),
+            ("pages.yml", "python3 -m unittest discover -s tests"),
+            ("release.yml", "python -m unittest discover -s tests"),
+        )
+        for filename, command in workflows:
+            workflow = (
+                ROOT / ".github" / "workflows" / filename
+            ).read_text(encoding="utf-8")
+            with self.subTest(workflow=filename):
+                setup_index = workflow.index("actions/setup-node@v4")
+                self.assertIn('node-version: "22"', workflow[setup_index:setup_index + 120])
+                self.assertLess(
+                    setup_index,
+                    workflow.index(command),
+                    f"{filename} must set up Node before JavaScript contract tests",
+                )
+
+    def test_readmes_and_contributing_document_node_requirement(self):
+        documents = (
+            ROOT / "README.md",
+            ROOT / "README.zh-CN.md",
+            ROOT / "CONTRIBUTING.md",
+        )
+        for path in documents:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(document=path.name):
+                self.assertRegex(text, re.compile(r"Node\.js 22(?:\+| or newer)"))
 
     def test_release_workflows_reject_versioned_cache_files(self):
         for filename in ("ci.yml", "release.yml"):
@@ -277,6 +411,7 @@ class DocsTests(unittest.TestCase):
         chinese_dashboard = (DOCS / "zh" / "dashboard.html").read_text(encoding="utf-8")
 
         for text in (readme, chinese_readme, english_start, chinese_start):
+            self.assertIn("./run serve --open", text)
             self.assertIn("tokens serve --open", text)
         for text in (readme, chinese_readme, english_dashboard, chinese_dashboard):
             self.assertIn("127.0.0.1", text)
@@ -324,6 +459,75 @@ class DocsTests(unittest.TestCase):
             self.assertNotIn("pip install ai-cli-tokens", readme)
             self.assertNotIn("/v0.2.0/", readme)
             self.assertNotIn("blob/v0.2.0", readme)
+
+    def test_docs_homepages_show_real_preview_and_star_cta(self):
+        pages = (
+            ("index.html", "assets/readme-preview.png"),
+            ("zh/index.html", "../assets/readme-preview.png"),
+        )
+        for name, preview in pages:
+            page = (DOCS / name).read_text(encoding="utf-8")
+            with self.subTest(page=name):
+                self.assertIn(f'src="{preview}"', page)
+                self.assertRegex(page, re.compile(r"synthetic|合成", re.IGNORECASE))
+                self.assertRegex(page, re.compile(r"invented|虚构", re.IGNORECASE))
+                self.assertIn("https://github.com/LingXi-fur/tokens", page)
+                self.assertRegex(page, re.compile(r"Star on GitHub|点亮 Star"))
+
+    def test_demo_command_is_documented_for_both_entry_points(self):
+        paths = (
+            ROOT / "README.md",
+            ROOT / "README.zh-CN.md",
+            DOCS / "getting-started.html",
+            DOCS / "zh" / "getting-started.html",
+        )
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(page=str(path.relative_to(ROOT))):
+                self.assertIn("./run demo --open", text)
+                self.assertIn("tokens demo --open", text)
+
+    def test_source_checkout_and_editable_install_are_layered(self):
+        pages = (
+            DOCS / "getting-started.html",
+            DOCS / "zh" / "getting-started.html",
+            DOCS / "cli.html",
+            DOCS / "zh" / "cli.html",
+        )
+        for path in pages:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(page=str(path.relative_to(DOCS))):
+                self.assertIn("./run", text)
+                self.assertIn("tokens ", text)
+
+        for path in pages[:2]:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(install=str(path.relative_to(DOCS))):
+                self.assertIn("python -m pip install -e .", text)
+
+        markers = {
+            DOCS / "cli.html": ("source checkout", "editable install"),
+            DOCS / "zh" / "cli.html": ("源码检出", "editable 安装"),
+        }
+        for path, expected in markers.items():
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(markers=str(path.relative_to(DOCS))):
+                for marker in expected:
+                    self.assertIn(marker, text)
+
+    def test_chinese_cli_documents_eight_command_modes(self):
+        chinese_cli = (DOCS / "zh" / "cli.html").read_text(encoding="utf-8")
+        self.assertIn("八种命令模式", chinese_cli)
+        for command in (
+            "day", "week", "month", "all", "dashboard", "demo", "serve", "doctor",
+        ):
+            self.assertIn(f"<code>{command}</code>", chinese_cli)
+
+        combined = "\n".join(
+            path.read_text(encoding="utf-8") for path in DOCS.rglob("*.html")
+        )
+        for stale in ("六种命令模式", "七种命令模式"):
+            self.assertNotIn(stale, combined)
 
     def test_documentation_uses_current_live_refresh_default(self):
         files = [ROOT / "README.md", ROOT / "README.zh-CN.md"] + sorted(

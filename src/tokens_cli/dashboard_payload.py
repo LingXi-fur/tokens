@@ -50,23 +50,56 @@ def _model_first_seen_key(record):
     return 2, ""
 
 
+def _model_last_seen_key(record):
+    """Order activity by report day, then timestamp when available."""
+    raw_day = record.get("date")
+    try:
+        day = date.fromisoformat(raw_day).isoformat() if isinstance(raw_day, str) else ""
+    except ValueError:
+        day = ""
+    raw_ts = record.get("ts")
+    if isinstance(raw_ts, str):
+        try:
+            parsed = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            normalized = parsed.astimezone(timezone.utc).isoformat()
+            return day or normalized[:10], 1, normalized
+        except ValueError:
+            pass
+    return day, 0, ""
+
+
 def _model_registry(records):
     """Assign fixed identity slots before range filtering or token ranking."""
     first_seen = {}
+    last_seen = {}
     saw_other = False
     for record in records:
         model = _record_model(record)
         if model == OTHER_MODEL:
             saw_other = True
             continue
-        key = _model_first_seen_key(record)
-        if model not in first_seen or key < first_seen[model]:
-            first_seen[model] = key
+        first_key = _model_first_seen_key(record)
+        if model not in first_seen or first_key < first_seen[model]:
+            first_seen[model] = first_key
+        last_key = _model_last_seen_key(record)
+        if model not in last_seen or last_key > last_seen[model]:
+            last_seen[model] = last_key
 
     ordered = sorted(first_seen, key=lambda model: (first_seen[model], model))
-    retained = ordered[:MODEL_IDENTITY_CAPACITY]
+    if len(ordered) <= MODEL_IDENTITY_CAPACITY:
+        retained = ordered
+        overflow = []
+    else:
+        # Keep early identities stable unless the most recently active backend
+        # would otherwise be folded into Other.
+        recent = max(ordered, key=lambda model: (last_seen[model], model))
+        retained = ordered[:MODEL_IDENTITY_CAPACITY]
+        if recent not in retained:
+            retained[-1] = recent
+        overflow = [model for model in ordered if model not in retained]
     aliases = {model: model for model in retained}
-    overflow = ordered[MODEL_IDENTITY_CAPACITY:]
     aliases.update({model: OTHER_MODEL for model in overflow})
     if saw_other:
         aliases[OTHER_MODEL] = OTHER_MODEL
@@ -278,10 +311,10 @@ def _snapshot_identity(payload):
 
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False,
-                  aliases=None):
+                  aliases=None, generated_at=None, session_titles=None):
     records = tuple(records)
     model_registry, model_slots = _model_registry(records)
-    generated_at = datetime.now(config.TZ)
+    generated_at = generated_at or datetime.now(config.TZ)
     aliases = aliases or (_ReportAliases() if anonymize else None)
     model_totals = {}
     hourly = [0] * 24
@@ -321,6 +354,9 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "sources": {},
     }
     record_counter = 0
+    latest_backend = None
+    latest_backend_key = None
+    latest_backend_grouped = False
 
     for record in records:
         day = record["date"]
@@ -331,6 +367,11 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
 
         total = record.get("total", 0) or 0
         model = _canonical_model(record, model_registry)
+        latest_key = (_model_last_seen_key(record), _record_model(record))
+        if latest_backend_key is None or latest_key > latest_backend_key:
+            latest_backend_key = latest_key
+            latest_backend = model
+            latest_backend_grouped = model != _record_model(record)
         source = record.get("source") or "unknown"
         raw_cwd = record.get("cwd")
         raw_sid = record.get("session")
@@ -473,7 +514,10 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         },
     }
 
-    if anonymize:
+    if session_titles is not None:
+        def title_for_session(sid):
+            return session_titles.get(sid, "")
+    elif anonymize:
         def title_for_session(sid):
             return sid or ""
     else:
@@ -552,7 +596,12 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
     dashboard_data = {
         "anonymized": anonymize,
         "source": sources or [],
-        "range": {"since": since, "until": until},
+        "range": {
+            "since": since,
+            "until": until,
+            "latest_backend": latest_backend,
+            "latest_backend_folded": latest_backend_grouped,
+        },
         "models": models,
         "pretty": pretty,
         "colors": colors,

@@ -12,6 +12,48 @@ from .opener import open_path
 
 PERIOD_TITLE = {"day": "每日", "week": "每周", "month": "每月"}
 
+# 文案随 lang 参数切换（en/zh），默认沿用中文。
+TEXT = {
+    "zh": {
+        "html_lang": "zh",
+        "period_title": PERIOD_TITLE,
+        "period_col": "期",  # 前缀为 period_title[mode]，如「每日期」
+        "title": "Token 用量报告 · {pt} · {focus} {date}",
+        "sub": "生成于 {ts} · 来源：{srcs} · 本地日志解析",
+        "no_data": "无数据",
+        "kpi_total": "{focus} 总 token",
+        "kpi_calls": "调用次数",
+        "kpi_models": "模型数",
+        "trend": "{pt}总 token 趋势",
+        "model_mix": "本期模型分布",
+        "source_mix": "本期来源分布",
+        "details": "明细",
+        "total": "总 token",
+        "calls": "调用",
+        "footer": "by <b>tokens</b> · 数据来自 ~/.claude / ~/.gemini / ~/.codex · 亮/暗随系统",
+        "units": (("亿", 1_0000_0000), ("万", 1_0000)),
+    },
+    "en": {
+        "html_lang": "en",
+        "period_title": {"day": "Daily", "week": "Weekly", "month": "Monthly"},
+        "period_col": "Period",
+        "title": "Token usage report · {pt} · {focus} {date}",
+        "sub": "Generated {ts} · Sources: {srcs} · Parsed from local logs",
+        "no_data": "No data",
+        "kpi_total": "{focus} total tokens",
+        "kpi_calls": "Calls",
+        "kpi_models": "Models",
+        "trend": "{pt} total token trend",
+        "model_mix": "Model mix this period",
+        "source_mix": "Source mix this period",
+        "details": "Details",
+        "total": "Total tokens",
+        "calls": "Calls",
+        "footer": "by <b>tokens</b> · Data from ~/.claude / ~/.gemini / ~/.codex · Light/dark follows system",
+        "units": (("B", 1_000_000_000), ("M", 1_000_000), ("K", 1_000)),
+    },
+}
+
 # 系列配色（亮/暗通用）。热力图色阶由 CSS 变量按主题切换。
 SERIES = ["#5b8def", "#f0a84b", "#56c596", "#ef6f6d",
           "#9b8cf2", "#4ec9d6", "#e08a6a", "#7ec1e8"]
@@ -25,8 +67,8 @@ def _fmt(n):
     return f"{n:,}"
 
 
-def _human(n):
-    for unit, div in (("亿", 1_0000_0000), ("万", 1_0000)):
+def _human(n, units=TEXT["zh"]["units"]):
+    for unit, div in units:
         if n >= div:
             return f"{n / div:.1f}{unit}"
     return str(n)
@@ -51,19 +93,18 @@ def _fmt_label(period, mode, rows):
 
 # ---------- 柱状图（周/月）----------
 
-def _svg_bar_chart(rows, mode, width=820, height=300):
+def _svg_bar_chart(rows, mode, width=820, height=300, units=TEXT["zh"]["units"], no_data="无数据"):
     """rows: [(period, value)]。标签按 mode 美化；过密则倾斜 + 抽稀。描边/填色走 CSS 类，自动随主题。"""
     bars = [(l, v) for l, v in rows]
     if not bars:
-        return '<p class="hint">无数据</p>'
+        return f'<p class="hint">{no_data}</p>'
     vmax = max(v for _, v in bars) or 1
-    # 整图锁定单一单位，避免 y 轴 万与亿混用造成歧义
-    if vmax >= 1_0000_0000:
-        ulabel, udiv = "亿", 1_0000_0000
-    elif vmax >= 1_0000:
-        ulabel, udiv = "万", 1_0000
-    else:
-        ulabel, udiv = "", 1
+    # 整图锁定单一单位，避免 y 轴混用单位造成歧义（zh：万/亿；en：K/M/B）
+    ulabel, udiv = "", 1
+    for unit, div in units:
+        if vmax >= div:
+            ulabel, udiv = unit, div
+            break
 
     def _vf(n):
         if not ulabel:
@@ -110,7 +151,7 @@ def _svg_bar_chart(rows, mode, width=820, height=300):
 
 # ---------- 饼图 ----------
 
-def _svg_pie(slices, size=240):
+def _svg_pie(slices, size=240, units=TEXT["zh"]["units"]):
     """slices: [(label, value)]。分片描边 / 中心孔走 CSS 类，随主题。"""
     total = sum(v for _, v in slices) or 1
     cx, cy, r = size / 2, size / 2, size / 2 - 8
@@ -131,7 +172,7 @@ def _svg_pie(slices, size=240):
             parts.append(f'<path class="slice" d="{d}" fill="{color}"><title>{_esc(label)} {_pct(frac)}</title></path>')
         angle = a1
     parts.append(f'<circle class="pie-hole" cx="{cx}" cy="{cy}" r="{r*0.56:.1f}" />')
-    parts.append(f'<text x="{cx}" y="{cy-2}" text-anchor="middle" class="pie-center">{_human(total)}</text>')
+    parts.append(f'<text x="{cx}" y="{cy-2}" text-anchor="middle" class="pie-center">{_human(total, units)}</text>')
     parts.append(f'<text x="{cx}" y="{cy+15}" text-anchor="middle" class="pie-sub">TOKENS</text>')
     parts.append("</svg>")
     return "\n".join(parts)
@@ -215,8 +256,9 @@ a{color:var(--accent)}
 """
 
 
-def write_report(mode, rows, focus_date, focus_label, all_sources):
+def write_report(mode, rows, focus_date, focus_label, all_sources, lang="zh"):
     """rows: [(period, summarize)]; all_sources: 本次扫描命中的 source 列表。"""
+    t = TEXT.get(lang, TEXT["zh"])
     focus = None
     for p, s in rows:
         if p == focus_date:
@@ -255,26 +297,29 @@ def write_report(mode, rows, focus_date, focus_label, all_sources):
         for (src, v), col in zip(src_slices, SERIES)
     )
 
-    trend_title = f"{PERIOD_TITLE.get(mode, '')}总 token 趋势"
-    trend_body = _svg_bar_chart(bar_rows, mode)
+    trend_title = t["trend"].format(pt=t["period_title"].get(mode, ""))
+    trend_body = _svg_bar_chart(bar_rows, mode, units=t["units"], no_data=t["no_data"])
 
     focus_disp = _fmt_label(focus_date, mode, rows)
-    title = f"Token 用量报告 · {PERIOD_TITLE.get(mode, '')} · {focus_label} {focus_disp}"
+    title = t["title"].format(pt=t["period_title"].get(mode, ""), focus=focus_label, date=focus_disp)
     now_str = datetime.now(config.TZ).strftime("%Y-%m-%d %H:%M")
+    sub = t["sub"].format(ts=now_str, srcs=", ".join(all_sources) or t["no_data"])
+    period_col = (t["period_title"].get(mode, "") + t["period_col"]
+                  if t is TEXT["zh"] else t["period_col"])
 
     html_doc = f"""<!doctype html>
-<html lang=zh><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<html lang={t['html_lang']}><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>{_esc(title)}</title>
 <style>{_STYLE}</style></head><body>
 <div class=wrap>
 <h1>{_esc(title)}</h1>
-<div class=sub>生成于 {_esc(now_str)} · 来源：{', '.join(all_sources) or '无'} · 本地日志解析</div>
+<div class=sub>{_esc(sub)}</div>
 
 <div class=card>
  <div class=kpis>
-   <div class=kpi><div class=v>{_fmt(focus['total'])}</div><div class=l>{_esc(focus_label)} 总 token</div></div>
-   <div class=kpi><div class=v>{_fmt(focus['calls'])}</div><div class=l>调用次数</div></div>
-   <div class=kpi><div class=v>{len(focus['by_model'])}</div><div class=l>模型数</div></div>
+   <div class=kpi><div class=v>{_fmt(focus['total'])}</div><div class=l>{_esc(t['kpi_total'].format(focus=focus_label))}</div></div>
+   <div class=kpi><div class=v>{_fmt(focus['calls'])}</div><div class=l>{t['kpi_calls']}</div></div>
+   <div class=kpi><div class=v>{len(focus['by_model'])}</div><div class=l>{t['kpi_models']}</div></div>
  </div>
 </div>
 
@@ -285,24 +330,24 @@ def write_report(mode, rows, focus_date, focus_label, all_sources):
 
 <div class=grid>
  <div class=card>
-  <h2>本期模型分布</h2>
-  {_svg_pie(model_slices)}
+  <h2>{t['model_mix']}</h2>
+  {_svg_pie(model_slices, units=t['units'])}
   <ul class=legend>{legend_models}</ul>
  </div>
  <div class=card>
-  <h2>本期来源分布</h2>
-  {_svg_pie(src_slices)}
+  <h2>{t['source_mix']}</h2>
+  {_svg_pie(src_slices, units=t['units'])}
   <ul class=legend>{legend_sources}</ul>
  </div>
 </div>
 
 <div class=card>
- <h2>明细</h2>
- <table><thead><tr><th>{_esc(PERIOD_TITLE.get(mode,''))+'期'}</th><th class=num>总 token</th>{model_th}<th class=num>调用</th></tr></thead>
+ <h2>{t['details']}</h2>
+ <table><thead><tr><th>{_esc(period_col)}</th><th class=num>{t['total']}</th>{model_th}<th class=num>{t['calls']}</th></tr></thead>
  <tbody>{''.join(table_rows)}</tbody></table>
 </div>
 
-<footer>by <b>tokens</b> · 数据来自 ~/.claude / ~/.gemini / ~/.codex · 亮/暗随系统</footer>
+<footer>{t['footer']}</footer>
 </div>
 </body></html>"""
 

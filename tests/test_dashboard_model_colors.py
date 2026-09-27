@@ -100,15 +100,17 @@ class DashboardModelColorTests(unittest.TestCase):
         ]
         payload = self.payload(records)
 
-        retained = {f"model-{index}" for index in range(7)}
-        overflow = {"model-7", "model-8"}
+        retained = {f"model-{index}" for index in range(6)} | {"model-8"}
+        overflow = {"model-6", "model-7"}
         self.assertEqual(retained | {dashboard_payload.OTHER_MODEL}, set(payload["models"]))
         self.assertEqual(8, len(payload["models"]))
         self.assertEqual("Other", payload["pretty"][dashboard_payload.OTHER_MODEL])
-        self.assertEqual(17, next(
+        self.assertEqual(15, next(
             row["models"][dashboard_payload.OTHER_MODEL]
             for row in payload["month"]
         ))
+        self.assertEqual("model-8", payload["range"]["latest_backend"])
+        self.assertFalse(payload["range"]["latest_backend_folded"])
 
         encoded = json.dumps(payload, sort_keys=True)
         for model in overflow:
@@ -123,6 +125,63 @@ class DashboardModelColorTests(unittest.TestCase):
                 payload["colors"][theme][dashboard_payload.OTHER_MODEL],
             )
             self.assertEqual(len(payload["models"]), len(set(payload["colors"][theme].values())))
+
+    def test_recent_backend_keeps_one_seat_when_registry_overflows(self):
+        records = [
+            self.record(f"model-{index}", f"2026-07-{index + 1:02d}", index + 1)
+            for index in range(7)
+        ] + [
+            self.record("gpt-5.6-sol", "2026-07-08", 30),
+            self.record("gpt-6-sol", "2026-07-09", 40),
+            self.record("model-6", "2026-07-10", 50),
+            self.record("gpt-6-sol", "2026-07-11", 60),
+        ]
+        payload = self.payload(records)
+        reversed_payload = self.payload(list(reversed(records)))
+
+        self.assertIn("gpt-6-sol", payload["models"])
+        self.assertNotIn("gpt-5.6-sol", payload["models"])
+        self.assertEqual(100, next(
+            row["models"]["gpt-6-sol"] for row in payload["month"]
+        ))
+        self.assertEqual(payload["colors"], reversed_payload["colors"])
+        self.assertEqual("gpt-6-sol", payload["range"]["latest_backend"])
+        self.assertFalse(payload["range"]["latest_backend_folded"])
+        for theme in ("light", "dark"):
+            self.assertEqual(
+                getattr(dashboard_payload, theme.upper() + "_PALETTE")[6],
+                payload["colors"][theme]["gpt-6-sol"],
+            )
+
+    def test_recent_backend_uses_report_day_even_when_timestamp_missing(self):
+        records = [
+            self.record(f"model-{index}", f"2026-07-{index + 1:02d}", 1)
+            for index in range(7)
+        ]
+        previous = self.record("model-older", "2026-07-08", 5)
+        recent = self.record("gpt-6-sol", "2026-07-09", 7)
+        recent["ts"] = "invalid"
+        payload = self.payload(records + [previous, recent])
+
+        self.assertIn("gpt-6-sol", payload["models"])
+        self.assertNotIn("model-older", payload["models"])
+        self.assertEqual("gpt-6-sol", payload["range"]["latest_backend"])
+        self.assertFalse(payload["range"]["latest_backend_folded"])
+
+    def test_recent_backend_uses_timestamp_within_same_report_day(self):
+        early = self.record("model-early", "2026-07-02", 1, 1)
+        late = self.record("model-late", "2026-07-02", 1, 22)
+        payload = self.payload([late, early])
+        self.assertEqual("model-late", payload["range"]["latest_backend"])
+
+    def test_historical_and_current_sol_stay_distinct_without_overflow(self):
+        payload = self.payload([
+            self.record("gpt-5.6-sol", "2026-07-01", 15),
+            self.record("gpt-6-sol", "2026-07-02", 25),
+        ])
+        self.assertEqual({"gpt-5.6-sol", "gpt-6-sol"}, set(payload["models"]))
+        self.assertEqual(15, payload["month"][0]["models"]["gpt-5.6-sol"])
+        self.assertEqual(25, payload["month"][0]["models"]["gpt-6-sol"])
 
     def test_model_order_uses_current_range_totals_with_stable_name_tie_break(self):
         records = [

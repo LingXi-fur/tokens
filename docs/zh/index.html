@@ -24,16 +24,16 @@
     <div class="eyebrow">LOCAL-FIRST · NO TELEMETRY · LIVE OR OFFLINE</div>
     <h1>看清每一次<br>Token 流动。</h1>
     <p class="lead">tokens 在本机读取 Claude Code、Gemini CLI 与 Codex 日志，按日、周、月聚合用量，并输出终端表格、仅限回环地址的实时 Dashboard 或单文件离线快照。核心管线使用 Python 标准库；Windows 额外需要 <code>tzdata</code>。</p>
-    <div class="hero-actions"><a class="button primary" href="getting-started.html">克隆并运行</a><a class="button" href="dashboard.html">探索 Dashboard</a><a class="button" href="cli.html">查看命令</a></div>
+    <div class="hero-actions"><a class="button primary" href="https://lingxi-fur.github.io/tokens/demo/">在线体验真实 Demo</a><a class="button" href="getting-started.html">克隆并运行</a><a class="button" href="https://github.com/LingXi-fur/tokens">在 GitHub 点亮 Star</a></div>
     <p class="hero-note">Python ≥ 3.9 · 默认仅统计 Claude · 无 CDN · 不上传数据</p>
   </section>
 
-  <section class="demo" data-demo aria-labelledby="demo-title">
-    <div class="demo-toolbar"><span class="demo-dots"><i></i><i></i><i></i></span><span class="demo-title" id="demo-title">synthetic://token-overview</span><button class="demo-button" type="button" data-demo-refresh aria-label="刷新合成演示数据">刷新合成数据</button></div>
-    <div class="demo-body">
-      <div class="demo-kpis"><div class="demo-kpi"><span>总 Token</span><b data-demo-total>—</b></div><div class="demo-kpi"><span>调用次数</span><b data-demo-calls>—</b></div><div class="demo-kpi"><span>模型数</span><b>3</b></div><div class="demo-kpi"><span>缓存占比</span><b>68%</b></div></div>
-      <div class="demo-grid"><div class="demo-panel"><h3>近 12 期用量</h3><div class="demo-chart"><i class="demo-bar" data-demo-bar data-label="01"></i><i class="demo-bar" data-demo-bar data-label="02"></i><i class="demo-bar" data-demo-bar data-label="03"></i><i class="demo-bar" data-demo-bar data-label="04"></i><i class="demo-bar" data-demo-bar data-label="05"></i><i class="demo-bar" data-demo-bar data-label="06"></i><i class="demo-bar" data-demo-bar data-label="07"></i><i class="demo-bar" data-demo-bar data-label="08"></i><i class="demo-bar" data-demo-bar data-label="09"></i><i class="demo-bar" data-demo-bar data-label="10"></i><i class="demo-bar" data-demo-bar data-label="11"></i><i class="demo-bar" data-demo-bar data-label="12"></i></div></div><div class="demo-panel"><h3>模型构成</h3><div class="demo-legend"><div class="demo-legend-row"><i style="--c:#72a7ff"></i><span>Atlas Code</span><b>54%</b></div><div class="demo-legend-row"><i style="--c:#9d86ff"></i><span>Nova Reasoner</span><b>31%</b></div><div class="demo-legend-row"><i style="--c:#37d6bc"></i><span>Swift Mini</span><b>15%</b></div></div><p class="demo-note">本演示仅使用虚构模型名与合成数值，不读取或复制任何本机报告。</p></div></div>
-    </div>
+  <section class="demo dashboard-preview" aria-labelledby="demo-title">
+    <div class="demo-toolbar"><span class="demo-dots"><i></i><i></i><i></i></span><span class="demo-title" id="demo-title">dashboard-demo.html · 合成数据</span><a class="demo-button" href="https://lingxi-fur.github.io/tokens/demo/">打开完整 Demo</a></div>
+    <figure class="demo-body dashboard-preview-figure">
+      <img class="dashboard-preview-image" src="../assets/readme-preview.png" alt="展示趋势、模型构成与本地用量洞察的 tokens 合成 Dashboard">
+      <figcaption>由真实 Dashboard 管线从虚构记录生成，不含本地日志、路径、会话或私有配置。</figcaption>
+    </figure>
   </section>
 
   <section class="section"><div class="grid three">
