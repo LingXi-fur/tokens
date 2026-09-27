@@ -943,14 +943,21 @@ class DashboardRuntimeTests(unittest.TestCase):
                       const viewportWidth=document.documentElement.clientWidth;
                       const overflow=[...document.querySelectorAll('body *')].map(el=>{
                         const rect=el.getBoundingClientRect();
+                        const style=getComputedStyle(el);
                         return {element:el.tagName.toLowerCase()+(el.id?'#'+el.id:'.'+String(el.className).trim().split(/\s+/)[0]),
                           right:Math.round(rect.right),left:Math.round(rect.left),
-                          position:getComputedStyle(el).position,scrollWidth:el.scrollWidth};
-                      }).filter(item=>item.right>viewportWidth+1).sort((a,b)=>b.right-a.right).slice(0,12);
+                          position:style.position,overflow:style.overflowX,scrollWidth:el.scrollWidth};
+                      }).filter(item=>item.right>=viewportWidth+20&&item.right<=viewportWidth+65).slice(0,20);
+                      const fixed=[...document.querySelectorAll('body *')].filter(el=>getComputedStyle(el).position==='fixed').map(el=>{
+                        const rect=el.getBoundingClientRect();
+                        return {element:el.id||el.className,right:Math.round(rect.right),width:Math.round(rect.width)};
+                      });
                       return {
                         pageWidth:document.documentElement.scrollWidth,
                         viewportWidth,
                         overflow,
+                        fixed,
+                        mobile:matchMedia('(max-width:640px)').matches,
                         minControlHeight:Math.min(...controls.map(el=>el.getBoundingClientRect().height)),
                         sheetWidth:document.querySelector('#ach-modal .ach-sheet').getBoundingClientRect().width,
                         deltaRight:delta.right,
