@@ -941,19 +941,14 @@ class DashboardRuntimeTests(unittest.TestCase):
                         .filter(el=>getComputedStyle(el).display!=='none');
                       const delta=document.getElementById('section-delta').getBoundingClientRect();
                       const project=document.getElementById('section-project');
-                      const projectChildren=[...project.querySelectorAll('*')].map(el=>{
-                        const rect=el.getBoundingClientRect();
-                        return {element:el.tagName.toLowerCase()+(el.id?'#'+el.id:'.'+String(el.className).trim().split(/\s+/)[0]),
-                          right:Math.round(rect.right),width:Math.round(rect.width),
-                          scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,
-                          overflow:getComputedStyle(el).overflowX};
-                      }).filter(item=>item.right>project.getBoundingClientRect().right+1||item.scrollWidth>item.clientWidth+1).slice(0,20);
+                      const picker=project.querySelector('.project-picker');
                       return {
                         pageWidth:document.documentElement.scrollWidth,
                         viewportWidth:document.documentElement.clientWidth,
                         projectWidth:project.scrollWidth,
                         projectClientWidth:project.clientWidth,
-                        projectChildren,
+                        pickerRight:picker.getBoundingClientRect().right,
+                        selectRight:picker.querySelector('select').getBoundingClientRect().right,
                         minControlHeight:Math.min(...controls.map(el=>el.getBoundingClientRect().height)),
                         sheetWidth:document.querySelector('#ach-modal .ach-sheet').getBoundingClientRect().width,
                         deltaRight:delta.right,
@@ -962,6 +957,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                     """
                 )
                 self.assertGreaterEqual(metrics["minControlHeight"], 43.9)
+                self.assertLessEqual(metrics["selectRight"], metrics["pickerRight"] + 1, metrics)
                 self.assertLessEqual(metrics["projectWidth"], metrics["projectClientWidth"] + 1, metrics)
                 self.assertLessEqual(metrics["pageWidth"], metrics["viewportWidth"] + 1, metrics)
                 self.assertLessEqual(metrics["sheetWidth"], metrics["viewportWidth"])
