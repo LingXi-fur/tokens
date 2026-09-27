@@ -1376,7 +1376,7 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
             "class=table-scroll tabindex=0 role=region aria-label=\"Token 明细，可横向滚动\"",
             ".head-tools{display:flex;width:100%;min-width:0;flex-wrap:wrap}",
             ".passport{padding:22px;min-height:0}",
-            ".ach-bar{flex-wrap:wrap}",
+            ".ach-bar{flex-wrap:wrap;min-width:0}",
         ):
             self.assertIn(marker, template)
         key_handler = template.index("document.addEventListener('keydown',e=>{", template.index("function syncPal()"))
