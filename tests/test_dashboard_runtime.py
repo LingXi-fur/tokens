@@ -940,9 +940,17 @@ class DashboardRuntimeTests(unittest.TestCase):
                       const controls=[...document.querySelectorAll('#ach-modal .ach-bar input, #ach-modal .ach-bar select, #ach-modal .ach-bar button')]
                         .filter(el=>getComputedStyle(el).display!=='none');
                       const delta=document.getElementById('section-delta').getBoundingClientRect();
+                      const viewportWidth=document.documentElement.clientWidth;
+                      const overflow=[...document.querySelectorAll('body *')].map(el=>{
+                        const rect=el.getBoundingClientRect();
+                        return {element:el.tagName.toLowerCase()+(el.id?'#'+el.id:'.'+String(el.className).trim().split(/\s+/)[0]),
+                          right:Math.round(rect.right),left:Math.round(rect.left),
+                          position:getComputedStyle(el).position,scrollWidth:el.scrollWidth};
+                      }).filter(item=>item.right>viewportWidth+1).sort((a,b)=>b.right-a.right).slice(0,12);
                       return {
                         pageWidth:document.documentElement.scrollWidth,
-                        viewportWidth:document.documentElement.clientWidth,
+                        viewportWidth,
+                        overflow,
                         minControlHeight:Math.min(...controls.map(el=>el.getBoundingClientRect().height)),
                         sheetWidth:document.querySelector('#ach-modal .ach-sheet').getBoundingClientRect().width,
                         deltaRight:delta.right,
@@ -951,7 +959,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                     """
                 )
                 self.assertGreaterEqual(metrics["minControlHeight"], 43.9)
-                self.assertLessEqual(metrics["pageWidth"], metrics["viewportWidth"] + 1)
+                self.assertLessEqual(metrics["pageWidth"], metrics["viewportWidth"] + 1, metrics)
                 self.assertLessEqual(metrics["sheetWidth"], metrics["viewportWidth"])
                 self.assertLessEqual(metrics["deltaRight"], metrics["viewportWidth"] + 1)
                 self.assertEqual([], page_errors)
