@@ -7,8 +7,16 @@ on:
       - "docs/**"
       - "README.md"
       - "README.zh-CN.md"
+      - "scripts/build_docs_demo.py"
+      - "src/tokens_cli/demo.py"
+      - "src/tokens_cli/config.py"
+      - "src/tokens_cli/opener.py"
+      - "src/tokens_cli/dashboard_payload.py"
+      - "src/tokens_cli/dashboard_wire.py"
+      - "src/tokens_cli/report_dashboard.py"
       - "src/tokens_cli/dashboard_assets/**"
       - "tests/test_docs.py"
+      - "tests/test_docs_demo.py"
       - "tests/test_dashboard.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -31,6 +39,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build public synthetic Dashboard
+        run: python3 scripts/build_docs_demo.py
+        env:
+          PYTHONPATH: src
       - name: Run documentation tests
         run: python3 -m unittest discover -s tests
         env:

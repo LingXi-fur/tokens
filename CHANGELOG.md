@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Demo-first README paths, public share metadata, sitemap discovery, and package project metadata for the zero-install synthetic Dashboard.
+- Interactive equal-length A/B trend comparison and peak-period profile using logged model and backend identities.
+- `--lang en|zh` for terminal and static HTML reports; Markdown export follows Dashboard language.
+
 ## [0.2.0] - 2026-09-21
 
 ### Added

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -13,6 +14,11 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 ASSETS = SRC / "tokens_cli" / "dashboard_assets"
+HAVE_NODE = shutil.which("node") is not None
+requires_node = unittest.skipUnless(
+    HAVE_NODE,
+    "Node.js is required for dashboard JavaScript contract tests",
+)
 
 import sys
 sys.path.insert(0, str(SRC))
@@ -85,7 +91,20 @@ class DashboardTests(unittest.TestCase):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         source_template = (ASSETS / "template.html").read_text(encoding="utf-8")
 
-        self.assertIn("<html lang=zh-CN>", source_template)
+        self.assertIn("<html lang=__LANG__>", source_template)
+        self.assertIn("__HEAD_META__", source_template)
+        self.assertIn("<html lang=__LANG__>", template)
+        default_html = report_dashboard.render_dashboard({"v": 1, "s": [], "d": {}})
+        self.assertIn("<html lang=zh-CN>", default_html)
+        self.assertNotIn("__HEAD_META__", default_html)
+        self.assertNotIn("lingxi-fur.github.io", default_html)
+        self.assertNotIn("property=\"og:", default_html)
+        english = report_dashboard.render_dashboard({"v": 1, "s": [], "d": {}}, language="en")
+        self.assertIn("<html lang=en>", english)
+        self.assertNotIn("__LANG__", english)
+        self.assertNotIn("__HEAD_META__", english)
+        with self.assertRaisesRegex(ValueError, "dashboard language"):
+            report_dashboard.render_dashboard({}, language="en onload=alert(1)")
         self.assertIn("else if(l==='en')document.documentElement.lang='en'", source_template)
         self.assertIn("<title>Token Usage Dashboard</title>", source_template)
         self.assertIn("id=lang-btn type=button data-i18n-skip", source_template)
@@ -254,6 +273,22 @@ class DashboardTests(unittest.TestCase):
         self.assertRegex(template, r"data-module=flow\b")
         self.assertIn("显示模块", template)
         self.assertRegex(template, r"data-mod=flow\b")
+
+    def test_latest_backend_is_last_record_in_report_range(self):
+        records = self.synthetic_records()
+        records.append({
+            **records[-1],
+            "ts": "2026-07-03T10:00:00+08:00",
+            "date": "2026-07-03",
+            "model": "gpt-6-sol",
+        })
+        first = dashboard_payload.build_payload(
+            records, since="2026-07-01", until="2026-07-02", anonymize=True,
+        )
+        all_days = dashboard_payload.build_payload(records, anonymize=True)
+        self.assertEqual("model-b", first["range"]["latest_backend"])
+        self.assertEqual("gpt-6-sol", all_days["range"]["latest_backend"])
+        self.assertFalse(all_days["range"]["latest_backend_folded"])
 
     @mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={})
     @mock.patch("tokens_cli.dashboard_payload.readers.session_title", return_value="")
@@ -579,6 +614,46 @@ class DashboardTests(unittest.TestCase):
         ):
             self.assertEqual(1, flat_ids.count(key_id), key_id)
 
+    @mock.patch("tokens_cli.dashboard_payload.readers.build_session_index")
+    @mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries")
+    def test_demo_payload_uses_supplied_titles_without_local_session_reads(
+            self, summaries, session_index):
+        generated_at = datetime.fromisoformat("2026-07-02T12:00:00+08:00")
+        titles = {"session-a": "Synthetic planning session"}
+        payload = report_dashboard.build_payload(
+            self.synthetic_records(),
+            generated_at=generated_at,
+            session_titles=titles,
+        )
+        summaries.assert_not_called()
+        session_index.assert_not_called()
+        self.assertEqual("2026-07-02 12:00", payload["generated"])
+        self.assertEqual(
+            "Synthetic planning session",
+            payload["day_details"]["2026-07-01"]["sessions"][0][0],
+        )
+
+    def test_demo_filename_is_separate_and_cannot_escape_output_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(report_dashboard.config, "OUT_DIR", tmp):
+                path = Path(report_dashboard.write_dashboard(
+                    self.synthetic_records(),
+                    filename="dashboard-demo.html",
+                    session_titles={},
+                    demo=True,
+                ))
+                self.assertEqual("dashboard-demo.html", path.name)
+                self.assertEqual(Path(tmp), path.parent)
+                html = path.read_text(encoding="utf-8")
+                self.assertIn("const IS_DEMO = true", html)
+                self.assertIn("Synthetic Demo", html)
+                with self.assertRaises(ValueError):
+                    report_dashboard.write_dashboard(
+                        self.synthetic_records(),
+                        filename="../dashboard.html",
+                        session_titles={},
+                    )
+
     def test_anonymized_html_uses_separate_filename_and_contains_no_raw_identifiers(self):
         records = self.sensitive_records()
         with tempfile.TemporaryDirectory() as tmp:
@@ -633,7 +708,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("svg.setAttribute('xmlns','http://www.w3.org/2000/svg')", template)
         self.assertIn("bg.setAttribute('fill','#0b1120')", template)
         self.assertIn("let barCursor=0", template)
-        self.assertIn("role=\"button\" aria-label=\"'+esc(aria)", template)
+        self.assertIn('role="button" aria-label="\'+esc(aria+', template)
         self.assertIn("e.key==='ArrowRight'||e.key==='ArrowLeft'", template)
         self.assertIn("id=filter-ledger", template)
         self.assertIn("id=filter-undo", template)
@@ -654,7 +729,8 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("scrub.max=String(s.length-1)", template)
         self.assertIn("drawECG(Number(e.target.value||0))", template)
         self.assertIn("box.onclick=e=>", template)
-        self.assertIn("commitScrub(scrubState.period||stack.dataset.period,true)", template)
+        self.assertIn("const period=scrubState.source==='keyboard'?scrubState.period||stack.dataset.period:stack.dataset.period", template)
+        self.assertIn("else commitScrub(period,true)", template)
         self.assertIn("document.getElementById('replay-modal').addEventListener('keydown',e=>trapModalFocus(e,e.currentTarget))", template)
         self.assertIn("data-lazy=flow", template)
         self.assertIn("data-lazy=badges", template)
@@ -715,6 +791,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn(".ach-detail .ach-story", css)
         self.assertIn(".ach-bar .ghostbtn,.ach-bar .ach-filter,.ach-bar .ach-search{min-height:44px}", css)
 
+    @requires_node
     def test_attribution_helpers_reconcile_with_shared_delta_window(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
 
@@ -771,6 +848,7 @@ if(filtered.parts.length!==1||filtered.parts[0].model!=='beta'||filtered.parts[0
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    @requires_node
     def test_achievement_story_keeps_story_separate_from_exact_condition(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         start = script.index("function achievementStory(")
@@ -810,7 +888,7 @@ if(!fallback.includes('彩钻'))throw new Error('tier fallback missing');
         self.assertIn("if(document.hidden){clearHeldSignals();clearScrub", template)
         self.assertIn("window.addEventListener('popstate',()=>{clearScrub()", template)
         self.assertIn("function resetView(){clearScrub()", template)
-        self.assertIn("clearScrub();state.gran=g", template)
+        self.assertIn("clearScrub();resetInterval();peakState.period=null;state.gran=g", template)
         self.assertIn("function setModels(next,label){clearScrub()", template)
         self.assertIn("function renderTrendLegend()", template)
         self.assertIn("data-model-toggle", template)
@@ -852,6 +930,7 @@ if(!fallback.includes('彩钻'))throw new Error('tier fallback missing');
         self.assertIn(".col-model{display:none}", css)
         self.assertIn(".detail-table{min-width:0}", css)
 
+    @requires_node
     def test_model_sort_helpers_preserve_tie_contracts(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         start = script.index("const sortedModels=")
@@ -872,6 +951,7 @@ if(topModelOf(tied,true)?.[0]!=='alpha')throw new Error('named leader changed');
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    @requires_node
     def test_trend_period_index_helper_clamps_edges(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         start = script.index("function trendPeriodIndex(")
@@ -914,6 +994,7 @@ for(const [x,left,width,count,want] of cases){const got=trendPeriodIndex(x,left,
         self.assertIn("state.focusPeriod=cell.dataset.day;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();hideRhythmTip();renderDataViews()", script)
         self.assertNotIn("state.focusPeriod=c.dataset.day;hideRhythmTip();render();", script)
 
+    @requires_node
     def test_rhythm_helpers_handle_calendar_gaps_and_sparse_heat(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         def extract_function(name):
@@ -955,6 +1036,7 @@ if(rhythmLevel(4,[1,2,3,4])!==4)throw new Error('maximum must be hottest');
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    @requires_node
     def test_live_replay_reconciles_changed_and_removed_sessions(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         start = script.index("function refreshedReplayState(")
@@ -1016,6 +1098,7 @@ if(refreshedReplayState(closed,{session_series:{}})!==closed)throw new Error('cl
         self.assertNotIn("localStorage.setItem('tk-modes", template)
         self.assertNotIn("p.set('mode'", template)
 
+    @requires_node
     def test_work_mode_classification_is_filtered_ordered_and_explainable(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         start = script.index("const WORK_MODE_RULES=")
@@ -1147,6 +1230,7 @@ if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new 
         self.assertIn("activateRhythmCell(c)", template)
         self.assertIn("无 Token 记录", template)
 
+    @requires_node
     def test_almanac_trends_exclude_the_incomplete_current_day(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
 
@@ -1200,6 +1284,7 @@ if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    @requires_node
     def test_kpi_period_delta_compares_equivalent_time_windows(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
 
@@ -1253,6 +1338,7 @@ if(periodDelta([{period:'2026-08-25',total:100},{period:'2026-08-26',total:50}])
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    @requires_node
     def test_compare_annotation_layout_separates_peak_value_and_delta(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         start = script.index("function barAnnotationLayout(")
@@ -1277,12 +1363,12 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
 
         template = report_dashboard._TEMPLATE
         for marker in (
-            "function openModal(modal,initialFocus)",
+            "function openModal(modal,initialFocus,returnFocus)",
             "function closeModal(modal)",
             "function trapModalFocus(e,modal)",
             "function activeModal()",
             "openModal(document.getElementById('share-modal')",
-            "openModal(modal,document.getElementById('ach-search'))",
+            "openModal(modal,document.getElementById('ach-search'),document.getElementById('ach-open'))",
             "openModal(modal,document.getElementById('help-close'))",
             "openModal(modal,document.getElementById('replay-x'))",
             "role=dialog aria-modal=true aria-label=\"Token 分享卡\"",
@@ -1300,6 +1386,20 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
         self.assertIn("aria-label=\"关闭分享卡\"", template)
         self.assertIn("aria-label=\"搜索成就\"", template)
         self.assertIn("aria-label=\"庆祝成就进度\"", template)
+
+    def test_project_backlinks_are_static_safe_and_exported_with_share_cards(self):
+        template = report_dashboard._TEMPLATE
+        project_url = "https://github.com/LingXi-fur/tokens"
+        self.assertIn(f"const PROJECT_URL='{project_url}'", template)
+        self.assertIn('target=\"_blank\" rel=\"noopener noreferrer\"', template)
+        self.assertIn("projectLinkHTML(linkLabel,'share-project-link')", template)
+        self.assertIn("card.outerHTML", template)
+        self.assertIn("footer-project", template)
+        self.assertIn("share-project", template)
+        self.assertNotIn(project_url + "?", template)
+        self.assertNotIn("fetch(PROJECT_URL", template)
+        self.assertNotIn("sendBeacon(PROJECT_URL", template)
+        self.assertNotIn("new Image", template)
 
     def test_granularity_achievement_and_motion_contracts(self):
         template = report_dashboard._TEMPLATE
@@ -1368,6 +1468,7 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
         ):
             self.assertNotIn(removed, template)
 
+    @requires_node
     def test_token_almanac_helpers_cover_seasons_records_and_history(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
 
@@ -1546,6 +1647,7 @@ if(almanacScopeKey({...DATA,anonymized:true})===almanacScopeKey(DATA))throw new 
         self.assertEqual(250, payload["provenance"]["replay_eligible"])
         self.assertEqual(250, payload["provenance"]["replay_retained"])
 
+    @requires_node
     def test_provenance_helpers_cover_health_freshness_and_capabilities(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         def extract_function(name):
@@ -1617,6 +1719,7 @@ DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw 
         self.assertIn("dataSignalAttrs('model',m,pretty(m),v,'project',false)", template)
         self.assertIn("CACHE READ", template)
 
+    @requires_node
     def test_pin_peek_signal_helpers_compare_only_compatible_aggregates(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
 
@@ -1650,6 +1753,7 @@ if(missing.compatible||!missing.label.includes('Peek'))throw new Error('missing 
         result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
+    @requires_node
     def test_pin_peek_uses_local_dim_and_private_body_state(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         template = report_dashboard._TEMPLATE
@@ -1703,6 +1807,7 @@ state.models.clear();if(trailingQuietDays(rows,'2026-07-06').kind!=='no-observat
 '''
         result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
+    @requires_node
     def test_trend_annotation_rail_maps_merges_and_supports_keyboard(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         for marker in (
@@ -1778,6 +1883,7 @@ e=event('Tab');if(handleMomentKey(e,markers,1)||e.prevented)throw new Error('unh
         result = subprocess.run(["node", "-e", keyboard_script], capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
+    @requires_node
     def test_filtered_top_recomputes_complete_entities_and_drops_zero_rows(self):
         template = report_dashboard._TEMPLATE
         for marker in (
@@ -1847,6 +1953,7 @@ if(projects.length!==2||projects[0][2]!=='beta'||projects[0][1]!==90||projects[1
         self.assertIn("openReplay(id,label)", template)
         self.assertIn("activateTrailDestination(document.getElementById('section-reuse')", template)
 
+    @requires_node
     def test_data_trail_helpers_keep_parallel_evidence_and_exact_composition(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
 
@@ -1928,6 +2035,7 @@ if(allScope.total!==410||allScope.calls!==13||allReuse.total!==350||allReuse.par
         result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
+    @requires_node
     def test_data_trail_capability_rebase_keyboard_and_privacy_contracts(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
 

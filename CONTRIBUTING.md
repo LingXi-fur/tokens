@@ -11,7 +11,7 @@ Thanks for helping improve tokens.
 
 ## Local setup
 
-Python 3.9 or newer is required. The core runtime uses the Python standard library; Windows installs the data-only `tzdata` package for IANA timezone support.
+Python 3.9 or newer is required. The core runtime uses the Python standard library; Windows installs the data-only `tzdata` package for IANA timezone support. Running the full test suite and dashboard JavaScript checks requires Node.js 22 or newer.
 
 ```bash
 python3 -m venv .venv
@@ -20,7 +20,7 @@ python -m pip install -e .
 python -m unittest discover -s tests
 ```
 
-Check the JavaScript assets when changing either interface:
+Check the JavaScript assets when changing either interface (requires Node.js 22 or newer):
 
 ```bash
 node --check src/tokens_cli/dashboard_assets/dashboard.js

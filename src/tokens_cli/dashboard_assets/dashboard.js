@@ -1,5 +1,6 @@
 const WIRE = __DATA__;
 const LIVE = __LIVE__;
+const IS_DEMO = __DEMO__;
 function decodeWire(wire){
   if(!wire||wire.v!==1)throw new Error('Unsupported dashboard data version');
   const table=wire.s||[],mark='§';
@@ -154,6 +155,44 @@ const I18N_KEYED_ZH = Object.freeze({
   'Cache share (model-filtered, reuse rows)':'缓存占比（随模型筛选，复用行口径）',
   'Output token share (model-filtered, reuse rows)':'输出 token 占比（随模型筛选，复用行口径）',
 });
+const I18N_FEATURE_EXACT = Object.freeze({
+  '⇄ 比较两个时段':'⇄ Compare two windows','▲ 查看峰值剖面':'▲ View peak profile','峰值剖面':'Peak profile','返回峰值柱':'Return to peak bar',
+  '清除选区':'Clear selection','两个时段，变化从哪里来':'What changed between two windows','等长时段':'Equal-length windows',
+  '选择 A 起点：仅可选择完整周期':'Select A start: complete periods only','该周期尚未完整，不能参与等长比较':'This period is incomplete and cannot be compared',
+  'A 终点须在起点之后，且周期连续':'A must end after its start, with consecutive periods','B 需要在 A 之后，有相同数量的连续完整周期':'B must follow A with the same number of consecutive complete periods',
+  'B 无足够连续完整周期；重新选择 B 起点':'Not enough consecutive complete periods for B; choose another start','拖刷两端必须是连续完整周期':'Both ends of a drag selection must span consecutive complete periods',
+  '仅比较同粒度、连续且完整的等长周期。':'Only equal-length windows of consecutive complete periods at the same granularity can be compared.',
+  '模型构成':'Model mix','可用证据':'Recorded evidence','当前筛选无模型用量':'No model usage under current filters','暂无小时明细':'No hourly detail','暂无项目明细':'No project detail',
+  '无完整相邻前期可比':'No complete adjacent previous period','仅展示已记录的聚合，不代表异常或故障；项目列表可能只包含保留的部分项目。':'Recorded aggregates only, not an anomaly or fault diagnosis; the project list may contain only retained projects.',
+  '报告范围最近记录后端：':'Latest recorded backend in report range: ','其他模型（归入 Other）':'Other model (folded into Other)',
+  '区间透镜':'Interval lens','点柱、拖刷，或聚焦柱按 Enter / Space；触屏点柱依次选择 A 起/终、B 起。Esc 清除。无足够完整周期时无法比较。':'Click or drag bars, or focus a bar and press Enter / Space; on touch, tap A start/end then B start. Esc clears the selection. Incomplete periods cannot be compared.',
+  'A 时段':'A window','B 时段':'B window',
+  '模式':'Mode','日期':'Date','时区':'Time zone','缓存占比':'Cache share','输出占比':'Output share',
+  '赛季与跨快照时间胶囊只由本地聚合数据生成；这是个人历史，不是全球排名。':'Seasons and cross-snapshot time capsules use local aggregates only; this is personal history, not a global leaderboard.',
+});
+const I18N_FEATURE_PATTERNS = Object.freeze([
+  [/^A 起点 (.+) · 选择 A 终点$/,(_,period)=>`A starts ${period} · Select A end`],
+  [/^A 已选 (.+) → (.+) · 选择 B 起点（自动等长）$/,(_,start,end)=>`A selected ${start} → ${end} · Select B start (same length)`],
+  [/^A (.+) → (.+) · B (.+) → (.+)$/,(_,a,b,c,d)=>`A ${a} → ${b} · B ${c} → ${d}`],
+  [/^A (.+) → (.+) \((\d+) 期\) · B (.+) → (.+) \((\d+) 期\) · (.+) vs (.+)$/,(_,a,b,n,c,d,m,prev,curr)=>`A ${a} → ${b} (${n} periods) · B ${c} → ${d} (${m} periods) · ${prev} vs ${curr}`],
+  [/^(\d+) 期 · 点柱选 A 起\/终、B 起 · 可横向拖刷 A · Esc 退出$/,(_,count)=>`${count} periods · Select A start/end, then B start · Drag to select A · Esc to exit`],
+  [/^峰值剖面 · (.+)$/,(_,period)=>`Peak profile · ${period}`],
+  [/^报告范围最近记录后端：(.+)$/,(_,backend)=>`Latest recorded backend in report range: ${backend}`],
+  [/^日内最高小时 (\d\d:\d\d) · ([\d,.]+) Token（按日期聚合）$/,(_,hour,total)=>`Busiest recorded hour ${hour} · ${total} Tokens (aggregated by date)`],
+]);
+const I18N_FEATURE_REPLACEMENTS = Object.freeze([
+  ['正在Preview ','Previewing '],
+  [' · Enter / Space / 点击选择区间',' · Enter / Space / click to select window'],
+  [' tk · 点柱或按 Enter 选择时段',' tk · click a bar or press Enter to select a window'],
+  ['。按提示选择 A/B 周期。','. Follow the prompt to select A/B periods.'],
+  ['，按 Enter 回看',', press Enter to inspect'],['，已选 A 时段',', selected A window'],['，已选 B 时段',', selected B window'],
+  ['已选 A 时段','Selected A window'],['已选 B 时段','Selected B window'],
+  ['前一期 ','Previous period '],[' · 前一期 ',' · Previous period '],[' · 无完整相邻前期可比',' · No complete adjacent previous period'],
+  ['模型图例，点击筛选','Model legend, click to filter'],['，点击排序',', click to sort'],['，点击展开详情',', click to expand details'],
+  ['状态 ','Status '],['降温','Cooling'],['；变化 ','; change '],['变化 ','Change '],[' · 全景',' · Overview'],[' · 全部模型',' · All models'],
+  [' · 本页装载了',' · This page holds'],['· 本页装载了','· This page holds'],['时区 ','Time zone '],['报告范围最近记录后端：','Latest recorded backend in report range: '],
+  ['按模型拆解的 Token 变化','Token change by model'],['调用','Calls'],['总 token','Total tokens'],['缓存占比','Cache share'],['输出占比','Output share'],['日 ·','Day ·'],
+]);
 const i18nTextSource = new WeakMap();
 const i18nAttributeSource = new WeakMap();
 let dashboardLanguage = document.documentElement.lang.toLowerCase().startsWith('zh') ? 'zh' : 'en';
@@ -163,13 +202,14 @@ let i18nRestoring = false;
 function englishText(value){
   const match=String(value).match(/^(\s*)([\s\S]*?)(\s*)$/),body=match[2];
   if(!body)return value;
-  let translated=I18N_EXACT[body]||I18N_CORE_EXACT[body]||I18N_LABS_EXACT[body]||body;
+  let translated=I18N_FEATURE_EXACT[body]||I18N_EXACT[body]||I18N_CORE_EXACT[body]||I18N_LABS_EXACT[body]||body;
   if(translated===body&&/[㐀-鿿]/.test(body)){
-    for(const [pattern,replacement] of I18N_PATTERNS){
+    for(const [pattern,replacement] of [...I18N_FEATURE_PATTERNS,...I18N_PATTERNS]){
       if(pattern.test(body)){translated=body.replace(pattern,replacement);break;}
     }
   }
   if(translated===body)I18N_REPLACEMENTS.forEach(([source,target])=>{translated=translated.split(source).join(target);});
+  if(/[㐀-鿿]/.test(translated))I18N_FEATURE_REPLACEMENTS.forEach(([source,target])=>{translated=translated.split(source).join(target);});
   return match[1]+translated+match[3];
 }
 function localizeTextNode(node){
@@ -246,6 +286,7 @@ function applyLanguage(language,persist=true){
   document.documentElement.lang=dashboardLanguage==='zh'?'zh-CN':'en';
   document.title=dashboardLanguage==='zh'?'Token 用量 Dashboard':'Token Usage Dashboard';
   i18nRestoring=dashboardLanguage==='zh';
+  renderFooter();
   localizeTree();
   i18nRestoring=false;
   syncLanguageControl();
@@ -264,6 +305,8 @@ function toggleLanguage(){
 }
 
 const state = { gran: 'month', models: new Set(DATA.models), focusPeriod:null, compare:false };
+const intervalState = {active:false,start:null,end:null,bStart:null,dragStart:-1,dragEnd:-1};
+const peakState = {period:null,opener:null};
 const trailState = {open:false,step:'scope',reached:0,model:null,opener:null,destination:null,branch:null};
 const signalState = {peek:null,peekSource:null,pinnedSignal:null,exactHeld:false,exactPinned:false,compareHeld:false,opener:null};
 const scrubState = {period:null,index:-1,source:null,pointerId:null,startX:0,startY:0,intent:null,dragged:false,raf:0,pendingIndex:null,suppressClickUntil:0};
@@ -397,12 +440,71 @@ function attributionFor(rows){
   return {label:window.label,currTotal:window.currTotal,prevTotal:window.prevTotal,parts};
 }
 
+function completeIntervalRows(){
+  const today=String(DATA.generated||'').slice(0,10),since=DATA.range?.since,until=DATA.range?.until;
+  return selectedRows(true).filter(row=>{
+    const days=periodDays(row.period,state.gran),first=days[0],last=days[days.length-1];
+    return first&&(!since||since<=first)&&(!until||until>=last)&&(!today||today>last);
+  });
+}
+function consecutivePeriods(rows){
+  return rows.every((row,index)=>{
+    if(!index)return true;
+    const last=periodDays(rows[index-1].period,state.gran).at(-1),next=new Date(last+'T12:00:00');
+    next.setDate(next.getDate()+1);
+    return localISO(next)===row.period;
+  });
+}
+function intervalResult(){
+  const {start,end,bStart}=intervalState;if(!intervalState.active||!start||!end||!bStart)return null;
+  const rows=completeIntervalRows(),i=rows.findIndex(row=>row.period===start),j=rows.findIndex(row=>row.period===end),k=rows.findIndex(row=>row.period===bStart);
+  if(i<0||j<i||k<=j||k+j-i>=rows.length)return null;
+  const a=rows.slice(i,j+1),b=rows.slice(k,k+a.length);
+  if(!consecutivePeriods(a)||!consecutivePeriods(b))return null;
+  const aModels=modelTotals(a),bModels=modelTotals(b);
+  return {a,b,aTotal:sumBy(a,'total'),bTotal:sumBy(b,'total'),parts:DATA.models.filter(model=>state.models.has(model)).map(model=>({model,prev:aModels[model]||0,curr:bModels[model]||0,delta:(bModels[model]||0)-(aModels[model]||0)})).sort((x,y)=>Math.abs(y.delta)-Math.abs(x.delta)||x.model.localeCompare(y.model))};
+}
+function intervalPrompt(){
+  if(!intervalState.active)return '';
+  if(!intervalState.start)return '选择 A 起点：仅可选择完整周期';
+  if(!intervalState.end)return 'A 起点 '+fmtLabel(intervalState.start,state.gran)+' · 选择 A 终点';
+  if(!intervalState.bStart)return 'A 已选 '+fmtLabel(intervalState.start,state.gran)+' → '+fmtLabel(intervalState.end,state.gran)+' · 选择 B 起点（自动等长）';
+  const result=intervalResult();return result?'A '+fmtLabel(result.a[0].period,state.gran)+' → '+fmtLabel(result.a.at(-1).period,state.gran)+' · B '+fmtLabel(result.b[0].period,state.gran)+' → '+fmtLabel(result.b.at(-1).period,state.gran):'B 无足够连续完整周期；重新选择 B 起点';
+}
+function resetInterval(keepMode=false){intervalState.active=keepMode;intervalState.start=null;intervalState.end=null;intervalState.bStart=null;intervalState.dragStart=-1;intervalState.dragEnd=-1;}
+function chooseInterval(period){
+  const rows=completeIntervalRows(),i=rows.findIndex(row=>row.period===period);
+  if(i<0){document.getElementById('interval-prompt').textContent='该周期尚未完整，不能参与等长比较';return;}
+  if(intervalState.bStart){resetInterval(true);intervalState.start=period;}
+  else if(!intervalState.start)intervalState.start=period;
+  else if(!intervalState.end){const j=rows.findIndex(row=>row.period===intervalState.start);if(i<j||!consecutivePeriods(rows.slice(j,i+1))){document.getElementById('interval-prompt').textContent='A 终点须在起点之后，且周期连续';return;}intervalState.end=period;}
+  else {intervalState.bStart=period;if(!intervalResult()){intervalState.bStart=null;document.getElementById('interval-prompt').textContent='B 需要在 A 之后，有相同数量的连续完整周期';return;}}
+  const restoreFocus=document.activeElement?.closest?.('#bar .barstack')?.dataset.period;
+  renderBar();renderAttribution();renderTable();renderViewCapsule();syncViewURL();
+  if(restoreFocus)[...document.querySelectorAll('#bar .barstack')].find(el=>el.dataset.period===restoreFocus)?.focus({preventScroll:true});
+}
+function chooseIntervalRange(first,last){
+  const rows=completeIntervalRows(),i=rows.findIndex(row=>row.period===first),j=rows.findIndex(row=>row.period===last);
+  if(i<0||j<i||!consecutivePeriods(rows.slice(i,j+1))){document.getElementById('interval-prompt').textContent='拖刷两端必须是连续完整周期';return;}
+  resetInterval(true);intervalState.start=first;intervalState.end=last;
+  const restoreFocus=document.activeElement?.closest?.('#bar .barstack')?.dataset.period;
+  renderBar();renderAttribution();renderTable();renderViewCapsule();syncViewURL();
+  if(restoreFocus)[...document.querySelectorAll('#bar .barstack')].find(el=>el.dataset.period===restoreFocus)?.focus({preventScroll:true});
+}
+function renderIntervalUI(){
+  const button=document.getElementById('interval-btn');button.classList.toggle('on',intervalState.active);button.setAttribute('aria-pressed',String(intervalState.active));
+  document.getElementById('interval-guide').hidden=!intervalState.active;
+  document.getElementById('interval-prompt').textContent=intervalPrompt();
+  document.getElementById('delta-title').textContent=intervalState.active?'两个时段，变化从哪里来':'这一期，变化从哪里来';
+}
+
 function renderAttribution(){
-  const result=attributionFor(selectedRows()),list=document.getElementById('delta-list'),story=document.getElementById('delta-story'),total=document.getElementById('delta-total'),windowLabel=document.getElementById('delta-window');if(!list)return;
-  if(!result){windowLabel.textContent='需要连续两期且上期 Token 大于 0';total.textContent='暂无可比窗口';story.textContent='当前范围无法形成可靠归因；切换到有连续数据的周或月再看。';list.innerHTML='<div class=delta-empty role=listitem>没有足够的同期数据可拆解。</div>';return;}
+  const pair=intervalResult(),result=intervalState.active?(pair?{label:'等长时段',currTotal:pair.bTotal,prevTotal:pair.aTotal,parts:pair.parts}:null):attributionFor(selectedRows()),list=document.getElementById('delta-list'),story=document.getElementById('delta-story'),total=document.getElementById('delta-total'),windowLabel=document.getElementById('delta-window');if(!list)return;
+  renderIntervalUI();
+  if(!result){windowLabel.textContent=intervalState.active?intervalPrompt():'需要连续两期且上期 Token 大于 0';total.textContent='暂无可比窗口';story.textContent=intervalState.active?'仅比较同粒度、连续且完整的等长周期。':'当前范围无法形成可靠归因；切换到有连续数据的周或月再看。';list.innerHTML='<div class=delta-empty role=listitem>没有足够的同期数据可拆解。</div>';return;}
   const net=result.currTotal-result.prevTotal,changed=result.parts.filter(part=>part.delta!==0),top=changed.slice(0,5),rest=changed.slice(5),shown=rest.length?[...top,{model:'其余',curr:sumBy(rest,'curr'),prev:sumBy(rest,'prev'),delta:sumBy(rest,'delta'),other:true}]:top,max=Math.max(1,...shown.map(part=>Math.abs(part.delta))),leader=changed[0];
-  windowLabel.textContent=result.label+' · 当前 '+fmt(result.currTotal)+' vs 上期 '+fmt(result.prevTotal);total.innerHTML='<b>'+(net>0?'+':'')+fmt(net)+'</b><span> Token</span>';
-  story.textContent=leader?(pretty(leader.model)+' 是最大变化来源，'+(leader.delta>=0?'增加 ':'减少 ')+fmt(Math.abs(leader.delta))+' Token；全部模型合计'+(net>=0?'增加 ':'减少 ')+fmt(Math.abs(net))+'。'):'各模型与上一比较窗口持平。';
+  windowLabel.textContent=pair?'A '+pair.a[0].period+' → '+pair.a.at(-1).period+' ('+pair.a.length+' 期) · B '+pair.b[0].period+' → '+pair.b.at(-1).period+' ('+pair.b.length+' 期) · '+fmt(result.prevTotal)+' vs '+fmt(result.currTotal):result.label+' · 当前 '+fmt(result.currTotal)+' vs 上期 '+fmt(result.prevTotal);total.innerHTML='<b>'+(net>0?'+':'')+fmt(net)+'</b><span> Token</span>';
+  story.textContent=leader?(pretty(leader.model)+' 是最大变化来源，'+(leader.delta>=0?'增加 ':'减少 ')+fmt(Math.abs(leader.delta))+' Token；全部模型合计'+(net>=0?'增加 ':'减少 ')+fmt(Math.abs(net))+'。'):'各模型与'+(pair?'A 时段':'上一比较窗口')+'持平。';
   list.innerHTML=shown.map(part=>{const pct=Math.abs(part.delta)/max*50,side=part.delta>=0?'pos':'neg',color=part.other?'var(--faint)':modelColor(part.model),name=part.other?'其余 '+rest.length+' 个模型':pretty(part.model);return '<div class="delta-row '+side+'" role=listitem><span class=delta-name><i style="background:'+esc(color)+'"></i><span>'+esc(name)+'</span></span><span class=delta-track><i class=delta-zero></i><b style="width:'+pct.toFixed(1)+'%;--delta-color:'+esc(color)+'"></b></span><span class=delta-value>'+(part.delta>0?'+':'')+fmt(part.delta)+'</span></div>';}).join('')||'<div class=delta-empty role=listitem>各模型与上一比较窗口持平。</div>';
 }
 
@@ -478,8 +580,8 @@ function renderScrubPreview(announce=false){
   document.querySelectorAll('#tbody tr[data-period]').forEach(tr=>tr.classList.toggle('row-linked',tr.dataset.period===previewPeriod));
   const readout=document.getElementById('trend-readout');
   const hint=document.getElementById('bar-hint'),status=document.getElementById('scrub-status'),probe=document.getElementById('time-probe');
-  if(row){const copy=trendPreviewCopy(row);hint.textContent=copy+' · Enter / Space / 点击提交';if(readout)readout.textContent=copy;status.textContent=announce?'预览 '+copy+'。提交后进入时光探针。':'';probe.classList.add('scrubbing');probe.dataset.scrubPeriod=previewPeriod;document.getElementById('probe-copy').innerHTML='<b>正在预览 '+esc(fmtLabel(row.period,state.gran))+'</b> · '+human(row.total)+' tk · 松开仍为预览，点击或按 Enter 提交';const pulse=document.getElementById('status-pulse'),pulseText=document.getElementById('status-text');pulse.classList.remove('warming','steady','cooling');pulse.classList.add('scrub-preview');pulseText.textContent='预览 '+fmtLabel(row.period,state.gran);pulse.title=copy+' · 尚未提交';}
-  else {hint.textContent=rows.length+' 期 · 拖动或用方向键预览 · Enter / Space / 点击提交';if(readout)readout.textContent='';status.textContent='';probe.classList.remove('scrubbing');delete probe.dataset.scrubPeriod;renderProbe();}
+  if(row){const copy=trendPreviewCopy(row),action=intervalState.active?' · Enter / Space / 点击选择区间':' · Enter / Space / 点击提交';hint.textContent=copy+action;if(readout)readout.textContent=copy;status.textContent=announce?'预览 '+copy+(intervalState.active?'。按提示选择 A/B 周期。':'。提交后进入时光探针。'):'';probe.classList.add('scrubbing');probe.dataset.scrubPeriod=previewPeriod;document.getElementById('probe-copy').innerHTML='<b>正在预览 '+esc(fmtLabel(row.period,state.gran))+'</b> · '+human(row.total)+(intervalState.active?' tk · 点柱或按 Enter 选择时段':' tk · 松开仍为预览，点击或按 Enter 提交');const pulse=document.getElementById('status-pulse'),pulseText=document.getElementById('status-text');pulse.classList.remove('warming','steady','cooling');pulse.classList.add('scrub-preview');pulseText.textContent='预览 '+fmtLabel(row.period,state.gran);pulse.title=copy+' · 尚未提交';}
+  else {hint.textContent=intervalState.active?rows.length+' 期 · 点柱选 A 起/终、B 起 · 可横向拖刷 A · Esc 退出':rows.length+' 期 · 拖动或用方向键预览 · Enter / Space / 点击提交';if(readout)readout.textContent='';status.textContent='';probe.classList.remove('scrubbing');delete probe.dataset.scrubPeriod;renderProbe();}
 }
 function setScrubPreview(index,source='pointer',focus=false,announce=false){
   if(tableFocus.suppressPreview)return false;
@@ -498,6 +600,23 @@ function momentEventsForRows(rows,events=buildMomentEvents()){const grouped={};e
 function describeMoment(el,focus=true){const marker=el.__moment;if(!marker)return;const markers=[...document.querySelectorAll('#bar .moment-marker')],index=markers.indexOf(el);momentCursor=Math.max(0,index);markers.forEach((item,i)=>item.setAttribute('tabindex',i===momentCursor?'0':'-1'));document.getElementById('bar-hint').textContent='◆ 数据时刻 · '+marker.description+' · Enter 回看 '+marker.day;if(focus)el.focus();}
 function handleMomentKey(e,markers,index){if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const next=Math.max(0,Math.min(markers.length-1,index+(e.key==='ArrowRight'?1:-1)));describeMoment(markers[next]);return true;}if(e.key==='Home'||e.key==='End'){e.preventDefault();describeMoment(markers[e.key==='Home'?0:markers.length-1]);return true;}if(e.key==='Enter'||e.key===' '){e.preventDefault();focusMomentDay(markers[index].__moment.day);return true;}return false;}
 function barAnnotationLayout(barTop,compareTop){return {peak:Math.max(24,barTop-7),value:Math.max(24,barTop-6),delta:Math.max(9,compareTop-21)};}
+function peakPeriod(){const rows=completeIntervalRows();return rows.reduce((best,row)=>!best||row.total>best.total?row:best,null)?.period||null;}
+function renderPeakProfile(){
+  const card=document.getElementById('peak-profile'),button=document.getElementById('peak-btn');
+  const rows=selectedRows(true),index=rows.findIndex(row=>row.period===peakState.period),row=rows[index],open=!!row&&completeIntervalRows().some(item=>item.period===row.period);
+  card.hidden=!open;button.setAttribute('aria-expanded',String(open));button.classList.toggle('on',open);button.disabled=!peakPeriod()&&!open;
+  if(!open)return;
+  const previous=index>0&&consecutivePeriods(rows.slice(index-1,index+1))&&completeIntervalRows().some(r=>r.period===rows[index-1].period)?rows[index-1]:null;
+  const prevDelta=previous?row.total-previous.total:null,models=sortedModels(row.models,true),days=periodDays(row.period,state.gran),hours=Array(24).fill(0);
+  days.forEach(day=>{const detail=DATA.day_details?.[day];Object.entries(detail?.hourly_models||{}).forEach(([model,values])=>{if(state.models.has(model))values.forEach((value,h)=>hours[h]+=value||0);});});
+  const hour=peakHourOf(hours),hourTotal=hour>=0?hours[hour]:0,projects=aggregateEntities(days,'project',3),modelRows=models.map(([model,value])=>'<li><i class=peak-dot style="background:'+esc(modelColor(model))+'"></i>'+esc(pretty(model))+' <b>'+fmt(value)+'</b> Token</li>').join('');
+  const projectRows=projects.map(item=>'<li>'+esc(item[0])+' · '+fmt(item[1])+' Token</li>').join('');
+  document.getElementById('peak-heading').textContent='峰值剖面 · '+fmtLabel(row.period,state.gran);
+  document.getElementById('peak-content').innerHTML='<p class=peak-lead><b>'+fmt(row.total)+' Token</b>'+ (previous?' · 前一期 '+fmt(previous.total)+' · '+(prevDelta>=0?'+':'')+fmt(prevDelta):' · 无完整相邻前期可比')+'</p><div class=peak-columns><div><h4>模型构成</h4><ul>'+ (modelRows||'<li>当前筛选无模型用量</li>')+'</ul></div><div><h4>可用证据</h4><p>'+(hourTotal?'日内最高小时 '+String(hour).padStart(2,'0')+':00 · '+fmt(hourTotal)+' Token（按日期聚合）':'暂无小时明细')+'</p><ul>'+(projectRows||'<li>暂无项目明细</li>')+'</ul></div></div><p class=sub>仅展示已记录的聚合，不代表异常或故障；项目列表可能只包含保留的部分项目。</p>';
+}
+function closePeakProfile(restore=false){const period=peakState.period,opener=peakState.opener;peakState.period=null;peakState.opener=null;renderPeakProfile();renderBar();renderViewCapsule();syncViewURL();if(restore)(opener?.isConnected?opener:[...document.querySelectorAll('#bar .barstack')].find(el=>el.dataset.period===period))?.focus({preventScroll:true});}
+function openPeakProfile(period,opener){if(!period||!completeIntervalRows().some(row=>row.period===period))return;resetInterval();peakState.period=period;peakState.opener=opener||null;clearScrub();renderAttribution();renderPeakProfile();renderBar();renderViewCapsule();syncViewURL();document.getElementById('peak-heading').focus({preventScroll:true});}
+
 function renderBar(){
   const rows=selectedRows(true);
   const events=buildMomentEvents();
@@ -511,6 +630,7 @@ function renderBar(){
   const railH=moments.length?20:0,padB=labelPad+railH;
   const plotH=H-padT-padB;
   const compared=compareActive()?rows.map((r,i)=>i?rows[i-1].total:0):[];
+  const interval=intervalResult(),aPeriods=new Set(interval?.a.map(row=>row.period)||[]),bPeriods=new Set(interval?.b.map(row=>row.period)||[]),pendingA=intervalState.active&&intervalState.start&&intervalState.end?completeIntervalRows().filter(row=>row.period>=intervalState.start&&row.period<=intervalState.end).map(row=>row.period):[];
   const vmax=Math.max(1, ...rows.map(r=>r.total), ...compared);
   // 整图锁定单一单位，避免 y 轴/标签 万与亿混用造成「629→7.5」歧义
   const U = vmax>=1e8?['亿',1e8]:vmax>=1e4?['万',1e4]:['',1];
@@ -527,7 +647,8 @@ function renderBar(){
   if(rows.length===0){ p.push('<text x="'+(W/2)+'" y="'+(H/2)+'" text-anchor="middle" class="tick">无数据</text></svg>'); document.getElementById('bar').innerHTML=p.join(''); return; }
   const _vals=rows.map(r=>r.total);
   const mean=sumList(_vals)/_vals.length;
-  let peakI=0; for(let i=1;i<rows.length;i++){ if(rows[i].total>rows[peakI].total) peakI=i; }
+  const markedPeak=peakPeriod();
+  const peakI=rows.findIndex(row=>row.period===markedPeak);
   rows.forEach((r,i)=>{
     const x=padL+step*i+(step-bw)/2;
     p.push('<rect class="bar-track" x="'+x.toFixed(1)+'" y="'+padT.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+plotH.toFixed(1)+'" rx="4"/>');
@@ -543,10 +664,11 @@ function renderBar(){
     });
     const barTop=padT+plotH-r.total/vmax*plotH;
     const annotation=barAnnotationLayout(barTop,compareActive()&&i>0?padT+plotH-Math.max(r.total,rows[i-1].total)/vmax*plotH:barTop);
-    const isPeak = rows.length>1 && i===peakI;
+    const isPeak = peakI>=0 && rows.length>1 && i===peakI && !state.focusPeriod;
     const isFocus=state.focusPeriod===r.period;
     const aria=fmtLabel(r.period,state.gran)+'，'+fmt(r.total)+' Token'+(isPeak?'，峰值':'')+(isFocus?'，当前时光探针':'')+'，按 Enter 回看';
-    p.push('<g class="barstack'+(isPeak?' peak':'')+(isFocus?' focused':'')+(state.focusPeriod&&!isFocus?' muted':'')+'" data-period="'+esc(r.period)+'" data-index="'+i+'"'+dataSignalAttrs('period',r.period,fmtLabel(r.period,state.gran),r.total,'trend',false)+' tabindex="'+(i===Math.min(barCursor,rows.length-1)?'0':'-1')+'" role="button" aria-label="'+esc(aria)+'"><rect class="bar-focus" x="'+(padL+step*i+2).toFixed(1)+'" y="'+(padT+1).toFixed(1)+'" width="'+Math.max(1,step-4).toFixed(1)+'" height="'+(plotH+padB-2).toFixed(1)+'" rx="6"/>'+segs+'</g>');
+    const selection=aPeriods.has(r.period)?' interval-a':bPeriods.has(r.period)?' interval-b':pendingA.includes(r.period)||r.period===intervalState.start?' interval-a':'';
+    p.push('<g class="barstack'+(isPeak?' peak':'')+(isFocus?' focused':'')+(state.focusPeriod&&!isFocus?' muted':'')+selection+(peakState.period===r.period?' peak-open':'')+'" data-period="'+esc(r.period)+'" data-index="'+i+'"'+dataSignalAttrs('period',r.period,fmtLabel(r.period,state.gran),r.total,'trend',false)+' tabindex="'+(i===Math.min(barCursor,rows.length-1)?'0':'-1')+'" role="button" aria-label="'+esc(aria+(selection?'，已选 '+(selection===' interval-b'?'B':'A')+' 时段':''))+'"><rect class="bar-focus" x="'+(padL+step*i+2).toFixed(1)+'" y="'+(padT+1).toFixed(1)+'" width="'+Math.max(1,step-4).toFixed(1)+'" height="'+(plotH+padB-2).toFixed(1)+'" rx="6"/>'+segs+'</g>');
     if(isPeak&&!state.focusPeriod){
       p.push('<text class="peak-flag" x="'+(x+bw/2).toFixed(1)+'" y="'+annotation.peak.toFixed(1)+'" text-anchor="middle">▲峰值 '+vfmt(r.total)+'</text>');
     } else if(showVal){
@@ -576,11 +698,11 @@ function renderBar(){
   const trendTarget=target=>target?.closest?.('.barstack,.bar-hit'),periodFromTarget=target=>trendTarget(target)?.dataset.period||null,indexFromTarget=target=>{const el=trendTarget(target);if(!el)return -1;if(el.dataset.index!=null)return Number(el.dataset.index);return rows.findIndex(row=>row.period===el.dataset.period);};
   box.onfocusin=e=>{const stack=e.target.closest('.barstack');if(stack)setScrubPreview(Number(stack.dataset.index||0),'keyboard',false,true);};
   box.onfocusout=e=>{if(e.relatedTarget&&!box.contains(e.relatedTarget))clearScrub('预览已清除',true);};
-  box.onkeydown=e=>{const stack=e.target.closest('.barstack');if(!stack)return;const current=scrubState.index>=0?scrubState.index:Number(stack.dataset.index||0);if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();setScrubPreview(current+(e.key==='ArrowRight'?1:-1),'keyboard',true,true);}else if(e.key==='Home'||e.key==='End'){e.preventDefault();setScrubPreview(e.key==='Home'?0:rows.length-1,'keyboard',true,true);}else if(e.key==='Enter'||e.key===' '){e.preventDefault();commitScrub(scrubState.period||stack.dataset.period,true);}};
-  box.onclick=e=>{const marker=e.target.closest('.moment-marker'),target=e.target.closest('.moment-target');if(marker||target){e.stopPropagation();clearScrub();focusMomentDay((marker||target).dataset.momentDay);return;}const period=periodFromTarget(e.target);if(!period)return;if(performance.now()<scrubState.suppressClickUntil){e.preventDefault();e.stopPropagation();return;}e.preventDefault();commitScrub(period);};
-  box.onpointerdown=e=>{const target=trendTarget(e.target);if(!target||e.button!==0)return;const index=indexFromTarget(target);if(index<0)return;scrubState.pointerId=e.pointerId;scrubState.startX=e.clientX;scrubState.startY=e.clientY;scrubState.intent=null;scrubState.dragged=false;setScrubPreview(index,e.pointerType==='touch'?'touch':'pointer',false,false);try{box.setPointerCapture(e.pointerId);}catch(error){}};
-  box.onpointermove=e=>{if(scrubState.pointerId!==e.pointerId)return;const dx=e.clientX-scrubState.startX,dy=e.clientY-scrubState.startY;if(!scrubState.intent&&Math.max(Math.abs(dx),Math.abs(dy))>=8)scrubState.intent=Math.abs(dx)>Math.abs(dy)*1.15?'horizontal':'vertical';if(scrubState.intent!=='horizontal')return;e.preventDefault();scrubState.dragged=scrubState.dragged||Math.abs(dx)>=10;const rect=box.getBoundingClientRect(),index=trendPeriodIndex(e.clientX,rect.left,rect.width,rows.length);if(index>=0)queueScrubPreview(index,e.pointerType==='touch'?'touch':'pointer');};
-  const finishPointer=e=>{if(scrubState.pointerId!==e.pointerId)return;const dragged=scrubState.intent==='horizontal'&&scrubState.dragged;scrubState.pointerId=null;scrubState.intent=null;scrubState.dragged=false;if(dragged)scrubState.suppressClickUntil=performance.now()+450;try{if(box.hasPointerCapture(e.pointerId))box.releasePointerCapture(e.pointerId);}catch(error){}};
+  box.onkeydown=e=>{const stack=e.target.closest('.barstack');if(!stack)return;const current=scrubState.index>=0?scrubState.index:Number(stack.dataset.index||0);if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();setScrubPreview(current+(e.key==='ArrowRight'?1:-1),'keyboard',true,true);}else if(e.key==='Home'||e.key==='End'){e.preventDefault();setScrubPreview(e.key==='Home'?0:rows.length-1,'keyboard',true,true);}else if((e.key==='p'||e.key==='P')&&stack.dataset.period===peakPeriod()){e.preventDefault();openPeakProfile(stack.dataset.period,stack);}else if(e.key==='Enter'||e.key===' '){e.preventDefault();const period=scrubState.source==='keyboard'?scrubState.period||stack.dataset.period:stack.dataset.period;if(intervalState.active)chooseInterval(period);else commitScrub(period,true);}};
+  box.onclick=e=>{const marker=e.target.closest('.moment-marker'),target=e.target.closest('.moment-target');if(marker||target){e.stopPropagation();clearScrub();focusMomentDay((marker||target).dataset.momentDay);return;}const period=periodFromTarget(e.target);if(!period)return;if(performance.now()<scrubState.suppressClickUntil){e.preventDefault();e.stopPropagation();return;}e.preventDefault();if(intervalState.active)chooseInterval(period);else commitScrub(period);};
+  box.onpointerdown=e=>{const target=trendTarget(e.target);if(!target||e.button!==0)return;const index=indexFromTarget(target);if(index<0)return;scrubState.suppressClickUntil=0;scrubState.pointerId=e.pointerId;scrubState.startX=e.clientX;scrubState.startY=e.clientY;scrubState.intent=null;scrubState.dragged=false;intervalState.dragStart=intervalState.active?index:-1;setScrubPreview(index,e.pointerType==='touch'?'touch':'pointer',false,false);if(e.pointerType!=='mouse')try{box.setPointerCapture(e.pointerId);}catch(error){}};
+  box.onpointermove=e=>{if(scrubState.pointerId!==e.pointerId)return;const dx=e.clientX-scrubState.startX,dy=e.clientY-scrubState.startY;if(!scrubState.intent&&Math.max(Math.abs(dx),Math.abs(dy))>=8)scrubState.intent=Math.abs(dx)>Math.abs(dy)*1.15?'horizontal':'vertical';if(scrubState.intent!=='horizontal')return;if(e.pointerType==='mouse'&&!box.hasPointerCapture(e.pointerId))try{box.setPointerCapture(e.pointerId);}catch(error){}e.preventDefault();scrubState.dragged=scrubState.dragged||Math.abs(dx)>=10;const rect=box.getBoundingClientRect(),index=trendPeriodIndex(e.clientX,rect.left,rect.width,rows.length);if(index>=0)queueScrubPreview(index,e.pointerType==='touch'?'touch':'pointer');};
+  const finishPointer=e=>{if(scrubState.pointerId!==e.pointerId)return;const dragged=scrubState.intent==='horizontal'&&scrubState.dragged,rect=box.getBoundingClientRect(),end=dragged?trendPeriodIndex(e.clientX,rect.left,rect.width,rows.length):-1,start=intervalState.dragStart;if(dragged)scrubState.suppressClickUntil=performance.now()+450;try{if(box.hasPointerCapture(e.pointerId))box.releasePointerCapture(e.pointerId);}catch(error){}scrubState.pointerId=null;scrubState.intent=null;scrubState.dragged=false;intervalState.dragStart=-1;if(dragged&&intervalState.active&&start>=0&&end>=0){const lo=Math.min(start,end),hi=Math.max(start,end);chooseIntervalRange(rows[lo].period,rows[hi].period);}};
   box.onpointerup=finishPointer;box.onpointercancel=e=>{if(scrubState.pointerId===e.pointerId){scrubState.suppressClickUntil=performance.now()+450;clearScrub('预览已取消',true);}};box.onlostpointercapture=e=>{if(scrubState.pointerId===e.pointerId)clearScrub('预览已取消',true);};
   const markers=[...box.querySelectorAll('.moment-marker')];markers.forEach((el,i)=>{el.__moment=moments[i];el.addEventListener('focus',()=>{clearScrub();describeMoment(el,false);});el.addEventListener('keydown',e=>handleMomentKey(e,markers,i));});
 }
@@ -720,7 +842,7 @@ function renderTable(){
   const rows=selectedRows();
   const cols=DATA.models.filter(m=>state.models.has(m));
   if(tableSort.key==='m'&&!cols.includes(tableSort.model)){tableSort.key=null;tableSort.dir=null;tableSort.model=null;}
-  const shares=reuseShares(),ordered=sortedRows(rows);
+  const shares=reuseShares(),ordered=sortedRows(rows),intervalSelection=intervalResult();
   /* 重渲染焦点恢复：只在原焦点确在行内时还原，绝不抢页面焦点 */
   const focusRow=document.activeElement?.closest?.('#tbody tr[data-period]');
   const focusBefore=focusRow?focusRow.dataset.period:null;
@@ -732,7 +854,9 @@ function renderTable(){
     const share=shares[r.period]||null,label=esc(fmtLabel(r.period,state.gran));
     const roving=(r.period===anchor||(anchor===null&&i===0))?0:-1;
     const detail='<dl class="dl-grid"><div class="dl-item-detail"><dt>缓存占比</dt><dd>'+(share?(share.cache*100).toFixed(1)+'%':'—')+'</dd></div><div class="dl-item-detail"><dt>输出占比</dt><dd>'+(share?(share.output*100).toFixed(1)+'%':'—')+'</dd></div><div class="dl-item-detail"><dt>调用</dt><dd>'+fmt(r.calls)+'</dd></div>'+cols.map(m=>'<div class="dl-item-detail"><dt>'+esc(pretty(m))+'</dt><dd>'+(r.models[m]?fmt(r.models[m]):'—')+'</dd></div>').join('')+'</dl>';
-    return '<tr data-period="'+esc(r.period)+'" tabindex="'+roving+'"'+(state.focusPeriod===r.period?' class=row-focused':'')+'><td><button type="button" class="row-toggle" aria-expanded="false" aria-controls="row-detail-'+i+'" aria-label="'+label+'，点击展开详情"><span>'+label+'</span></button><span class="row-label">'+label+'</span></td><td class=num>'+fmt(r.total)+'</td>'+tds+shareCell(share?share.cache:null)+shareCell(share?share.output:null)+'<td class=num>'+fmt(r.calls)+'</td></tr>'
+    const periodClass=intervalSelection?.a.some(item=>item.period===r.period)?' interval-row-a':intervalSelection?.b.some(item=>item.period===r.period)?' interval-row-b':'';
+    const intervalTag=periodClass?'<span class=interval-row-tag aria-label="'+(periodClass===' interval-row-a'?'A 时段':'B 时段')+'">'+(periodClass===' interval-row-a'?'A':'B')+'</span>':'';
+    return '<tr data-period="'+esc(r.period)+'" tabindex="'+roving+'"'+(state.focusPeriod===r.period||periodClass?' class="'+(state.focusPeriod===r.period?'row-focused':'')+periodClass+'"':'')+'><td><button type="button" class="row-toggle" aria-expanded="false" aria-controls="row-detail-'+i+'" aria-label="'+label+(periodClass?'，'+(periodClass===' interval-row-a'?'A':'B')+' 时段':'')+'，点击展开详情"><span>'+label+'</span></button><span class="row-label">'+label+'</span>'+intervalTag+'</td><td class=num>'+fmt(r.total)+'</td>'+tds+shareCell(share?share.cache:null)+shareCell(share?share.output:null)+'<td class=num>'+fmt(r.calls)+'</td></tr>'
       +'<tr class="row-detail" id="row-detail-'+i+'" hidden><td colspan="'+(cols.length+5)+'">'+detail+'</td></tr>';
   }).join('');
   document.getElementById('thead').innerHTML='<tr><th>'+LABEL[state.gran]+'</th>'+thSort('total','总 token')+th+thSort('cache','缓存占比','Cache share')+thSort('output','输出占比','Output share')+thSort('calls','调用')+'</tr>';
@@ -767,7 +891,7 @@ function reconcileSignalState(){
   if(signalState.peek&&!signalVisible(signalState.peek)){signalState.peek=null;signalState.peekSource=null;}
   if(signalState.pinnedSignal&&!signalVisible(signalState.pinnedSignal))signalState.pinnedSignal=null;
 }
-function setModels(next,label){clearScrub();previousModels=new Set(state.models);state.models=new Set(next);reconcileTrailState();invalidateDerived();reconcileSignalState();renderFilters();renderDataViews();announceViewChange(label||('模型筛选已更新 · '+state.models.size+'/'+DATA.models.length+' 个模型'),['section-overview','section-trend','section-top']);}
+function setModels(next,label){clearScrub();resetInterval();peakState.period=null;previousModels=new Set(state.models);state.models=new Set(next);reconcileTrailState();invalidateDerived();reconcileSignalState();renderFilters();renderDataViews();announceViewChange(label||('模型筛选已更新 · '+state.models.size+'/'+DATA.models.length+' 个模型'),['section-overview','section-trend','section-top']);}
 function renderFilterLedger(){
   const rows=DATA[state.gran]||[],all=sumBy(rows,'total'),selected=sumWhere(rows,r=>modelSum(r.models,state.models));
   document.getElementById('filter-summary').innerHTML='已选 <b>'+state.models.size+'/'+DATA.models.length+'</b> 个模型 · 覆盖 <b>'+pct(selected,all)+'</b> Token';document.getElementById('filter-undo').disabled=!previousModels;
@@ -810,13 +934,23 @@ function renderTop(){
   document.getElementById('top-hint').textContent=(state.focusPeriod?'当前回看期 · ':'')+'按当前模型筛选重新计算 Top · 悬停 Peek，点击 Pin 后从 Signal Dock 深入';
 }
 
+const PROJECT_URL='https://github.com/LingXi-fur/tokens';
+function projectLinkHTML(label=null,className='project-link'){
+  const copy=label||(dashboardLanguage==='zh'?'在 GitHub 查看项目':'View project on GitHub');
+  return '<a class="'+className+'" href="'+PROJECT_URL+'" target="_blank" rel="noopener noreferrer">'+esc(copy)+'</a>';
+}
 function renderFooter(){
   const h=DATA.hourly||[], peak=peakHourOf(h), lines=[
     'by <b>LingXi</b> · 本页装载了 <b>'+human(sumBy(DATA.day,'total'))+'</b> Token 的痕迹。',
     '你的缓存替你记住了 <b>'+human(DATA.cache_read||0)+'</b> Token。',
     '算力最常在 <b>'+String(Math.max(0,peak)).padStart(2,'0')+':00</b> 亮起。',
     '纯本地生成 · 没有任何数据离开这台电脑。'
-  ];if(_ach)lines.splice(2,0,'<b>'+fmt(_ach.all.length-_ach.got)+'</b> 枚成就仍在数据深处沉睡。');document.getElementById('dynamic-footer').innerHTML=lines[(new Date().getDate()+DATA.day.length)%lines.length];
+  ];
+  if(_ach)lines.splice(2,0,'<b>'+fmt(_ach.all.length-_ach.got)+'</b> 枚成就仍在数据深处沉睡。');
+  const credit=dashboardLanguage==='zh'?'由开源项目 <b>tokens</b> 本地生成 · ':'Generated locally by open-source project <b>tokens</b> · ',banner=document.getElementById('demo-banner');
+  banner.hidden=!IS_DEMO;
+  if(IS_DEMO)banner.innerHTML=dashboardLanguage==='zh'?'<b>合成 Demo</b><span>仅使用生成的示例数据；未读取本机 AI CLI 日志。</span>'+projectLinkHTML('在 GitHub Star 或 Clone','demo-project-link'):'<b>Synthetic Demo</b><span>Generated sample data only; no local AI CLI logs were read.</span>'+projectLinkHTML('Star or clone on GitHub','demo-project-link');
+  document.getElementById('dynamic-footer').innerHTML='<span>'+lines[(new Date().getDate()+DATA.day.length)%lines.length]+'</span><span class=footer-project>'+credit+projectLinkHTML()+'</span>';
 }
 
 function shareStats(){
@@ -824,9 +958,9 @@ function shareStats(){
   return {total,calls,peak,dom:dom?pretty(dom[0]):'—',cache:total?(DATA.cache_read||0)/total:0,ach:_ach||getBadgeData()};
 }
 function openShare(type){
-  const x=shareStats(), content=document.getElementById('share-content');
-  if(type==='passport')content.innerHTML='<div class=passport id=share-card><div class=pass-head><div><div class=pass-k>LOCAL DEVELOPER IDENTITY</div><h3>TOKEN PASSPORT</h3></div><div class=pass-id>ISSUED '+esc(DATA.generated)+'<br>NO DATA UPLOADED</div></div><div class=pass-grid><div><div class=pass-k>DEVELOPER TYPE</div><div class=pass-hero>'+(x.peak<6||x.peak>=22?'MIDNIGHT<br>NAVIGATOR':'DAYLIGHT<br>BUILDER')+'</div><div class=pass-sub>本地数据宇宙居民 · '+esc(x.dom)+'</div></div><div class=pass-fields><div class=pass-field><span>TOTAL TOKENS</span><b>'+fmt(x.total)+'</b></div><div class=pass-field><span>PRIMARY MODEL</span><b>'+esc(x.dom)+'</b></div><div class=pass-field><span>PEAK GATE</span><b>'+String(Math.max(0,x.peak)).padStart(2,'0')+':00</b></div><div class=pass-field><span>CACHE</span><b>'+Math.round(x.cache*100)+'%</b></div><div class=pass-field><span>CALLS</span><b>'+fmt(x.calls)+'</b></div><div class=pass-field><span>ACHIEVEMENTS</span><b>'+fmt(x.ach.got)+' / '+fmt(x.ach.all.length)+'</b></div></div></div><div class=pass-foot><span>VALID IN ALL LOCAL TERMINALS<br>PRIVACY CLASS: OFFLINE</span><span class=barcode>||| || ||| | |||| || |</span></div></div>';
-  else content.innerHTML='<div class=receipt id=share-card><h3>TOKEN STORE</h3><div class=receipt-center>LOCAL TERMINAL · '+esc(DATA.generated.slice(0,10))+'<br>ORDER #'+String(x.total%100000).padStart(5,'0')+'</div><hr>'+(DATA.models||[]).map(m=>{const v=sumWhere(DATA.day||[],d=>d.models[m]||0);return '<div class=receipt-row><span>'+esc(pretty(m)).slice(0,18)+'</span><b>'+fmt(v)+'</b></div>';}).join('')+'<hr><div class=receipt-row><span>CALLS</span><b>'+fmt(x.calls)+'</b></div><div class=receipt-row><span>CACHE READ</span><b>'+fmt(DATA.cache_read||0)+'</b></div><div class=receipt-row><span>ACHIEVEMENTS</span><b>'+fmt(x.ach.got)+'</b></div><hr><div class="receipt-row receipt-total"><span>TOTAL</span><b>'+fmt(x.total)+' TK</b></div><div class=receipt-code>|||| || ||||| | ||| ||</div><div class=receipt-note>THANK YOU FOR CODING<br>OPEN 24 HOURS · NO DATA UPLOADED</div></div>';
+  const x=shareStats(), content=document.getElementById('share-content'),creditLabel=dashboardLanguage==='zh'?'由 tokens 在本地生成':'Made locally with tokens',linkLabel=dashboardLanguage==='zh'?'在 GitHub 查看项目':'View project on GitHub',projectCredit='<div class=share-project><span>'+creditLabel.replace('tokens','<b>tokens</b>')+'</span>'+projectLinkHTML(linkLabel,'share-project-link')+'</div>';
+  if(type==='passport')content.innerHTML='<div class=passport id=share-card><div class=pass-head><div><div class=pass-k>LOCAL DEVELOPER IDENTITY</div><h3>TOKEN PASSPORT</h3></div><div class=pass-id>ISSUED '+esc(DATA.generated)+'<br>NO DATA UPLOADED</div></div><div class=pass-grid><div><div class=pass-k>DEVELOPER TYPE</div><div class=pass-hero>'+(x.peak<6||x.peak>=22?'MIDNIGHT<br>NAVIGATOR':'DAYLIGHT<br>BUILDER')+'</div><div class=pass-sub>本地数据宇宙居民 · '+esc(x.dom)+'</div></div><div class=pass-fields><div class=pass-field><span>TOTAL TOKENS</span><b>'+fmt(x.total)+'</b></div><div class=pass-field><span>PRIMARY MODEL</span><b>'+esc(x.dom)+'</b></div><div class=pass-field><span>PEAK GATE</span><b>'+String(Math.max(0,x.peak)).padStart(2,'0')+':00</b></div><div class=pass-field><span>CACHE</span><b>'+Math.round(x.cache*100)+'%</b></div><div class=pass-field><span>CALLS</span><b>'+fmt(x.calls)+'</b></div><div class=pass-field><span>ACHIEVEMENTS</span><b>'+fmt(x.ach.got)+' / '+fmt(x.ach.all.length)+'</b></div></div></div><div class=pass-foot><span>VALID IN ALL LOCAL TERMINALS<br>PRIVACY CLASS: OFFLINE</span><span class=barcode>||| || ||| | |||| || |</span></div>'+projectCredit+'</div>';
+  else content.innerHTML='<div class=receipt id=share-card><h3>TOKEN STORE</h3><div class=receipt-center>LOCAL TERMINAL · '+esc(DATA.generated.slice(0,10))+'<br>ORDER #'+String(x.total%100000).padStart(5,'0')+'</div><hr>'+(DATA.models||[]).map(m=>{const v=sumWhere(DATA.day||[],d=>d.models[m]||0);return '<div class=receipt-row><span>'+esc(pretty(m)).slice(0,18)+'</span><b>'+fmt(v)+'</b></div>';}).join('')+'<hr><div class=receipt-row><span>CALLS</span><b>'+fmt(x.calls)+'</b></div><div class=receipt-row><span>CACHE READ</span><b>'+fmt(DATA.cache_read||0)+'</b></div><div class=receipt-row><span>ACHIEVEMENTS</span><b>'+fmt(x.ach.got)+'</b></div><hr><div class="receipt-row receipt-total"><span>TOTAL</span><b>'+fmt(x.total)+' TK</b></div><div class=receipt-code>|||| || ||||| | ||| ||</div><div class=receipt-note>THANK YOU FOR CODING<br>OPEN 24 HOURS · NO DATA UPLOADED</div>'+projectCredit+'</div>';
   openModal(document.getElementById('share-modal'),document.getElementById('share-close'));document.getElementById('share-modal').dataset.type=type;
 }
 function closeShare(){closeModal(document.getElementById('share-modal'));}
@@ -991,6 +1125,8 @@ function viewParams(){
   if(state.models.size!==DATA.models.length)DATA.models.filter(m=>state.models.has(m)).forEach(m=>p.append('model',m));
   if(state.focusPeriod)p.set('focus',state.focusPeriod);
   if(state.compare)p.set('compare','1');
+  if(intervalState.active){p.set('interval','1');if(intervalState.start)p.set('a',intervalState.start);if(intervalState.end)p.set('aEnd',intervalState.end);if(intervalState.bStart)p.set('b',intervalState.bStart);}
+  if(peakState.period)p.set('peak',peakState.period);
   if(auxView==='achievements')p.set('view','achievements');
   const theme=currentTheme();if(theme!=='auto')p.set('t',theme);
   return p;
@@ -1003,6 +1139,8 @@ function restoreViewFromURL(){
   if(['day','week','month'].includes(g))state.gran=g;
   const requested=p.getAll('model'),legacy=p.get('models');if(requested.length||legacy!==null){const allowed=new Set(DATA.models),models=(requested.length?requested:(legacy?legacy.split(','):[])).filter(m=>allowed.has(m));state.models=new Set(models);}else state.models=new Set(DATA.models);previousModels=null;
   const focus=p.get('focus');state.focusPeriod=validFocus(focus,state.gran)?focus:null;state.compare=p.get('compare')==='1';auxView=p.get('view')==='achievements'?'achievements':null;
+  resetInterval(p.get('interval')==='1');if(intervalState.active){const rows=completeIntervalRows(),allowed=new Set(rows.map(row=>row.period)),a=p.get('a'),end=p.get('aEnd'),b=p.get('b');if(allowed.has(a))intervalState.start=a;if(intervalState.start&&allowed.has(end)&&end>=intervalState.start&&consecutivePeriods(rows.slice(rows.findIndex(row=>row.period===a),rows.findIndex(row=>row.period===end)+1)))intervalState.end=end;if(intervalState.end&&allowed.has(b)){intervalState.bStart=b;if(!intervalResult())intervalState.bStart=null;}}
+  const peak=p.get('peak');peakState.period=!intervalState.active&&completeIntervalRows().some(row=>row.period===peak)?peak:null;peakState.opener=null;
   achievementHistoryOwned=auxView==='achievements'&&history.state?.tokensAuxView==='achievements';
   const theme=(p.get('t')||'').toLowerCase();if(['auto','light','dark'].includes(theme))applyTheme(theme);
 }
@@ -1011,24 +1149,30 @@ function syncGranControls(){document.querySelectorAll('#tabs button').forEach(x=
 function renderViewCapsule(){
   const d=viewDescription(),label=document.getElementById('view-label'),capsule=document.getElementById('view-capsule');
   label.textContent=d.gran.replace('按','')+' · '+(d.modelCount===DATA.models.length?'全部模型':d.modelCount+'/'+DATA.models.length+' 模型')+' · '+d.focus;
-  capsule.classList.toggle('dirty',!!state.focusPeriod||state.models.size!==DATA.models.length||state.compare);
-  document.getElementById('view-summary').innerHTML='<b>'+d.gran+'</b> · '+d.modelCount+' / '+DATA.models.length+' 个模型<br><b>'+(state.focusPeriod?'时光探针':'时间范围')+'</b> · '+esc(d.focus)+'<br><b>幻影对比</b> · '+d.compare;
+  capsule.classList.toggle('dirty',!!state.focusPeriod||state.models.size!==DATA.models.length||state.compare||intervalState.active||!!peakState.period);
+  document.getElementById('view-summary').innerHTML='<b>'+d.gran+'</b> · '+d.modelCount+' / '+DATA.models.length+' 个模型<br><b>'+(state.focusPeriod?'时光探针':'时间范围')+'</b> · '+esc(d.focus)+'<br><b>幻影对比</b> · '+d.compare+'<br><b>区间透镜</b> · '+esc(intervalPrompt()||'关闭')+'<br><b>峰值剖面</b> · '+esc(peakState.period||'关闭');
   syncGranControls();const compare=document.getElementById('compare-btn');compare.classList.toggle('on',compareActive());compare.classList.toggle('held',signalState.compareHeld&&!state.compare);compare.setAttribute('aria-pressed',String(state.compare));
 }
-function resetView(){clearScrub();state.gran='month';state.models=new Set(DATA.models);state.focusPeriod=null;state.compare=false;signalState.peek=null;signalState.pinnedSignal=null;signalState.compareHeld=false;previousModels=null;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();renderFilters();renderDataViews();announceViewChange('已恢复月度全景',['section-overview','section-trend','section-top']);}
+function resetView(){clearScrub();resetInterval();peakState.period=null;state.gran='month';state.models=new Set(DATA.models);state.focusPeriod=null;state.compare=false;signalState.peek=null;signalState.pinnedSignal=null;signalState.compareHeld=false;previousModels=null;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();renderFilters();renderDataViews();announceViewChange('已恢复月度全景',['section-overview','section-trend','section-top']);}
 async function copyText(text){try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return true;}}catch(e){}const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}ta.remove();return ok;}
 function copyViewLink(){copyText(portableViewURL()).then(ok=>toast(ok?'当前视图链接已复制':'复制失败，请从地址栏复制'));}
 document.getElementById('view-capsule').addEventListener('click',e=>{e.stopPropagation();const pop=document.getElementById('view-pop'),open=!pop.classList.contains('open');pop.classList.toggle('open',open);e.currentTarget.setAttribute('aria-expanded',String(open));});
 document.getElementById('view-copy').addEventListener('click',copyViewLink);document.getElementById('view-reset').addEventListener('click',resetView);document.addEventListener('click',e=>{if(!e.target.closest('.view-wrap')){document.getElementById('view-pop').classList.remove('open');document.getElementById('view-capsule').setAttribute('aria-expanded','false');}if(!e.target.closest('#signal-dock')){document.getElementById('signal-pop').classList.remove('open');document.getElementById('signal-main').setAttribute('aria-expanded','false');}});
 document.getElementById('signal-main').addEventListener('click',event=>{event.stopPropagation();const pop=document.getElementById('signal-pop'),open=!pop.classList.contains('open');pop.classList.toggle('open',open);event.currentTarget.setAttribute('aria-expanded',String(open));if(open){renderSignalDock();setTimeout(()=>{const action=document.getElementById('signal-action');(action&&!action.disabled?action:document.getElementById('exact-btn'))?.focus();},0);}});
 document.getElementById('signal-pop').addEventListener('click',event=>event.stopPropagation());document.getElementById('signal-clear').addEventListener('click',()=>clearSignal());document.getElementById('signal-action').addEventListener('click',event=>{const run=event.currentTarget.__signalRun;if(run)run();});document.getElementById('exact-btn').addEventListener('click',()=>{signalState.exactPinned=!signalState.exactPinned;syncExactness();renderSignalDock();document.getElementById('signal-status').textContent=signalState.exactPinned?'精确层已固定':'精确层已取消固定';});
-window.addEventListener('popstate',()=>{clearScrub();restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderDataViews();syncAuxViewFromState();restoringView=false;});
+window.addEventListener('popstate',()=>{clearScrub();peakState.period=null;restoringView=true;restoreViewFromURL();invalidateDerived();renderFilters();renderDataViews();syncAuxViewFromState();restoringView=false;});
+
+document.getElementById('interval-btn').addEventListener('click',()=>{clearScrub();peakState.period=null;resetInterval(!intervalState.active);renderBar();renderPeakProfile();renderAttribution();renderTable();renderViewCapsule();syncViewURL();});
+document.getElementById('interval-clear').addEventListener('click',()=>{resetInterval(true);renderBar();renderAttribution();renderTable();renderViewCapsule();syncViewURL();});
+document.getElementById('peak-btn').addEventListener('click',event=>{if(peakState.period)closePeakProfile();else openPeakProfile(peakPeriod(),event.currentTarget);});
+document.getElementById('peak-close').addEventListener('click',()=>closePeakProfile(true));
+document.getElementById('peak-return').addEventListener('click',()=>{const period=peakState.period;closePeakProfile();document.querySelector('#bar .barstack[data-period="'+period+'"]')?.focus({preventScroll:true});});
 
 const compareButton=document.getElementById('compare-btn');let compareHoldTimer=null,compareHoldReached=false;
 function togglePinnedCompare(){state.compare=!state.compare;setCompareHeld(false);renderBar();renderViewCapsule();syncViewURL();announceViewChange(state.compare?'幻影对比已固定':'幻影对比已取消',['section-trend']);}
 compareButton.addEventListener('pointerdown',event=>{if(event.button!==0)return;compareHoldReached=false;clearTimeout(compareHoldTimer);compareHoldTimer=setTimeout(()=>{compareHoldReached=true;setCompareHeld(true);document.getElementById('signal-status').textContent='正在临时预览上一期轮廓';},240);});
 function releaseCompareHold(){clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){setCompareHeld(false);compareHoldReached=false;}}
-compareButton.addEventListener('pointerup',event=>{clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){event.preventDefault();setCompareHeld(false);compareHoldReached=false;return;}togglePinnedCompare();});compareButton.addEventListener('pointercancel',releaseCompareHold);compareButton.addEventListener('pointerleave',()=>{if(compareHoldReached)releaseCompareHold();});compareButton.addEventListener('click',event=>event.preventDefault());compareButton.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!event.repeat){event.preventDefault();togglePinnedCompare();}});
+compareButton.addEventListener('pointerup',event=>{clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){event.preventDefault();setCompareHeld(false);compareHoldReached=false;return;}togglePinnedCompare();});compareButton.addEventListener('pointercancel',releaseCompareHold);compareButton.addEventListener('pointerleave',releaseCompareHold);compareButton.addEventListener('click',event=>event.preventDefault());compareButton.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!event.repeat){event.preventDefault();togglePinnedCompare();}});
 
 const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,modes:renderWorkModes,almanac:renderAlmanac,badges:renderBadges};
 const lazyState={};
@@ -1065,7 +1209,7 @@ function initLazyRendering(){
   const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{const name=entry.target.dataset.lazy;lazyState[name]=Object.assign({},lazyState[name],{visible:entry.isIntersecting});if(entry.isIntersecting&&(lazyState[name].dirty||!lazyState[name].rendered))renderLazy(name,true);}),{rootMargin:'500px 0px'});
   document.querySelectorAll('[data-lazy]').forEach(card=>observer.observe(card));
 }
-function renderCoreViews(){renderKPI();renderBar();renderTrendLegend();renderAttribution();renderDonut();renderTable();renderTop();renderStatusPulse();renderViewCapsule();}
+function renderCoreViews(){renderKPI();renderBar();renderPeakProfile();renderTrendLegend();renderAttribution();renderDonut();renderTable();renderTop();renderStatusPulse();renderViewCapsule();}
 function renderTimeViews(){renderProbe();renderRhythm();renderBlock();}
 function renderModelViews(){markLazyDirty();markStaticLazyDirty();}
 function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderFooter();renderDataTrail();applySignalLens();syncViewURL();}
@@ -1078,12 +1222,12 @@ document.getElementById('tabs').addEventListener('click',e=>{
 });
 function setGran(g){
   if(!['day','week','month'].includes(g)||g===state.gran)return;
-  clearScrub();state.gran=g;state.focusPeriod=null;if(signalState.pinnedSignal?.type==='period')signalState.pinnedSignal=null;if(signalState.peek?.type==='period')signalState.peek=null;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();reconcileSignalState();renderDataViews();announceViewChange('统计粒度已切换为 '+({day:'按日',week:'按周',month:'按月'}[g]),['section-trend','section-overview']);
+  clearScrub();resetInterval();peakState.period=null;state.gran=g;state.focusPeriod=null;if(signalState.pinnedSignal?.type==='period')signalState.pinnedSignal=null;if(signalState.peek?.type==='period')signalState.peek=null;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();reconcileSignalState();renderDataViews();announceViewChange('统计粒度已切换为 '+({day:'按日',week:'按周',month:'按月'}[g]),['section-trend','section-overview']);
 }
 
 function renderSnapshotMeta(){
   document.getElementById('meta').textContent =
-    '生成于 '+DATA.generated+' · '+(DATA.range.since||'起始')+' ~ '+(DATA.range.until||'至今')+(DATA.snapshot?.timezone?' · 时区 '+DATA.snapshot.timezone:'')+(DATA.anonymized?' · 脱敏导出（标识已替换）':'');
+    '生成于 '+DATA.generated+' · '+(DATA.range.since||'起始')+' ~ '+(DATA.range.until||'至今')+(DATA.snapshot?.timezone?' · 时区 '+DATA.snapshot.timezone:'')+(DATA.anonymized?' · 脱敏导出（标识已替换）':'')+(DATA.range.latest_backend?' · 报告范围最近记录后端：'+(DATA.range.latest_backend_folded?'其他模型（归入 Other）':DATA.range.latest_backend):'');
   document.getElementById('source-txt').textContent = '来源 '+(DATA.source.join(' / ')||'无');
   document.getElementById('source-pill').title=DATA.anonymized?'项目路径、会话标识与自然语言标题已替换；精确日期、Token、模型与逐轮序列仍保留。':'';
 }
@@ -1125,7 +1269,7 @@ function downloadBlob(content,type,filename){const url=URL.createObjectURL(new B
 
 const modalState=new WeakMap();
 function modalFocusables(modal){return [...modal.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')].filter(x=>!x.disabled&&x.getClientRects().length);}
-function openModal(modal,initialFocus){modalState.set(modal,{returnFocus:document.activeElement});modal.classList.add('open');modal.setAttribute('aria-hidden','false');document.body.classList.add('modal-open');setTimeout(()=>{const target=initialFocus||modalFocusables(modal)[0];if(target)target.focus();},0);}
+function openModal(modal,initialFocus,returnFocus){modalState.set(modal,{returnFocus:returnFocus||document.activeElement});modal.classList.add('open');modal.setAttribute('aria-hidden','false');document.body.classList.add('modal-open');setTimeout(()=>{const target=initialFocus||modalFocusables(modal)[0];if(target)target.focus();},0);}
 function closeModal(modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!document.querySelector('.share-modal.open,.almanac-modal.open,.ach-modal.open,.help-modal.open,.modal.open'))document.body.classList.remove('modal-open');const state=modalState.get(modal);modalState.delete(modal);if(state?.returnFocus&&document.contains(state.returnFocus))state.returnFocus.focus();}
 function trapModalFocus(e,modal){if(e.key!=='Tab'||!modal.classList.contains('open'))return;const items=modalFocusables(modal);if(!items.length){e.preventDefault();return;}const first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
 function activeModal(){return document.querySelector('.share-modal.open,.almanac-modal.open,.ach-modal.open,.help-modal.open,.modal.open');}
@@ -1141,10 +1285,12 @@ function exportCSV(){
 document.getElementById('csv-btn').addEventListener('click', exportCSV);
 function exportMarkdown(){
   const rows=selectedRows(), cols=DATA.models.filter(m=>state.models.has(m));
-  const head=[LABEL[state.gran],'总 token',...cols.map(pretty),'调用'];
+  const english=dashboardLanguage==='en';
+  const labels=english?{day:'Date',week:'Week (start)',month:'Month'}:LABEL;
+  const head=[labels[state.gran],english?'Total tokens':'总 token',...cols.map(pretty),english?'Calls':'调用'];
   const body=rows.map(r=>[r.period,fmt(r.total),...cols.map(m=>fmt(r.models[m]||0)),fmt(r.calls)]);
   const line=a=>'| '+a.map(markdownCell).join(' | ')+' |';
-  const md=['# Token 用量报告','',line(head),line(head.map((_,i)=>i?'---:':'---')),...body.map(line),'','> 本地生成于 '+markdownCell(DATA.generated)+'，未上传任何数据。'].join('\n');
+  const md=[english?'# Token usage report':'# Token 用量报告','',line(head),line(head.map((_,i)=>i?'---:':'---')),...body.map(line),'',english?'> Generated locally on '+markdownCell(DATA.generated)+'; no data was uploaded.':'> 本地生成于 '+markdownCell(DATA.generated)+'，未上传任何数据。'].join('\n');
   downloadBlob(md,'text/markdown;charset=utf-8','tokens-'+state.gran+'.md');toast('Markdown 报告已生成');
 }
 document.getElementById('md-btn').addEventListener('click',exportMarkdown);
@@ -1510,8 +1656,8 @@ function secretCommand(q){
   };if(secrets[q]){closePalette();setTimeout(secrets[q],80);return true;}return false;
 }
 
-function scrollToSection(id){const el=document.getElementById(id);if(!el)return;const lazy=el.dataset.lazy;if(lazy){lazyState[lazy]=Object.assign({},lazyState[lazy],{visible:true});renderLazy(lazy,true);}el.scrollIntoView({behavior:scrollBehavior(),block:'start'});}
-const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-delta','归因'],['section-provenance','体检'],['section-almanac','年鉴'],['section-project','项目'],['section-rhythm','节奏'],['section-reuse','复用'],['section-flow','流光'],['section-achievements','成就'],['section-top','Top']];
+function scrollToSection(id){const el=document.getElementById(id);if(!el)return;const lazy=el.dataset.lazy;if(lazy){lazyState[lazy]=Object.assign({},lazyState[lazy],{visible:true});renderLazy(lazy,true);}if(id==='section-top')document.getElementById('top-details').open=true;el.scrollIntoView({behavior:scrollBehavior(),block:'start'});}
+const SECTION_LINKS=[['section-overview','总览'],['section-trend','趋势'],['section-delta','归因'],['section-provenance','体检'],['section-almanac','年鉴'],['section-achievements','成就'],['section-project','项目'],['section-rhythm','节奏'],['section-modes','模式'],['section-reuse','复用'],['section-flow','流光'],['section-top','Top']];
 function initSectionDock(){
   const dock=document.getElementById('section-dock');dock.addEventListener('click',e=>{const b=e.target.closest('button[data-target]');if(b)scrollToSection(b.dataset.target);});
   const mark=id=>dock.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.target===id));
@@ -1535,6 +1681,7 @@ function cmdActions(){ return [
   {ic:'◉',t:'打开 · 数据时间胶囊',k:'',run:()=>{scrollToSection('section-almanac');setTimeout(openAlmanacCapsule,60);}},
   {ic:'▣',t:'跳转 · 项目透镜',k:'',run:()=>scrollToSection('section-project')},
   {ic:'◫',t:'跳转 · 节奏',k:'',run:()=>scrollToSection('section-rhythm')},
+  {ic:'▤',t:'跳转 · 工作模式图鉴',k:'',run:()=>scrollToSection('section-modes')},
   {ic:'≈',t:'跳转 · Context Reuse River',k:'',run:()=>scrollToSection('section-reuse')},
   {ic:'≋',t:'跳转 · Token 流光图',k:'',run:()=>scrollToSection('section-flow')},
   {ic:'◇',t:'打开 · 成就图鉴',k:'',run:()=>openAchievements()},
@@ -1586,6 +1733,8 @@ document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); document.getElementById('scrim').classList.contains('open')?closePalette():openPalette(); return; }
   if(e.key==='Escape'){const modal=activeModal();if(modal){e.preventDefault();if(modal.id==='replay-modal')closeReplay();else if(modal.id==='help-modal')closeHelp();else if(modal.id==='share-modal')closeShare();else if(modal.id==='almanac-modal')closeAlmanacCapsule();else if(modal.id==='ach-modal')closeAchievements();return;}}
   const palette=document.getElementById('scrim');if(palette.classList.contains('open')){if(e.key==='Tab'){e.preventDefault();document.getElementById('palette-q').focus();}else if(e.key==='Escape'){e.preventDefault();closePalette();}else if(e.key==='ArrowDown'){e.preventDefault();pal.i=(pal.i+1)%Math.max(1,pal.items.length);syncPal();}else if(e.key==='ArrowUp'){e.preventDefault();pal.i=(pal.i-1+Math.max(1,pal.items.length))%Math.max(1,pal.items.length);syncPal();}else if(e.key==='Enter'){e.preventDefault();runPalette(pal.i);}return;}
+  if(e.key==='Escape'&&intervalState.active){e.preventDefault();clearScrub();resetInterval();renderBar();renderAttribution();renderTable();renderViewCapsule();syncViewURL();document.getElementById('interval-btn').focus({preventScroll:true});return;}
+  if(e.key==='Escape'&&peakState.period){e.preventDefault();closePeakProfile(true);return;}
   if(e.key==='Escape'&&scrubState.period){e.preventDefault();clearScrub('预览已清除',true);return;}
   if(trailState.open){if(e.key==='Escape'){e.preventDefault();closeDataTrail();return;}if(e.key==='Backspace'&&!editableTarget(e.target)){e.preventDefault();trailBack();return;}if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&!e.target.closest('[data-trail-roving]')){const index=TRAIL_STEPS.indexOf(trailState.step),next=Math.max(0,Math.min(trailState.reached,index+(e.key==='ArrowRight'?1:-1)));if(next!==index){e.preventDefault();setTrailStep(TRAIL_STEPS[next]);}return;}}
   if(e.key==='Escape'&&signalState.pinnedSignal){e.preventDefault();clearSignal();return;}
@@ -2038,7 +2187,7 @@ function renderAchievements(q){
   const bindBadges=root=>root.querySelectorAll('.badge[data-ach-id]').forEach(el=>{const b=a.all.find(x=>x.id===el.dataset.achId);if(b)el.addEventListener('click',()=>achievementDetail(b));});bindBadges(document.getElementById('ach-body'));
   document.querySelectorAll('#ach-body .cat-h').forEach(h=>h.addEventListener('click',()=>{const cat=h.parentElement,grid=cat.querySelector('.cat-grid');if(cat.classList.contains('collapsed')){const c=a.cats.find(x=>x.name===cat.dataset.achCat);if(!c)return;let items=c.items.filter(okFilter);if(q)items=items.filter(b=>(c.name+' '+b.n+' '+achievementStoryText(b)+' '+b.story+' '+b.d).toLowerCase().includes(q));if(!grid.childElementCount){grid.innerHTML=items.map(badgeCell).join('');bindBadges(grid);}cat.classList.remove('collapsed');h.setAttribute('aria-expanded','true');}else{cat.classList.add('collapsed');h.setAttribute('aria-expanded','false');}}));
 }
-function showAchievements(){renderAchievements(document.getElementById('ach-search').value);const modal=document.getElementById('ach-modal');if(!modal.classList.contains('open'))openModal(modal,document.getElementById('ach-search'));}
+function showAchievements(){renderAchievements(document.getElementById('ach-search').value);const modal=document.getElementById('ach-modal');if(!modal.classList.contains('open'))openModal(modal,document.getElementById('ach-search'),document.getElementById('ach-open'));}
 function hideAchievements(){const modal=document.getElementById('ach-modal');if(modal.classList.contains('open'))closeModal(modal);}
 function syncAuxViewFromState(){if(auxView==='achievements')showAchievements();else hideAchievements();}
 function openAchievements(){
@@ -2161,26 +2310,30 @@ function liveStatus(kind,text,title=text){
 function initLiveDashboard(){
   const refresh=document.getElementById('live-refresh');
   if(!LIVE?.enabled){refresh.hidden=true;liveStatus('static','静态快照','静态离线快照');return;}
-  let timer=null,failures=0,controller=null,current=DATA.snapshot?.id||null,interval=Math.max(1000,Number(LIVE.interval||300)*1000);
+  let timer=null,updatedTimer=null,failures=0,controller=null,requestId=0,current=DATA.snapshot?.id||null,interval=Math.max(1000,Number(LIVE.interval||300)*1000);
   refresh.hidden=false;const seconds=Math.round(interval/1000),presets=[60,300,900,1800];if(!presets.includes(seconds)){const option=document.createElement('option');option.value=String(seconds);option.textContent='刷新 · '+seconds+' 秒（CLI）';option.dataset.i18nSkip='';refresh.prepend(option);}refresh.value=String(seconds);
   const schedule=delay=>{clearTimeout(timer);if(interval>0&&!document.hidden)timer=setTimeout(check,delay);};
+  const cancelRequest=()=>{requestId++;controller?.abort();controller=null;clearTimeout(updatedTimer);};
   async function check(){
     if(document.hidden||interval===0)return;
-    liveStatus('syncing','正在检查');controller?.abort();controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),Math.min(10000,interval));
+    cancelRequest();const id=requestId,active=new AbortController();controller=active;let timedOut=false;
+    liveStatus('syncing','正在检查');const timeout=setTimeout(()=>{timedOut=true;active.abort();},Math.min(10000,interval));
     try{
-      const response=await fetch('/api/snapshot',{cache:'no-store',headers:current?{'If-None-Match':'"'+current+'"'}:{},signal:controller.signal});
+      const response=await fetch('/api/snapshot',{cache:'no-store',headers:current?{'If-None-Match':'"'+current+'"'}:{},signal:active.signal});
+      if(id!==requestId)return;
       if(response.status===304){failures=0;liveStatus('live','本地实时');schedule(interval);return;}
       if(!response.ok)throw new Error('status');
       const payload=await response.json();
+      if(id!==requestId)return;
       if(payload.error){failures++;liveStatus('error','同步错误',payload.error);schedule(Math.min(interval*Math.max(2,failures),30000));return;}
-      if(payload.snapshot&&payload.snapshot!==current){current=payload.snapshot;reconcileLiveData(decodeWire(payload.wire));liveStatus('updated','刚刚更新');setTimeout(()=>{if(!document.hidden&&interval>0)liveStatus('live','本地实时');},1800);}
+      if(payload.snapshot&&payload.snapshot!==current){current=payload.snapshot;reconcileLiveData(decodeWire(payload.wire));liveStatus('updated','刚刚更新');updatedTimer=setTimeout(()=>{if(id===requestId&&!document.hidden&&interval>0)liveStatus('live','本地实时');},1800);}
       else liveStatus('live','本地实时');
       failures=0;schedule(interval);
-    }catch(error){if(error.name==='AbortError'&&(document.hidden||interval===0))return;failures++;liveStatus('offline','暂时断开');schedule(Math.min(interval*Math.max(2,failures),30000));}
-    finally{clearTimeout(timeout);}
+    }catch(error){if(id!==requestId||error.name==='AbortError'&&!timedOut)return;failures++;liveStatus('offline','暂时断开');schedule(Math.min(interval*Math.max(2,failures),30000));}
+    finally{clearTimeout(timeout);if(id===requestId)controller=null;}
   }
-  refresh.addEventListener('change',()=>{clearTimeout(timer);controller?.abort();const seconds=Number(refresh.value);interval=seconds>0?seconds*1000:0;failures=0;if(interval===0)liveStatus('paused','刷新已暂停');else check();});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(timer);controller?.abort();}else if(interval>0)check();});
+  refresh.addEventListener('change',()=>{clearTimeout(timer);cancelRequest();const seconds=Number(refresh.value);interval=seconds>0?seconds*1000:0;failures=0;if(interval===0)liveStatus('paused','刷新已暂停');else check();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(timer);cancelRequest();}else if(interval>0)check();});
   liveStatus('live','本地实时');schedule(interval);
 }
 

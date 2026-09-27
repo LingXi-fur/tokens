@@ -43,6 +43,7 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/LingXi-fur/tokens"
 Documentation = "https://lingxi-fur.github.io/tokens/"
+Demo = "https://lingxi-fur.github.io/tokens/demo/"
 Issues = "https://github.com/LingXi-fur/tokens/issues"
 Source = "https://github.com/LingXi-fur/tokens"
 

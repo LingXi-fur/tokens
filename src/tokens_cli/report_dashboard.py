@@ -15,13 +15,16 @@ import tempfile
 from . import config, dashboard_payload, dashboard_wire
 from .opener import open_path
 
-def build_payload(records, since=None, until=None, sources=None, anonymize=False):
+def build_payload(records, since=None, until=None, sources=None, anonymize=False,
+                  generated_at=None, session_titles=None):
     return dashboard_payload.build_payload(
         records,
         since=since,
         until=until,
         sources=sources,
         anonymize=anonymize,
+        generated_at=generated_at,
+        session_titles=session_titles,
     )
 
 
@@ -42,6 +45,10 @@ def _dashboard_template():
             .replace("__SCRIPT__", _read_asset("dashboard.js")))
 
 _TEMPLATE = _dashboard_template()
+_LANGUAGE_TAGS = {
+    "zh": "zh-CN",
+    "en": "en",
+}
 
 
 
@@ -54,25 +61,48 @@ def _embed_json(payload):
              .replace(chr(0x2029), "\\u2029"))
 
 
-def render_dashboard(wire, live=None):
+def render_dashboard(wire, live=None, demo=False, language="zh", head_meta=""):
+    # head_meta 是受信任的静态标记，按原样插入 <head>；本地 CLI 路径保持默认空值，
+    # 只有 scripts/build_docs_demo.py 会传入公开 Demo 的常量元数据。
+    try:
+        language_tag = _LANGUAGE_TAGS[language]
+    except KeyError as exc:
+        raise ValueError("dashboard language must be 'zh' or 'en'") from exc
     live_config = live or {"enabled": False, "interval": 0}
     return (_TEMPLATE
+            .replace("__LANG__", language_tag)
+            .replace("__HEAD_META__", head_meta)
             .replace("__DATA__", _embed_json(wire))
-            .replace("__LIVE__", _embed_json(live_config)))
+            .replace("__LIVE__", _embed_json(live_config))
+            .replace("__DEMO__", _embed_json(bool(demo))))
 
 
-def write_dashboard(records, since=None, until=None, sources=None, anonymize=False):
+def build_dashboard_html(records, since=None, until=None, sources=None,
+                         anonymize=False, generated_at=None,
+                         session_titles=None, demo=False, language="zh",
+                         head_meta=""):
     payload = build_payload(
         records,
         since=since,
         until=until,
         sources=sources,
         anonymize=anonymize,
+        generated_at=generated_at,
+        session_titles=session_titles,
     )
     wire = dashboard_wire.encode_payload(payload)
-    html_doc = render_dashboard(wire)
+    return render_dashboard(
+        wire,
+        demo=demo,
+        language=language,
+        head_meta=head_meta,
+    )
+
+
+def _write_html(html_doc, filename):
+    if not filename or filename != os.path.basename(filename):
+        raise ValueError("dashboard filename must be a basename")
     os.makedirs(config.OUT_DIR, exist_ok=True)
-    filename = "dashboard-anonymized.html" if anonymize else "dashboard.html"
     path = os.path.join(config.OUT_DIR, filename)
     fd, tmp = tempfile.mkstemp(prefix=f".{filename}.", dir=config.OUT_DIR)
     try:
@@ -84,3 +114,23 @@ def write_dashboard(records, since=None, until=None, sources=None, anonymize=Fal
         if os.path.exists(tmp):
             os.unlink(tmp)
     return path
+
+
+def write_dashboard(records, since=None, until=None, sources=None, anonymize=False,
+                    filename=None, generated_at=None, session_titles=None,
+                    demo=False, language="zh"):
+    html_doc = build_dashboard_html(
+        records,
+        since=since,
+        until=until,
+        sources=sources,
+        anonymize=anonymize,
+        generated_at=generated_at,
+        session_titles=session_titles,
+        demo=demo,
+        language=language,
+    )
+    filename = filename or (
+        "dashboard-anonymized.html" if anonymize else "dashboard.html"
+    )
+    return _write_html(html_doc, filename)

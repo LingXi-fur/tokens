@@ -1,5 +1,6 @@
 # 输出与缓存
 out/
+docs/demo/index.html
 __pycache__/
 *.pyc
 *.pyo

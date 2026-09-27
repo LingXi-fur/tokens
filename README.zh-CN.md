@@ -7,18 +7,25 @@
 
 把本机 Claude Code、Gemini CLI 与 Codex 记录变成终端摘要、仅限回环地址的实时 Dashboard，或一个自包含离线 HTML 文件。
 
+[![在线 Demo](https://img.shields.io/badge/demo-在线体验-2f6fd6)](https://lingxi-fur.github.io/tokens/demo/)
 [![CI](https://github.com/LingXi-fur/tokens/actions/workflows/ci.yml/badge.svg)](https://github.com/LingXi-fur/tokens/actions/workflows/ci.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-5b8def)](https://github.com/LingXi-fur/tokens/blob/main/pyproject.toml)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b)](https://github.com/LingXi-fur/tokens/blob/main/LICENSE)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-a78bfa)](#隐私边界)
 
-[克隆并运行](#克隆并运行) · [在线文档](https://lingxi-fur.github.io/tokens/zh/) · [Dashboard 指南](https://lingxi-fur.github.io/tokens/zh/dashboard.html) · [English](https://github.com/LingXi-fur/tokens/blob/main/README.md)
+[在线体验 Demo](https://lingxi-fur.github.io/tokens/demo/) · [克隆并运行](#克隆并运行) · [在线文档](https://lingxi-fur.github.io/tokens/zh/) · [Dashboard 指南](https://lingxi-fur.github.io/tokens/zh/dashboard.html) · [English](https://github.com/LingXi-fur/tokens/blob/main/README.md)
+
+**安装前先体验：**打开[在线合成 Dashboard](https://lingxi-fur.github.io/tokens/demo/)，无需 clone，也无需本地日志；如果它值得留在工具箱里，欢迎在 [GitHub 点亮 Star 或克隆项目](https://github.com/LingXi-fur/tokens)。
 
 </div>
 
-![tokens Dashboard 合成数据预览](https://raw.githubusercontent.com/LingXi-fur/tokens/main/docs/assets/readme-preview.png)
+[![tokens Dashboard 合成数据预览](https://raw.githubusercontent.com/LingXi-fur/tokens/main/docs/assets/readme-preview.png)](https://lingxi-fur.github.io/tokens/demo/)
 
 > 预览由真实 Dashboard 在隔离临时主目录中读取虚构记录生成，不含本地日志、路径、会话或私有路由配置。
+
+## 无需安装即可体验
+
+打开[在线合成 Demo](https://lingxi-fur.github.io/tokens/demo/)，即可通过真实 Dashboard 管线体验筛选、项目、会话、数据可信度、Token 流光图与成就中心。需要分析自己的本地日志时，再克隆仓库运行。
 
 ## 为什么值得克隆？
 
@@ -49,6 +56,14 @@ cd tokens
 `./run doctor` 检查路径、候选文件数、时区、输出和缓存权限，不解析消息正文，也不打印项目或会话标识。
 
 实时 Dashboard 只绑定 `127.0.0.1`。默认每 5 分钟检查本地日志变化；页面可改为 1、5、15、30 分钟或暂停。文件未变化时不会重新解析或传输。
+
+还没有本地日志？可先打开由同一报告管线生成的完整合成 Dashboard：
+
+```bash
+./run demo --open
+```
+
+Demo 只使用生成的示例数据写入 `out/dashboard-demo.html`，不会读取 Claude Code、Gemini CLI 或 Codex 日志。
 
 需要离线归档时：
 
@@ -89,6 +104,8 @@ Windows PowerShell 激活命令为 `.venv\Scripts\Activate.ps1`。
 | 目标 | 源码检出命令 | 行为 |
 |---|---|---|
 | 快速看终端摘要 | `./run day` | 最近 14 天终端报告 |
+| 安装前在线体验 | [打开在线合成 Demo](https://lingxi-fur.github.io/tokens/demo/) | 无需 clone、账号、本地日志或上传 |
+| 本机无日志体验 | `./run demo --open` | 只用合成数据，写入 `dashboard-demo.html` |
 | 长期开着 Dashboard | `./run serve --open` | 仅限回环地址的服务，页面内更新 |
 | 保存离线归档 | `./run dashboard --open` | 自包含的生成时快照 |
 | 准备更安全的分享副本 | `./run dashboard --anonymize --open` | 对选定标识做假名化 |
@@ -99,17 +116,16 @@ Windows PowerShell 激活命令为 `.venv\Scripts\Activate.ps1`。
 
 Dashboard 从总览、粒度、筛选、趋势、精确明细和数据可信度开始。继续向下可查看：
 
-- **Token 年鉴**：本地赛季、快照和由用户控制的跨快照时间胶囊
+- **Token 年鉴**：本地赛季、跨快照时间胶囊与个人峰值纪录
 - **成就中心**：本地门槛、阶位、解锁日期、收藏与进度；绝不代表全球排名
-- **项目透镜**和会话回放；每个会话最多保留最近 200 轮
-- **模型构成**、生成时刻往前六个小时桶和 14 天 × 24 小时作息织锦
-- **Context Reuse River**：Fresh Input、Output、Cache Read、Cache Write 与 Other
-- **Token Flow**：真实的项目 → 模型与模型 → 会话聚合，并可导出 SVG
-- **工作模式图鉴**：解释本地活动模式及其判定依据
-- **Data Trail、Signal Dock（信号坞）与 Exactness Key**：证据导航和精确数值
+- **项目透镜**、会话回放与 **Token Flow**：真实的项目 → 模型与模型 → 会话聚合
+- **Context Reuse River**、**工作模式图鉴**与作息织锦：Token 去向与时间分布
 - **Markdown、CSV、年鉴 JSON、体检摘要、Token 护照与收据导出**
 
-Data Trail 状态只存在于页面内存，不写入 URL 或 `localStorage`。项目与会话保持为平行聚合，不会自动配对。固定上一期对比可在 URL 中表示为 `compare=1`；项目 / 会话 ID 与精确 Token 明细不会写入 URL。
+趋势卡新增**双时段 A/B 透镜**：先选连续且完整的 A 周期，再选 B 起点，B 自动取等长窗口。鼠标可拖刷，触屏依次点柱，键盘可聚焦柱按 Enter / Space；原归因区和明细表直接展示差额，零基线只报告绝对 Token 变化。**峰值剖面**可从趋势工具条或标记的峰值柱按 `P` 打开，展示相邻前期及确有记录的模型、小时、项目聚合，不判定故障。项目和会话 Top 保留为默认收起的详情。后端标签只反映报告范围最近一条记录；仅当数据确有 `gpt-6-sol` 且该模型保有独立身份时才显示该名，不按当前路由改写历史模型。完整分区列表（含 **Data Trail**、**Signal Dock** 与 **Exactness Key**）见[中文 Dashboard 指南](https://lingxi-fur.github.io/tokens/zh/dashboard.html)。
+
+Data Trail 状态只存在于页面内存，不写入 URL 或 `localStorage`。项目与会话保持为平行聚合，不会自动配对。固定上一期对比可在 URL 中表示为 `compare=1`；A/B 周期及打开的峰值剖面也可从 URL 恢复。项目 / 会话 ID 与精确 Token 明细不会写入 URL。
+
 
 Token 增减只描述用量变化，不代表生产力或代码质量。Cache Read 是缓存 Token 读取量，不是已确认的货币节省。
 
@@ -136,8 +152,8 @@ Token 增减只描述用量变化，不代表生产力或代码质量。Cache Re
 ## CLI 要点
 
 ```text
-./run [day|week|month|all|dashboard|serve|doctor] [options]
-tokens [day|week|month|all|dashboard|serve|doctor] [options]  # 本地安装后
+./run [day|week|month|all|dashboard|demo|serve|doctor] [options]
+tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安装后
 ```
 
 | 参数 | 用途 |
@@ -145,6 +161,7 @@ tokens [day|week|month|all|dashboard|serve|doctor] [options]  # 本地安装后
 | `--source claude\|gemini\|codex` | 选择来源，可重复。 |
 | `--since YYYY-MM-DD` / `--until YYYY-MM-DD` | 限制闭区间日期范围。 |
 | `--timezone AREA/CITY` | 覆盖检测到的系统时区。 |
+| `--lang en\|zh` | 终端及静态 HTML 语言；默认跟随系统 locale（可由 `TOKENS_LANG` 覆盖）。 |
 | `--output DIR` | 指定报告目录，默认 `./out`。 |
 | `--html` | 为终端模式额外生成静态 HTML。 |
 | `--anonymize` | 在 Dashboard 或实时模式中假名化标识。 |
@@ -188,7 +205,7 @@ tokens [day|week|month|all|dashboard|serve|doctor] [options]  # 本地安装后
 
 ## 故障排查
 
-**没有找到日志？** 运行 `./run doctor`。如果未使用 Claude，尝试 `./run day --source gemini` 或 `./run day --source codex`。
+**没有找到日志？** 运行 `./run doctor`。如果未使用 Claude，尝试 `./run day --source gemini` 或 `./run day --source codex`。完全没有本地日志时可运行 `./run demo --open`；已安装本地命令则使用 `tokens demo --open`。
 
 **Dashboard 数字不更新？** `./run dashboard` 生成离线快照；实时更新请使用 `./run serve --open`。
 
@@ -197,6 +214,8 @@ tokens [day|week|month|all|dashboard|serve|doctor] [options]  # 本地安装后
 更多答案见[中文 FAQ](https://lingxi-fur.github.io/tokens/zh/faq.html)。
 
 ## 开发
+
+下方完整测试套件与 JavaScript 检查需要 Node.js 22+。
 
 ```bash
 python -m pip install -e .

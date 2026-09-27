@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -120,6 +121,61 @@ class DashboardRuntimeTests(unittest.TestCase):
         cls._malicious_path.write_text(
             report_dashboard.render_dashboard(
                 dashboard_wire.encode_payload(malicious_payload)
+            ),
+            encoding="utf-8",
+        )
+
+        # Synthetic multi-month fixture for the interval lens / peak profile.
+        # All periods are complete relative to the fixed generated_at, the peak
+        # day (2026-02-04) has a consecutive complete previous day, and the peak
+        # month (2026-02, first complete month) has no comparable prior period.
+        def interval_record(date, model, total, session):
+            return {
+                "source": "claude",
+                "ts": date + "T09:00:00+08:00",
+                "date": date,
+                "model": model,
+                "input": total // 2,
+                "output": total // 4,
+                "cache_read": total // 4,
+                "cache_write": 0,
+                "total": total,
+                "session": session,
+                "cwd": "/synthetic/interval-fixture",
+            }
+
+        interval_records = [
+            interval_record("2026-02-03", "model-a", 300, "synthetic-session-i1"),
+            interval_record("2026-02-04", "model-b", 900, "synthetic-session-i1"),
+            interval_record("2026-03-05", "model-a", 600, "synthetic-session-i2"),
+            interval_record("2026-04-07", "model-a", 350, "synthetic-session-i3"),
+            interval_record("2026-05-09", "model-b", 200, "synthetic-session-i4"),
+            interval_record("2026-06-01", "model-a", 100, "synthetic-session-i5"),
+            interval_record("2026-06-02", "model-b", 120, "synthetic-session-i5"),
+            interval_record("2026-06-03", "model-a", 80, "synthetic-session-i5"),
+            interval_record("2026-06-04", "model-b", 90, "synthetic-session-i5"),
+        ]
+        with mock.patch(
+            "tokens_cli.dashboard_payload.readers.build_session_index",
+            return_value={},
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title",
+            return_value="",
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.load_session_summaries",
+            return_value={},
+        ):
+            interval_payload = report_dashboard.build_payload(
+                interval_records,
+                since="2026-02-01",
+                until="2026-06-30",
+                sources=["claude"],
+                generated_at=datetime(2026, 7, 15, 12, 0),
+            )
+        cls._interval_path = Path(cls._tmp.name) / "synthetic-dashboard-interval.html"
+        cls._interval_path.write_text(
+            report_dashboard.render_dashboard(
+                dashboard_wire.encode_payload(interval_payload)
             ),
             encoding="utf-8",
         )
@@ -961,6 +1017,41 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_footer_and_share_cards_link_to_project_without_tracking(self):
+        project_url = "https://github.com/LingXi-fur/tokens"
+        for width in (1280, 390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                viewport={"width": width, "height": 820}
+            )
+            try:
+                footer_link = page.locator("#dynamic-footer a.project-link")
+                self.assertEqual(project_url, footer_link.get_attribute("href"))
+                self.assertEqual("_blank", footer_link.get_attribute("target"))
+                self.assertEqual(
+                    "noopener noreferrer",
+                    footer_link.get_attribute("rel"),
+                )
+                for card_type in ("passport", "receipt"):
+                    page.evaluate("kind => openShare(kind)", card_type)
+                    card = page.locator("#share-card")
+                    link = card.locator("a.share-project-link")
+                    self.assertEqual(project_url, link.get_attribute("href"))
+                    self.assertEqual("_blank", link.get_attribute("target"))
+                    self.assertEqual("noopener noreferrer", link.get_attribute("rel"))
+                    self.assertIn(project_url, card.evaluate("el => el.outerHTML"))
+                    box = card.bounding_box()
+                    self.assertLessEqual(box["width"], width + 1)
+                    page.evaluate("closeShare()")
+                metrics = page.evaluate(
+                    "() => ({scroll:document.documentElement.scrollWidth,"
+                    "client:document.documentElement.clientWidth})"
+                )
+                self.assertLessEqual(metrics["scroll"], metrics["client"] + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
     def test_mobile_table_detail_expands_without_horizontal_overflow(self):
         for width in (390, 320):
             context, page, page_errors, console_errors = self.new_page(
@@ -977,6 +1068,8 @@ class DashboardRuntimeTests(unittest.TestCase):
                 detail = page.locator("#tbody tr.row-detail").first
                 self.assertTrue(detail.is_hidden())
                 toggle.scroll_into_view_if_needed()
+                toggle.hover()
+                page.wait_for_timeout(150)
                 toggle.click()
                 self.assertEqual("true", toggle.get_attribute("aria-expanded"))
                 self.assertFalse(detail.is_hidden())
@@ -1134,6 +1227,359 @@ class DashboardRuntimeTests(unittest.TestCase):
                     """
                 )
                 self.assertGreaterEqual(ratio, 4.5, f"--faint contrast in {theme} theme")
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+
+    # --- interval lens / peak profile ---------------------------------
+
+    def interval_url(self, query=""):
+        return self._interval_path.as_uri() + query
+
+    def click_bar(self, page, period):
+        page.locator(f".bar-hit[data-period='{period}']").click()
+
+    def press_bar(self, page, period, key):
+        # Keyboard activation parked on a bar. Scrub is cleared first so the
+        # keydown handler resolves the period from the focused bar itself.
+        # The pointer is also parked off-chart: scrolling a bar into view can
+        # fire a pointer-driven setScrubPreview for whatever sits under the
+        # stale cursor, and onkeydown prefers scrubState.period over the
+        # focused bar, which would silently retarget the lens.
+        page.mouse.move(2, 2)
+        page.evaluate("clearScrub()")
+        page.focus(f".barstack[data-period='{period}']")
+        page.locator(f".barstack[data-period='{period}']").dispatch_event(
+            "keydown", {"key": key}
+        )
+
+    def interval_snapshot(self, page):
+        return page.evaluate(
+            """
+            () => {
+              const result = intervalResult();
+              return {
+                active: intervalState.active,
+                start: intervalState.start,
+                end: intervalState.end,
+                bStart: intervalState.bStart,
+                a: result ? result.a.map(row => row.period) : null,
+                b: result ? result.b.map(row => row.period) : null,
+              };
+            }
+            """
+        )
+
+    def test_interval_month_granularity_builds_equal_length_cross_month_span(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url()
+        )
+        try:
+            self.assertEqual("month", page.evaluate("state.gran"))
+            self.assertEqual(
+                [
+                    "2026-02-01",
+                    "2026-03-01",
+                    "2026-04-01",
+                    "2026-05-01",
+                    "2026-06-01",
+                ],
+                page.evaluate("completeIntervalRows().map(row => row.period)"),
+            )
+            month_tab = page.locator('#tabs [data-gran="month"]')
+            self.assertIn("on", month_tab.get_attribute("class"))
+            self.assertEqual("true", month_tab.get_attribute("aria-pressed"))
+            page.locator("#interval-btn").click()
+            self.assertEqual(
+                "true", page.locator("#interval-btn").get_attribute("aria-pressed")
+            )
+            for period in ("2026-02-01", "2026-03-01", "2026-04-01"):
+                self.click_bar(page, period)
+            snapshot = self.interval_snapshot(page)
+            self.assertEqual("2026-02-01", snapshot["start"])
+            self.assertEqual("2026-03-01", snapshot["end"])
+            self.assertEqual("2026-04-01", snapshot["bStart"])
+            self.assertEqual(["2026-02-01", "2026-03-01"], snapshot["a"])
+            self.assertEqual(["2026-04-01", "2026-05-01"], snapshot["b"])
+            self.assertEqual(
+                "A 2026-02 → 2026-03 · B 2026-04 → 2026-05",
+                page.inner_text("#interval-prompt"),
+            )
+            self.assertIn(
+                "interval=1&a=2026-02-01&aEnd=2026-03-01&b=2026-04-01",
+                page.evaluate("viewParams().toString()"),
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_interval_day_granularity_keyboard_and_click_select_same_span(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            page.locator('#tabs [data-gran="day"]').click()
+            self.assertEqual(
+                [
+                    "2026-02-03",
+                    "2026-02-04",
+                    "2026-03-05",
+                    "2026-04-07",
+                    "2026-05-09",
+                    "2026-06-01",
+                    "2026-06-02",
+                    "2026-06-03",
+                    "2026-06-04",
+                ],
+                page.evaluate("completeIntervalRows().map(row => row.period)"),
+            )
+            page.locator("#interval-btn").click()
+            for period in ("2026-06-01", "2026-06-02", "2026-06-03"):
+                self.click_bar(page, period)
+            clicked = self.interval_snapshot(page)
+            self.assertEqual(["2026-06-01", "2026-06-02"], clicked["a"])
+            self.assertEqual(["2026-06-03", "2026-06-04"], clicked["b"])
+            self.assertEqual(
+                "A 06-01 → 06-02 · B 06-03 → 06-04",
+                page.inner_text("#interval-prompt"),
+            )
+            self.assertEqual(
+                "gran=day&interval=1&a=2026-06-01&aEnd=2026-06-02&b=2026-06-03",
+                page.evaluate("viewParams().toString()"),
+            )
+            self.assertIn(
+                "interval-a",
+                page.locator(".barstack[data-period='2026-06-01']").get_attribute("class"),
+            )
+            self.assertIn(
+                "interval-b",
+                page.locator(".barstack[data-period='2026-06-03']").get_attribute("class"),
+            )
+            self.assertIn(
+                "已选 A 时段",
+                page.locator(".barstack[data-period='2026-06-01']").get_attribute("aria-label"),
+            )
+            self.assertIn(
+                "已选 B 时段",
+                page.locator(".barstack[data-period='2026-06-03']").get_attribute("aria-label"),
+            )
+            self.assertEqual(
+                1,
+                page.evaluate(
+                    """document.querySelectorAll('#bar .barstack[tabindex="0"]').length"""
+                ),
+            )
+            self.assertEqual(9, page.locator("#bar .barstack[role=button]").count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+        # The keyboard path over the same bars must produce the same span.
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            page.locator("#interval-btn").click()
+            for period in ("2026-06-01", "2026-06-02", "2026-06-03"):
+                self.press_bar(page, period, "Enter")
+            self.assertEqual(clicked, self.interval_snapshot(page))
+            page.keyboard.press("Escape")
+            self.assertFalse(page.evaluate("intervalState.active"))
+            self.assertIsNone(page.evaluate("intervalState.start"))
+            self.assertEqual(
+                "false", page.locator("#interval-btn").get_attribute("aria-pressed")
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_mouse_drag_selects_a_then_click_selects_b(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            page.locator("#interval-btn").click()
+            page.locator(".bar-hit[data-period='2026-06-01']").scroll_into_view_if_needed()
+            start = page.locator(".bar-hit[data-period='2026-06-01']").bounding_box()
+            end = page.locator(".bar-hit[data-period='2026-06-02']").bounding_box()
+            page.mouse.move(start["x"] + start["width"] / 2, start["y"] + 30)
+            page.mouse.down()
+            page.mouse.move(end["x"] + end["width"] / 2, end["y"] + 30, steps=5)
+            page.mouse.up()
+            self.assertEqual("2026-06-01", page.evaluate("intervalState.start"))
+            self.assertEqual("2026-06-02", page.evaluate("intervalState.end"))
+            self.click_bar(page, "2026-06-03")
+            self.assertEqual(
+                ["2026-06-03", "2026-06-04"], self.interval_snapshot(page)["b"]
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_interval_and_peak_copy_is_english_in_browser(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            page.evaluate("applyLanguage('en',false)")
+            page.locator("#interval-btn").click()
+            for period in ("2026-06-01", "2026-06-02", "2026-06-03"):
+                self.click_bar(page, period)
+            self.assertEqual(
+                "A 06-01 → 06-02 · B 06-03 → 06-04",
+                page.inner_text("#interval-prompt"),
+            )
+            page.locator("#peak-btn").click()
+            self.assertIn(
+                "Previous period 300", page.inner_text("#peak-content .peak-lead")
+            )
+            untranslated = page.evaluate(
+                """() => {
+                  const visible = element => element.getClientRects().length &&
+                    !element.closest('script,style,[hidden]') &&
+                    getComputedStyle(element).display !== 'none';
+                  const leftovers = [];
+                  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                  while (walker.nextNode()) {
+                    const node = walker.currentNode;
+                    if (node.parentElement && visible(node.parentElement) &&
+                        /[㐀-鿿]/.test(node.nodeValue) &&
+                        node.parentElement.id !== 'lang-btn')
+                      leftovers.push(node.nodeValue.trim());
+                  }
+                  for (const element of document.querySelectorAll('[aria-label],[title],[placeholder]')) {
+                    if (!visible(element)) continue;
+                    for (const name of ['aria-label','title','placeholder']) {
+                      const value = element.getAttribute(name);
+                      if (value && /[㐀-鿿]/.test(value)) leftovers.push(name + ': ' + value);
+                    }
+                  }
+                  return leftovers;
+                }"""
+            )
+            self.assertEqual([], untranslated)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_peak_profile_previous_period_and_empty_state(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            self.assertEqual("2026-02-04", page.evaluate("peakPeriod()"))
+            self.assertEqual("false", page.locator("#peak-btn").get_attribute("aria-expanded"))
+            self.press_bar(page, "2026-02-04", "p")
+            self.assertEqual("2026-02-04", page.evaluate("peakState.period"))
+            self.assertEqual("峰值剖面 · 02-04", page.inner_text("#peak-heading"))
+            self.assertEqual("true", page.locator("#peak-btn").get_attribute("aria-expanded"))
+            self.assertFalse(page.locator("#peak-profile").is_hidden())
+            lead = page.inner_text("#peak-content .peak-lead")
+            self.assertIn("900 Token", lead)
+            self.assertIn("前一期 300", lead)
+            self.assertIn("+600", lead)
+            page.keyboard.press("Escape")
+            self.assertIsNone(page.evaluate("peakState.period"))
+            self.assertTrue(page.locator("#peak-profile").is_hidden())
+            self.assertEqual("false", page.locator("#peak-btn").get_attribute("aria-expanded"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url()
+        )
+        try:
+            # Default month view: the peak is the first complete month, so there
+            # is no complete consecutive prior period and the empty state shows.
+            self.assertEqual("2026-02-01", page.evaluate("peakPeriod()"))
+            self.assertEqual(
+                "2026-02-01",
+                page.evaluate("completeIntervalRows().map(row => row.period)[0]"),
+            )
+            page.locator("#peak-btn").click()
+            self.assertEqual("true", page.locator("#peak-btn").get_attribute("aria-expanded"))
+            self.assertEqual("峰值剖面 · 2026-02", page.inner_text("#peak-heading"))
+            self.assertIn("无完整相邻前期可比", page.inner_text("#peak-content .peak-lead"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_interval_and_peak_restore_from_url(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url(
+                "?gran=day&interval=1&a=2026-06-01&aEnd=2026-06-02&b=2026-06-03"
+            )
+        )
+        try:
+            snapshot = self.interval_snapshot(page)
+            self.assertTrue(snapshot["active"])
+            self.assertEqual("2026-06-01", snapshot["start"])
+            self.assertEqual("2026-06-02", snapshot["end"])
+            self.assertEqual("2026-06-03", snapshot["bStart"])
+            self.assertEqual(["2026-06-01", "2026-06-02"], snapshot["a"])
+            self.assertEqual(["2026-06-03", "2026-06-04"], snapshot["b"])
+            self.assertEqual(
+                "true", page.locator("#interval-btn").get_attribute("aria-pressed")
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?peak=2026-02-01")
+        )
+        try:
+            self.assertEqual("2026-02-01", page.evaluate("peakState.period"))
+            self.assertFalse(page.locator("#peak-profile").is_hidden())
+            self.assertEqual("峰值剖面 · 2026-02", page.inner_text("#peak-heading"))
+            self.assertIn("无完整相邻前期可比", page.inner_text("#peak-content .peak-lead"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_interval_lens_leaves_normal_scrub_untouched(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url("?gran=day")
+        )
+        try:
+            # Lens closed: a bar click still commits the time probe.
+            self.click_bar(page, "2026-06-02")
+            self.assertEqual("2026-06-02", page.evaluate("state.focusPeriod"))
+            page.evaluate("clearFocus()")
+            self.assertIsNone(page.evaluate("state.focusPeriod"))
+
+            # Preview plumbing still works while the lens is closed.
+            page.evaluate("setScrubPreview(5,'test',false,false)")
+            self.assertEqual(1, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
+            page.evaluate("clearScrub()")
+            self.assertEqual(0, page.locator("#bar .barstack.scrub-preview").count())
+            self.assertEqual(0, page.locator("#tbody tr.row-linked").count())
+
+            # Lens open: a bar click feeds the lens instead of the probe.
+            page.locator("#interval-btn").click()
+            self.click_bar(page, "2026-06-03")
+            self.assertIsNone(page.evaluate("state.focusPeriod"))
+            self.assertEqual("2026-06-03", page.evaluate("intervalState.start"))
+            self.assertFalse(
+                page.evaluate("!!document.querySelector('#tbody tr.row-focused')")
+            )
+
+            page.keyboard.press("Escape")
+            self.assertFalse(page.evaluate("intervalState.active"))
+            self.assertIsNone(page.evaluate("state.focusPeriod"))
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:

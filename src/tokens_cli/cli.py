@@ -4,11 +4,11 @@ import argparse
 import sys
 from datetime import date, datetime, timedelta
 
-from . import (__version__, aggregate, config, doctor, live_dashboard, readers,
-               report_dashboard, report_html, report_term)
+from . import (__version__, aggregate, config, demo, doctor, lang as lang_module, live_dashboard,
+               readers, report_dashboard, report_html, report_term)
 from .opener import open_url
 
-RANGES = ["day", "week", "month", "all", "dashboard", "serve", "doctor"]
+RANGES = ["day", "week", "month", "all", "dashboard", "demo", "serve", "doctor"]
 
 
 def compute_window(mode, now, days, weeks, months):
@@ -54,6 +54,8 @@ def build_parser():
     parser.add_argument("--open", action="store_true", help="open generated HTML in the default browser")
     parser.add_argument("--output", metavar="DIR", help="output directory (default: ./out)")
     parser.add_argument("--timezone", metavar="ZONE", help="IANA timezone, for example Europe/Berlin")
+    parser.add_argument("--lang", choices=lang_module.SUPPORTED,
+                        help="terminal and static HTML language (en or zh; default: system locale)")
     parser.add_argument("--no-cache", action="store_true", help="ignore the file cache and re-read logs")
     parser.add_argument("--interval", type=_positive_float, default=300.0,
                         help="live Dashboard check interval in seconds (default: 300)")
@@ -103,10 +105,16 @@ def _configure(args, parser):
             parser.error(str(exc))
     args.since = _date(args.since, "--since", parser)
     args.until = _date(args.until, "--until", parser)
+    try:
+        args.lang = lang_module.resolve_lang(args.lang)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.since and args.until and args.since > args.until:
         parser.error("--since must not be after --until")
-    if args.anonymize and not (args.dashboard or args.range in ("dashboard", "serve")):
-        parser.error("--anonymize requires dashboard or serve mode")
+    if args.anonymize and not (
+        args.dashboard or args.range in ("dashboard", "demo", "serve")
+    ):
+        parser.error("--anonymize requires dashboard, demo, or serve mode")
 
 
 def _open_generated(path):
@@ -128,7 +136,16 @@ def _no_records_message(sources):
     print("No supported token logs were found.", file=sys.stderr)
     for source in sources:
         print(f"  {source}: {roots[source]}", file=sys.stderr)
-    print("Run `tokens doctor` for a source-by-source check.", file=sys.stderr)
+    print(
+        "Run `tokens doctor` (or `./run doctor` in a source checkout) "
+        "for a source-by-source check.",
+        file=sys.stderr,
+    )
+    print(
+        "Try the private synthetic demo with `tokens demo --open` "
+        "(or `./run demo --open`).",
+        file=sys.stderr,
+    )
 
 
 def main(argv=None):
@@ -175,6 +192,26 @@ def main(argv=None):
             server.server_close()
         return 0
 
+    if args.range == "demo":
+        today = datetime.now(config.TZ).date()
+        bundle = demo.build_demo(today=today, sources=args.source)
+        path = report_dashboard.write_dashboard(
+            bundle["records"],
+            since=args.since or bundle["since"],
+            until=args.until or bundle["until"],
+            sources=bundle["sources"],
+            anonymize=args.anonymize,
+            filename="dashboard-demo.html",
+            generated_at=bundle["generated_at"],
+            session_titles=bundle["session_titles"],
+            demo=True,
+        )
+        print(f"Synthetic demo Dashboard: {path}")
+        print("Uses generated sample data only; no local AI CLI logs were read.")
+        if args.open:
+            _open_generated(path)
+        return 0
+
     now = datetime.now(config.TZ).date()
     mode = args.range
     records = readers.read_all(sources=sources, use_cache=not args.no_cache)
@@ -209,11 +246,13 @@ def main(argv=None):
         rows = aggregate.by_day(recs)
 
     _, focus, label = compute_window(mode, now, args.days, args.weeks, args.months)
+    if args.lang == "zh":
+        label = {"Today": "今天", "This week": "本周", "This month": "本月"}.get(label, label)
     all_sources = sorted({record["source"] for record in recs}) or sorted({record["source"] for record in records})
-    report_term.print_report(mode, rows, focus, label)
+    report_term.print_report(mode, rows, focus, label, lang=args.lang)
 
     if args.html:
-        path = report_html.write_report(mode, rows, focus, label, all_sources)
+        path = report_html.write_report(mode, rows, focus, label, all_sources, lang=args.lang)
         print(f"HTML report: {path}")
         if args.open:
             _open_generated(path)
