@@ -944,10 +944,18 @@ class DashboardRuntimeTests(unittest.TestCase):
                       const overflow=[...document.querySelectorAll('body *')].map(el=>{
                         const rect=el.getBoundingClientRect();
                         const style=getComputedStyle(el);
+                        const parent=el.parentElement;
                         return {element:el.tagName.toLowerCase()+(el.id?'#'+el.id:'.'+String(el.className).trim().split(/\s+/)[0]),
+                          text:(el.innerText||'').slice(0,35),parent:parent?.id||String(parent?.className).slice(0,45),
                           right:Math.round(rect.right),left:Math.round(rect.left),
                           position:style.position,overflow:style.overflowX,scrollWidth:el.scrollWidth};
-                      }).filter(item=>item.right>=viewportWidth+20&&item.right<=viewportWidth+65).slice(0,20);
+                      }).filter(item=>item.right>=viewportWidth+20&&item.right<=viewportWidth+65).slice(0,12);
+                      const containers=[...document.querySelectorAll('body, .wrap, .card, .table-scroll, .table-panel, .section-dock, .section-links, .rhythm, .flow-shell')].map(el=>{
+                        const rect=el.getBoundingClientRect();
+                        return {element:el.tagName.toLowerCase()+(el.id?'#'+el.id:'.'+String(el.className).trim().split(/\s+/)[0]),
+                          right:Math.round(rect.right),width:Math.round(rect.width),
+                          scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,overflow:getComputedStyle(el).overflowX};
+                      }).filter(item=>item.right>viewportWidth+1||item.scrollWidth>item.clientWidth+1).slice(0,20);
                       const fixed=[...document.querySelectorAll('body *')].filter(el=>getComputedStyle(el).position==='fixed').map(el=>{
                         const rect=el.getBoundingClientRect();
                         return {element:el.id||el.className,right:Math.round(rect.right),width:Math.round(rect.width)};
@@ -956,6 +964,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                         pageWidth:document.documentElement.scrollWidth,
                         viewportWidth,
                         overflow,
+                        containers,
                         fixed,
                         mobile:matchMedia('(max-width:640px)').matches,
                         minControlHeight:Math.min(...controls.map(el=>el.getBoundingClientRect().height)),
