@@ -163,6 +163,14 @@ const I18N_FEATURE_EXACT = Object.freeze({
   'B 无足够连续完整周期；重新选择 B 起点':'Not enough consecutive complete periods for B; choose another start','拖刷两端必须是连续完整周期':'Both ends of a drag selection must span consecutive complete periods',
   '仅比较同粒度、连续且完整的等长周期。':'Only equal-length windows of consecutive complete periods at the same granularity can be compared.',
   '模型构成':'Model mix','可用证据':'Recorded evidence','当前筛选无模型用量':'No model usage under current filters','暂无小时明细':'No hourly detail','暂无项目明细':'No project detail',
+  '变化证据 · 已记录项目聚合':'Change evidence · recorded project aggregates','A 时段项目证据':'A window project evidence','B 时段项目证据':'B window project evidence',
+  '你的缓存替你记住了':'Your cache remembered it for you',
+  '没有项目记录；无法按项目解释该模型变化。':'No project records; this model change cannot be broken down by project.',
+  '该模型在此窗口没有已记录项目。':'No recorded projects for this model in this window.',
+  '部分日期仅保留 Top 项目，项目合计可能低于模型总量。':'Some dates retain only top projects; project totals may be lower than model totals.',
+  '部分日期缺少项目明细，项目合计可能低于模型总量。':'Some dates lack project details; project totals may be lower than model totals.',
+  '项目是已记录的平行聚合，不能证明项目导致了模型变化。':'Projects are parallel recorded aggregates; they do not prove what caused the model change.',
+  '项目透镜展示当前视图范围与全局已选模型，不自动复现 A/B 两窗或只看此模型。':'Project lens shows current view scope and globally selected models; it does not recreate both A/B windows or solo this model.',
   '无完整相邻前期可比':'No complete adjacent previous period','仅展示已记录的聚合，不代表异常或故障；项目列表可能只包含保留的部分项目。':'Recorded aggregates only, not an anomaly or fault diagnosis; the project list may contain only retained projects.',
   '报告范围最近记录后端：':'Latest recorded backend in report range: ','其他模型（归入 Other）':'Other model (folded into Other)',
   '区间透镜':'Interval lens','点柱、拖刷，或聚焦柱按 Enter / Space；触屏点柱依次选择 A 起/终、B 起。Esc 清除。无足够完整周期时无法比较。':'Click or drag bars, or focus a bar and press Enter / Space; on touch, tap A start/end then B start. Esc clears the selection. Incomplete periods cannot be compared.',
@@ -171,6 +179,8 @@ const I18N_FEATURE_EXACT = Object.freeze({
   '赛季与跨快照时间胶囊只由本地聚合数据生成；这是个人历史，不是全球排名。':'Seasons and cross-snapshot time capsules use local aggregates only; this is personal history, not a global leaderboard.',
 });
 const I18N_FEATURE_PATTERNS = Object.freeze([
+  [/^变化证据 · 已记录项目聚合：(.+)$/,(_,model)=>`Change evidence · recorded project aggregates: ${model}`],
+  [/^其余项目 (\d+) 个$/,(_,count)=>`${count} other projects`],
   [/^A 起点 (.+) · 选择 A 终点$/,(_,period)=>`A starts ${period} · Select A end`],
   [/^A 已选 (.+) → (.+) · 选择 B 起点（自动等长）$/,(_,start,end)=>`A selected ${start} → ${end} · Select B start (same length)`],
   [/^A (.+) → (.+) · B (.+) → (.+)$/,(_,a,b,c,d)=>`A ${a} → ${b} · B ${c} → ${d}`],
@@ -191,7 +201,7 @@ const I18N_FEATURE_REPLACEMENTS = Object.freeze([
   ['模型图例，点击筛选','Model legend, click to filter'],['，点击排序',', click to sort'],['，点击展开详情',', click to expand details'],
   ['状态 ','Status '],['降温','Cooling'],['；变化 ','; change '],['变化 ','Change '],[' · 全景',' · Overview'],[' · 全部模型',' · All models'],
   [' · 本页装载了',' · This page holds'],['· 本页装载了','· This page holds'],['时区 ','Time zone '],['报告范围最近记录后端：','Latest recorded backend in report range: '],
-  ['按模型拆解的 Token 变化','Token change by model'],['调用','Calls'],['总 token','Total tokens'],['缓存占比','Cache share'],['输出占比','Output share'],['日 ·','Day ·'],
+  ['你的缓存替你记住了','Your cache remembered it for you'],['按模型拆解的 Token 变化','Token change by model'],[' · 聚焦该期 →',' · Focus this period →'],[' · 查看项目证据',' · View project evidence'],[' Token 模型总量',' Tokens model total'],['打开项目透镜 →','Open project lens →'],['调用','Calls'],['总 token','Total tokens'],['缓存占比','Cache share'],['输出占比','Output share'],['日 ·','Day ·'],
 ]);
 const i18nTextSource = new WeakMap();
 const i18nAttributeSource = new WeakMap();
@@ -281,6 +291,7 @@ function syncLanguageControl(){
   button.title=english?'Switch to Chinese':'切换到英文';
 }
 function applyLanguage(language,persist=true){
+  const previousLanguage=dashboardLanguage;
   dashboardLanguage=language==='zh'?'zh':'en';
   if(i18nObserver)i18nObserver.disconnect();
   document.documentElement.lang=dashboardLanguage==='zh'?'zh-CN':'en';
@@ -290,6 +301,11 @@ function applyLanguage(language,persist=true){
   localizeTree();
   i18nRestoring=false;
   syncLanguageControl();
+  if(previousLanguage!==dashboardLanguage&&typeof state!=='undefined'){
+    renderDonut();renderAttribution();
+    localizeTree(document.getElementById('donut-legend'));
+    localizeTree(document.getElementById('section-delta'));
+  }
   if(persist)try{localStorage.setItem('tk-lang',dashboardLanguage);}catch(e){}
   observeLanguageChanges();
 }
@@ -302,10 +318,12 @@ function toggleLanguage(){
   i18nRestoring=false;
   render();
   applyLanguage(next);
+  renderDonut();renderAttribution();
 }
 
 const state = { gran: 'month', models: new Set(DATA.models), focusPeriod:null, compare:false };
 const intervalState = {active:false,start:null,end:null,bStart:null,dragStart:-1,dragEnd:-1};
+const deltaEvidenceState = {model:null,scope:null};
 const peakState = {period:null,opener:null};
 const trailState = {open:false,step:'scope',reached:0,model:null,opener:null,destination:null,branch:null};
 const signalState = {peek:null,peekSource:null,pinnedSignal:null,exactHeld:false,exactPinned:false,compareHeld:false,opener:null};
@@ -340,6 +358,20 @@ const peakHourOf=hours=>hours&&hours.length?hours.indexOf(Math.max(...hours)):-1
 const nightTokens=hours=>{const h=hours||[];return sumList(h.slice(0,6))+sumList(h.slice(22));};
 const pretty = m => DATA.pretty[m] || m;
 const pct = (a,b) => b? ((a/b*100).toFixed(1)+'%') : '0%';
+const otherModelTotals=days=>{
+  const totals=Object.create(null),selected=new Set(days);
+  (DATA.other_models||[]).forEach(row=>{if(!selected.has(row.day))return;Object.entries(row.models||{}).forEach(([name,value])=>totals[name]=(totals[name]||0)+value);});
+  return totals;
+};
+function otherModelDetails(){
+  if(!DATA.models.includes('other'))return '';
+  const otherRows=DATA[state.gran].filter(row=>!state.focusPeriod||row.period===state.focusPeriod);
+  const days=otherRows.flatMap(row=>periodDays(row.period,state.gran));
+  const named=sortedModels(otherModelTotals(days),true),other=sumWhere(otherRows,row=>row.models?.other||0);
+  const residual=other-sumWhere(named,entry=>entry[1]);
+  if(!named.length)return '<p class=other-model-note>'+(dashboardLanguage==='en'?'Specific names are unavailable for this Other bucket.':'这个 Other 分组暂无可展示的具体模型名。')+'</p>';
+  return '<details class=other-model-details><summary>'+(dashboardLanguage==='en'?'Show models within Other':'查看 Other 中的具体模型')+' · '+named.length+'</summary><p class=other-model-note>'+(dashboardLanguage==='en'?'Names share the Other chart color; totals follow the current time range, regardless of model selection.':'这些名称共用 Other 图表颜色；用量按当前时段统计，不受模型筛选影响。')+'</p><ul>'+named.map(([name,value])=>'<li><span>'+esc(name)+'</span><b>'+fmt(value)+' Token</b></li>').join('')+(residual>0?'<li><span>'+(dashboardLanguage==='en'?'Unidentified remainder':'未识别的剩余量')+'</span><b>'+fmt(residual)+' Token</b></li>':'')+'</ul></details>';
+}
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const CALIBER_NOTES=Object.freeze({
   block:'Six hourly buckets ending at generation time. Not an API billing window.',
@@ -415,7 +447,10 @@ function animateNum(el, to, dur, formatter=fmt){
 }
 
 function selectedDayModelTotals(day){
-  const totals={};DATA.models.forEach(model=>totals[model]=0);const detail=DATA.day_details?.[day];
+  const totals={};DATA.models.forEach(model=>totals[model]=0);
+  const daily=DATA.day?.find(row=>row.period===day)?.models;
+  if(daily){DATA.models.forEach(model=>{if(state.models.has(model))totals[model]=daily[model]||0;});return totals;}
+  const detail=DATA.day_details?.[day];
   Object.entries(detail?.hourly_models||{}).forEach(([model,hours])=>{if(state.models.has(model))totals[model]=sumList(hours);});return totals;
 }
 function selectedDayTotal(day){return sumList(Object.values(selectedDayModelTotals(day)));}
@@ -498,14 +533,76 @@ function renderIntervalUI(){
   document.getElementById('delta-title').textContent=intervalState.active?'两个时段，变化从哪里来':'这一期，变化从哪里来';
 }
 
+function attributionScope(pair){
+  if(pair)return {a:pair.a,b:pair.b,aDays:pair.a.flatMap(row=>periodDays(row.period,state.gran)),bDays:pair.b.flatMap(row=>periodDays(row.period,state.gran))};
+  const window=deltaWindowInfo(selectedRows());
+  if(!window||window.prevTotal<=0)return null;
+  return {a:[window.previous],b:[window.current],aDays:window.previousDays||periodDays(window.previous.period,state.gran),bDays:window.currentDays||periodDays(window.current.period,state.gran)};
+}
+function deltaEvidenceWindow(model,days,modelTotal){
+  const items=trailEntityEvidence('project',model,{days}),legacy=days.some(day=>DATA.day_details?.[day]?.top_cwds&&!DATA.day_details[day].cwds);
+  const missing=days.some(day=>{const detail=DATA.day_details?.[day];return !detail||!(detail.cwds||detail.top_cwds);});
+  return {items,total:modelTotal,retained:sumBy(items,'total'),legacy,missing};
+}
+function deltaEvidenceHTML(model,scope,part){
+  const label=esc(pretty(model));
+  const windowHTML=(title,rows,days,modelTotal)=>{
+    const evidence=deltaEvidenceWindow(model,days,modelTotal),first=days[0],last=days.at(-1),periods=rows.map(row=>row.period);
+    const shown=evidence.items.slice(0,5),rest=evidence.items.length-shown.length;
+    const projects=shown.map(item=>'<li><button type=button class=delta-project data-delta-project="'+esc(item.id)+'"><span>'+esc(item.label)+'</span><b>'+fmt(item.total)+' Token</b><small>打开项目透镜 →</small></button></li>').join('');
+    const notes=[];
+    if(evidence.legacy)notes.push('部分日期仅保留 Top 项目，项目合计可能低于模型总量。');
+    if(evidence.missing||(!evidence.legacy&&evidence.retained<evidence.total))notes.push('部分日期缺少项目明细，项目合计可能低于模型总量。');
+    const empty=evidence.total>0?'没有项目记录；无法按项目解释该模型变化。':'该模型在此窗口没有已记录项目。';
+    return '<section class=delta-evidence-window><h4>'+title+'</h4><p class=delta-evidence-range>'+esc(first===last?first:first+' → '+last)+' · '+fmt(evidence.total)+' Token 模型总量</p>'+
+      '<div class=delta-periods>'+periods.map(period=>'<button type=button class=ghostbtn data-delta-period="'+esc(period)+'">'+esc(period)+' · 聚焦该期 →</button>').join('')+'</div>'+
+      (projects?'<ul class=delta-projects>'+projects+'</ul>'+(rest?'<p class=delta-evidence-note>其余项目 '+rest+' 个</p>':''):'<p class=delta-evidence-note>'+empty+'</p>')+
+      notes.map(note=>'<p class=delta-evidence-note>'+note+'</p>').join('')+'</section>';
+  };
+  return '<h3>变化证据 · 已记录项目聚合：'+label+'</h3><div class=delta-evidence-grid>'+windowHTML('A 时段项目证据',scope.a,scope.aDays,part.prev)+windowHTML('B 时段项目证据',scope.b,scope.bDays,part.curr)+'</div><p class=delta-evidence-note>项目是已记录的平行聚合，不能证明项目导致了模型变化。</p><p class=delta-evidence-note>项目透镜展示当前视图范围与全局已选模型，不自动复现 A/B 两窗或只看此模型。</p>';
+}
+function renderDeltaEvidence(scope,shown){
+  const panel=document.getElementById('delta-evidence'),model=deltaEvidenceState.model;
+  if(!scope||!shown.some(part=>part.model!=='other'&&part.model===model))deltaEvidenceState.model=null;
+  if(!deltaEvidenceState.model){panel.hidden=true;panel.innerHTML='';return;}
+  panel.hidden=false;panel.innerHTML=deltaEvidenceHTML(model,scope,shown.find(part=>part.model===model));
+  document.querySelectorAll('#delta-list button[data-delta-model]').forEach(button=>button.setAttribute('aria-expanded',String(button.dataset.deltaModel===model)));
+}
+function closeDeltaEvidence(restoreFocus=false){
+  const model=deltaEvidenceState.model;deltaEvidenceState.model=null;deltaEvidenceState.scope=null;
+  const panel=document.getElementById('delta-evidence');panel.hidden=true;panel.innerHTML='';
+  const button=[...document.querySelectorAll('#delta-list button[data-delta-model]')].find(node=>node.dataset.deltaModel===model);
+  if(button){button.setAttribute('aria-expanded','false');if(restoreFocus)button.focus();}
+}
+function toggleDeltaEvidence(model){
+  if(deltaEvidenceState.model===model){closeDeltaEvidence(true);return;}
+  deltaEvidenceState.model=model;renderAttribution();
+  [...document.querySelectorAll('#delta-list button[data-delta-model]')].find(node=>node.dataset.deltaModel===model)?.focus({preventScroll:true});
+}
+document.getElementById('section-delta').addEventListener('click',event=>{
+  const model=event.target.closest('button[data-delta-model]');if(model){toggleDeltaEvidence(model.dataset.deltaModel);return;}
+  const period=event.target.closest('button[data-delta-period]');if(period){if(state.focusPeriod!==period.dataset.deltaPeriod)toggleFocus(period.dataset.deltaPeriod,true);scrollToSection('section-trend');return;}
+  const project=event.target.closest('button[data-delta-project]');if(project){selectedProject=project.dataset.deltaProject;scrollToSection('section-project');document.getElementById('project-select')?.focus({preventScroll:true});}
+});
+document.getElementById('section-delta').addEventListener('keydown',event=>{if(event.key==='Escape'&&deltaEvidenceState.model&&document.activeElement.closest('#section-delta')){event.preventDefault();closeDeltaEvidence(true);}});
+
 function renderAttribution(){
   const pair=intervalResult(),result=intervalState.active?(pair?{label:'等长时段',currTotal:pair.bTotal,prevTotal:pair.aTotal,parts:pair.parts}:null):attributionFor(selectedRows()),list=document.getElementById('delta-list'),story=document.getElementById('delta-story'),total=document.getElementById('delta-total'),windowLabel=document.getElementById('delta-window');if(!list)return;
   renderIntervalUI();
-  if(!result){windowLabel.textContent=intervalState.active?intervalPrompt():'需要连续两期且上期 Token 大于 0';total.textContent='暂无可比窗口';story.textContent=intervalState.active?'仅比较同粒度、连续且完整的等长周期。':'当前范围无法形成可靠归因；切换到有连续数据的周或月再看。';list.innerHTML='<div class=delta-empty role=listitem>没有足够的同期数据可拆解。</div>';return;}
-  const net=result.currTotal-result.prevTotal,changed=result.parts.filter(part=>part.delta!==0),top=changed.slice(0,5),rest=changed.slice(5),shown=rest.length?[...top,{model:'其余',curr:sumBy(rest,'curr'),prev:sumBy(rest,'prev'),delta:sumBy(rest,'delta'),other:true}]:top,max=Math.max(1,...shown.map(part=>Math.abs(part.delta))),leader=changed[0];
+  if(!result){closeDeltaEvidence();windowLabel.textContent=intervalState.active?intervalPrompt():'需要连续两期且上期 Token 大于 0';total.textContent='暂无可比窗口';story.textContent=intervalState.active?'仅比较同粒度、连续且完整的等长周期。':'当前范围无法形成可靠归因；切换到有连续数据的周或月再看。';list.innerHTML='<div class=delta-empty role=listitem>没有足够的同期数据可拆解。</div>';return;}
+  const net=result.currTotal-result.prevTotal,changed=result.parts.filter(part=>part.delta!==0),shown=changed,max=Math.max(1,...shown.map(part=>Math.abs(part.delta))),leader=changed[0],scope=attributionScope(pair),scopeKey=scope?JSON.stringify([state.gran,[...state.models].sort(),scope.aDays,scope.bDays]):null;
+  const otherPart=result.parts.find(part=>part.model==='other'),before=scope?otherModelTotals(scope.aDays):{},after=scope?otherModelTotals(scope.bDays):{};
+  const overflowNames=[...new Set([...Object.keys(before),...Object.keys(after)])].sort((a,b)=>Math.abs((after[b]||0)-(before[b]||0))-Math.abs((after[a]||0)-(before[a]||0))||a.localeCompare(b));
+  const beforeRest=otherPart?otherPart.prev-sumWhere(Object.values(before),value=>value):0,afterRest=otherPart?otherPart.curr-sumWhere(Object.values(after),value=>value):0;
+  if(deltaEvidenceState.scope!==scopeKey){deltaEvidenceState.model=null;deltaEvidenceState.scope=scopeKey;}
   windowLabel.textContent=pair?'A '+pair.a[0].period+' → '+pair.a.at(-1).period+' ('+pair.a.length+' 期) · B '+pair.b[0].period+' → '+pair.b.at(-1).period+' ('+pair.b.length+' 期) · '+fmt(result.prevTotal)+' vs '+fmt(result.currTotal):result.label+' · 当前 '+fmt(result.currTotal)+' vs 上期 '+fmt(result.prevTotal);total.innerHTML='<b>'+(net>0?'+':'')+fmt(net)+'</b><span> Token</span>';
   story.textContent=leader?(pretty(leader.model)+' 是最大变化来源，'+(leader.delta>=0?'增加 ':'减少 ')+fmt(Math.abs(leader.delta))+' Token；全部模型合计'+(net>=0?'增加 ':'减少 ')+fmt(Math.abs(net))+'。'):'各模型与'+(pair?'A 时段':'上一比较窗口')+'持平。';
-  list.innerHTML=shown.map(part=>{const pct=Math.abs(part.delta)/max*50,side=part.delta>=0?'pos':'neg',color=part.other?'var(--faint)':modelColor(part.model),name=part.other?'其余 '+rest.length+' 个模型':pretty(part.model);return '<div class="delta-row '+side+'" role=listitem><span class=delta-name><i style="background:'+esc(color)+'"></i><span>'+esc(name)+'</span></span><span class=delta-track><i class=delta-zero></i><b style="width:'+pct.toFixed(1)+'%;--delta-color:'+esc(color)+'"></b></span><span class=delta-value>'+(part.delta>0?'+':'')+fmt(part.delta)+'</span></div>';}).join('')||'<div class=delta-empty role=listitem>各模型与上一比较窗口持平。</div>';
+  const rowHTML=part=>{const width=Math.abs(part.delta)/max*50,side=part.delta>=0?'pos':'neg',color=modelColor(part.model),name=pretty(part.model),content='<span class=delta-name><i style="background:'+esc(color)+'"></i><span title="'+esc(name)+'">'+esc(name)+'</span></span><span class=delta-track><i class=delta-zero></i><b style="width:'+width.toFixed(1)+'%;--delta-color:'+esc(color)+'"></b></span><span class=delta-value>'+(part.delta>0?'+':'')+fmt(part.delta)+'</span>';return part.model==='other'?'<div role=listitem class="delta-row '+side+'">'+content+'</div>':'<div role=listitem><button type=button class="delta-row '+side+'" data-delta-model="'+esc(part.model)+'" aria-label="'+esc(name)+' · 查看项目证据" aria-controls=delta-evidence aria-expanded=false>'+content+'</button></div>';};
+  const overflowHTML=otherPart&&overflowNames.length?'<div role=listitem><details class=delta-other-details><summary>'+(dashboardLanguage==='en'?'Models within Other':'Other 内具体模型')+' · '+overflowNames.length+'</summary><p class=delta-evidence-note>'+(dashboardLanguage==='en'?'These totals share the Other chart color. Project totals are only available for the combined bucket; parallel aggregates do not prove causality.':'这些用量共用 Other 图表颜色；项目仅有合并值，并行聚合不能证明因果。')+'</p><div class=delta-other-scroll><table><thead><tr><th>'+(dashboardLanguage==='en'?'Model':'模型')+'</th><th>A · Token</th><th>B · Token</th><th>'+(dashboardLanguage==='en'?'Change':'变化')+'</th></tr></thead><tbody>'+overflowNames.map(name=>'<tr><th scope=row>'+esc(name)+'</th><td>'+fmt(before[name]||0)+'</td><td>'+fmt(after[name]||0)+'</td><td>'+((after[name]||0)>(before[name]||0)?'+':'')+fmt((after[name]||0)-(before[name]||0))+'</td></tr>').join('')+(beforeRest||afterRest?'<tr><th scope=row>'+(dashboardLanguage==='en'?'Unidentified remainder':'未识别的剩余量')+'</th><td>'+fmt(beforeRest)+'</td><td>'+fmt(afterRest)+'</td><td>'+(afterRest>beforeRest?'+':'')+fmt(afterRest-beforeRest)+'</td></tr>':'')+'</tbody></table></div></details></div>':'';
+  const listOpen=!!list.querySelector('.delta-other-details[open]');
+  list.innerHTML=shown.map(part=>rowHTML(part)).join('')+overflowHTML||'<div class=delta-empty role=listitem>各模型与上一比较窗口持平。</div>';
+  if(listOpen)list.querySelector('.delta-other-details')?.setAttribute('open','');
+  renderDeltaEvidence(scope,shown);
 }
 
 function forecastForLatestMonth(rows){
@@ -714,10 +811,12 @@ function renderDonut(){
   const box=document.getElementById('donut');
   /* 图例由全模型驱动：全不选时仍能从这里勾回（切片 pin=true 委托不动，图例按钮 pin=false 避免双触发） */
   const legendValue=Object.fromEntries(entries);
-  document.getElementById('donut-legend').innerHTML=DATA.models.map(m=>{
+  const legend=document.getElementById('donut-legend'),detailsOpen=!!legend.querySelector('.other-model-details[open]');
+  legend.innerHTML=DATA.models.map(m=>{
     const on=state.models.has(m),value=legendValue[m]||0;
     return '<li class="model-mark" data-model="'+esc(m)+'"><button type="button" class="dl-item'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),value,'composition',false)+'><span class="ldot" style="background:'+modelColor(m)+'"></span><span>'+esc(pretty(m))+'</span><em>'+pct(value,total)+'</em></button></li>';
-  }).join('');
+  }).join('')+(DATA.models.includes('other')?'<li class=other-model-legend>'+otherModelDetails()+'</li>':'');
+  if(detailsOpen)legend.querySelector('.other-model-details')?.setAttribute('open','');
   if(total===0){ box.innerHTML=contextEmptyHTML('rhythm'); return; }
   const size=220, cx=size/2, cy=size/2, r=size/2-8;
   let angle=-Math.PI/2; const p=['<svg viewBox="0 0 '+size+' '+size+'" class="pie">'];
@@ -1128,7 +1227,7 @@ function viewParams(){
   if(intervalState.active){p.set('interval','1');if(intervalState.start)p.set('a',intervalState.start);if(intervalState.end)p.set('aEnd',intervalState.end);if(intervalState.bStart)p.set('b',intervalState.bStart);}
   if(peakState.period)p.set('peak',peakState.period);
   if(auxView==='achievements')p.set('view','achievements');
-  const theme=currentTheme();if(theme!=='auto')p.set('t',theme);
+  const theme=currentTheme();if(theme!=='auto'||new URLSearchParams(location.search).get('t')==='auto')p.set('t',theme);
   return p;
 }
 function viewURL(){const u=new URL(location.href);u.search=viewParams().toString();u.hash='';return u.toString();}
@@ -1142,7 +1241,7 @@ function restoreViewFromURL(){
   resetInterval(p.get('interval')==='1');if(intervalState.active){const rows=completeIntervalRows(),allowed=new Set(rows.map(row=>row.period)),a=p.get('a'),end=p.get('aEnd'),b=p.get('b');if(allowed.has(a))intervalState.start=a;if(intervalState.start&&allowed.has(end)&&end>=intervalState.start&&consecutivePeriods(rows.slice(rows.findIndex(row=>row.period===a),rows.findIndex(row=>row.period===end)+1)))intervalState.end=end;if(intervalState.end&&allowed.has(b)){intervalState.bStart=b;if(!intervalResult())intervalState.bStart=null;}}
   const peak=p.get('peak');peakState.period=!intervalState.active&&completeIntervalRows().some(row=>row.period===peak)?peak:null;peakState.opener=null;
   achievementHistoryOwned=auxView==='achievements'&&history.state?.tokensAuxView==='achievements';
-  const theme=(p.get('t')||'').toLowerCase();if(['auto','light','dark'].includes(theme))applyTheme(theme);
+  const theme=(p.get('t')||'').toLowerCase();if(['auto','light','dark'].includes(theme))applyTheme(theme,false);
 }
 function viewDescription(){const gran={day:'按日',week:'按周',month:'按月'}[state.gran],modelCount=state.models.size,focus=state.focusPeriod?fmtLabel(state.focusPeriod,state.gran):'全景',compare=state.compare?'已固定':signalState.compareHeld?'临时预览':'关闭';return {gran,modelCount,focus,compare};}
 function syncGranControls(){document.querySelectorAll('#tabs button').forEach(x=>{const on=x.dataset.gran===state.gran;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});}
@@ -1200,7 +1299,7 @@ function renderLazy(name,force=false){
     lazyState[name]=Object.assign({},lazyState[name],{dirty:true,rendered:false,error:true,status:'error'});card.setAttribute('aria-busy','false');showLazyError(card,name);console.error('[tokens] lazy renderer failed:',name);return false;
   }
 }
-function refreshThemeVisuals(){if(!themeVisualsReady||!document.getElementById('bar'))return;renderBar();renderTrendLegend();renderDonut();renderFilters();renderTop();renderDataTrail();['project','flow','almanac'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible||lazyState[name].rendered)renderLazy(name,true);});applySignalLens();}
+function refreshThemeVisuals(){if(!themeVisualsReady||!document.getElementById('bar'))return;renderBar();renderPeakProfile();renderAttribution();renderTable();renderTrendLegend();renderDonut();renderFilters();renderTop();renderDataTrail();['project','flow','almanac'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible||lazyState[name].rendered)renderLazy(name,true);});applySignalLens();}
 function markLazyDirty(){['project','reuse','flow','modes'].forEach(name=>{lazyState[name]=Object.assign({},lazyState[name],{dirty:true});if(lazyState[name].visible)renderLazy(name,true);});}
 function markStaticLazyDirty(){['almanac','badges'].forEach(name=>{if(!lazyState[name]?.rendered)lazyState[name]=Object.assign({},lazyState[name],{dirty:true});});}
 function initLazyRendering(){
@@ -1234,13 +1333,13 @@ function renderSnapshotMeta(){
 renderSnapshotMeta();
 
 /* 主题：自动 / 亮 / 暗 三态，localStorage 记忆，覆盖系统 */
-function applyTheme(t){
+function applyTheme(t,persist=true){
   if(t==='light'||t==='dark') document.documentElement.setAttribute('data-theme',t);
   else document.documentElement.removeAttribute('data-theme');
   const c=THEMES.find(x=>x[0]===t)||THEMES[0];
   const b=document.getElementById('theme-btn');
   b.textContent=c[1]; b.title='主题：'+c[2]+'（点击切换）';
-  try{localStorage.setItem('tk-theme',t);}catch(e){}
+  if(persist)try{localStorage.setItem('tk-theme',t);}catch(e){}
   refreshThemeVisuals();
   if(typeof restoringView!=='undefined')syncViewURL();
 }
@@ -1248,7 +1347,7 @@ const refreshAutoTheme=()=>{if(currentTheme()==='auto')refreshThemeVisuals();};
 if(themeMedia.addEventListener)themeMedia.addEventListener('change',refreshAutoTheme);
 else if(themeMedia.addListener)themeMedia.addListener(refreshAutoTheme);
 document.getElementById('theme-btn').addEventListener('click',()=>{
-  const order=['auto','light','dark'], cur=localStorage.getItem('tk-theme')||'auto';
+  const order=['auto','light','dark'], cur=currentTheme();
   applyTheme(order[(order.indexOf(cur)+1)%order.length]);
 });
 function defaultMotion(){if(window.matchMedia('(prefers-reduced-motion: reduce)').matches)return 'off';if(window.matchMedia('(pointer: coarse)').matches||innerWidth<760)return 'low';const mem=navigator.deviceMemory||8,cores=navigator.hardwareConcurrency||8;return mem<=4||cores<=4?'low':'full';}
@@ -1257,10 +1356,11 @@ document.getElementById('motion-select').addEventListener('change',e=>applyMotio
 let motionChoice='auto';try{motionChoice=localStorage.getItem('tk-motion')||'auto';}catch(e){}applyMotion(motionChoice,false);
 const motionMedia=window.matchMedia('(prefers-reduced-motion: reduce)');if(motionMedia.addEventListener)motionMedia.addEventListener('change',()=>applyMotion(document.getElementById('motion-select').value,false));
 let motionResizeT=0;addEventListener('resize',()=>{if(document.getElementById('motion-select').value!=='auto')return;clearTimeout(motionResizeT);motionResizeT=setTimeout(()=>applyMotion('auto',false),120);},{passive:true});
-// 初始主题：URL ?t=light|dark 优先（可分享/截图），否则 localStorage，否则跟随系统
+// 初始主题：URL ?t=auto|light|dark 优先，否则 localStorage，否则跟随系统
 (function(){
   const q=(new URLSearchParams(location.search).get('t')||'').toLowerCase();
-  applyTheme(['light','dark'].includes(q)?q:(localStorage.getItem('tk-theme')||'auto'));
+  let saved='auto';try{saved=localStorage.getItem('tk-theme')||'auto';}catch(e){}
+  applyTheme(['auto','light','dark'].includes(q)?q:saved,false);
 })();
 
 function markdownCell(value){return String(value).replace(/\\/g,'\\\\').replace(/\|/g,'\\|').replace(/[\r\n]+/g,' ');}
@@ -1305,7 +1405,7 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='1') setGran('day');
   else if(e.key==='2') setGran('week');
   else if(e.key==='3') setGran('month');
-  else if(e.key==='t'||e.key==='T'){ const o=['auto','light','dark'],c=localStorage.getItem('tk-theme')||'auto'; applyTheme(o[(o.indexOf(c)+1)%3]); }
+  else if(e.key==='t'||e.key==='T'){ const o=['auto','light','dark'],c=currentTheme(); applyTheme(o[(o.indexOf(c)+1)%3]); }
   else if(e.key==='e'||e.key==='E') exportCSV();
   else if(e.key==='?') openHelp();
 });
@@ -1733,6 +1833,7 @@ document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); document.getElementById('scrim').classList.contains('open')?closePalette():openPalette(); return; }
   if(e.key==='Escape'){const modal=activeModal();if(modal){e.preventDefault();if(modal.id==='replay-modal')closeReplay();else if(modal.id==='help-modal')closeHelp();else if(modal.id==='share-modal')closeShare();else if(modal.id==='almanac-modal')closeAlmanacCapsule();else if(modal.id==='ach-modal')closeAchievements();return;}}
   const palette=document.getElementById('scrim');if(palette.classList.contains('open')){if(e.key==='Tab'){e.preventDefault();document.getElementById('palette-q').focus();}else if(e.key==='Escape'){e.preventDefault();closePalette();}else if(e.key==='ArrowDown'){e.preventDefault();pal.i=(pal.i+1)%Math.max(1,pal.items.length);syncPal();}else if(e.key==='ArrowUp'){e.preventDefault();pal.i=(pal.i-1+Math.max(1,pal.items.length))%Math.max(1,pal.items.length);syncPal();}else if(e.key==='Enter'){e.preventDefault();runPalette(pal.i);}return;}
+  if(e.key==='Escape'&&e.defaultPrevented)return;
   if(e.key==='Escape'&&intervalState.active){e.preventDefault();clearScrub();resetInterval();renderBar();renderAttribution();renderTable();renderViewCapsule();syncViewURL();document.getElementById('interval-btn').focus({preventScroll:true});return;}
   if(e.key==='Escape'&&peakState.period){e.preventDefault();closePeakProfile(true);return;}
   if(e.key==='Escape'&&scrubState.period){e.preventDefault();clearScrub('预览已清除',true);return;}
@@ -2251,15 +2352,6 @@ document.getElementById('replay-play').addEventListener('click',function(){
   if(rp.series.length<2) return; let index=rp.i;if(index>=rp.series.length-1)index=-1;this.textContent='⏸ 暂停';
   rp.timer=setInterval(()=>{ index++; if(index>=rp.series.length-1){index=rp.series.length-1;clearInterval(rp.timer);rp.timer=null;this.textContent='▶ 播放';}drawECG(index); },120);
 });
-
-/* ---- 3D 鼠标倾斜卡：仅处理指针所在卡片 ---- */
-(function(){
-  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.matchMedia('(pointer: coarse)').matches)return;
-  let active=null,raf=0,mx=0,my=0;
-  document.addEventListener('pointermove',e=>{if(document.documentElement.dataset.motion!=='full')return;mx=e.clientX;my=e.clientY;active=e.target.closest('.card');if(!raf)raf=requestAnimationFrame(()=>{raf=0;if(!active)return;const r=active.getBoundingClientRect(),dx=(mx-(r.left+r.width/2))/(r.width/2),dy=(my-(r.top+r.height/2))/(r.height/2);active.style.transform='rotateX('+Math.max(-1.6,Math.min(1.6,-dy*1.6)).toFixed(2)+'deg) rotateY('+Math.max(-1.6,Math.min(1.6,dx*1.6)).toFixed(2)+'deg)';});},{passive:true});
-  document.addEventListener('pointerout',e=>{const card=e.target.closest('.card');if(card&&!card.contains(e.relatedTarget)){card.style.transform='';if(active===card)active=null;}},{passive:true});
-  addEventListener('tk-motion-change',e=>{if(e.detail.effective!=='full'){if(active)active.style.transform='';document.querySelectorAll('.card[style*="transform"]').forEach(card=>card.style.transform='');active=null;}});
-})();
 
 // 双击页面空白：模型色数据尘埃
 (function(){

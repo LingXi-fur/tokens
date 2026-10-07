@@ -5,7 +5,7 @@
 __HEAD_META__
 <style>__STYLE__</style>
 <script>/* Apply persisted display preferences before rendering. */
-try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}
+try{var q=(new URLSearchParams(location.search).get('t')||'').toLowerCase();var t=['light','dark','auto'].includes(q)?q:localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}
 try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.lang='zh-CN';else if(l==='en')document.documentElement.lang='en';}catch(e){}
 </script></head><body>
 <div class=wrap>
@@ -140,6 +140,7 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
  <div class=row-between><div><div class=delta-k>CHANGE ATTRIBUTION · 变化归因</div><h2 style=margin:0 id=delta-title>这一期，变化从哪里来</h2><p class=sub id=delta-window style="margin:3px 0 0;color:var(--faint)">与趋势卡共用比较窗口</p></div><div class=delta-total id=delta-total aria-live=polite aria-atomic=true></div></div>
  <p class=delta-story id=delta-story></p>
  <div class=delta-list id=delta-list role=list aria-label="按模型拆解的 Token 变化"></div>
+ <div class=delta-evidence id=delta-evidence hidden></div>
 </section>
 
 <section class=card data-module=provenance id=section-provenance>

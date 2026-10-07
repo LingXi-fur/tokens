@@ -37,6 +37,40 @@ class DashboardCrossBrowserTests(unittest.TestCase):
     test_faint_contrast_meets_aa = (
         runtime.DashboardRuntimeTests.test_faint_color_contrast_meets_aa_in_both_themes
     )
+    test_theme_url_first_frame = (
+        runtime.DashboardRuntimeTests.test_url_theme_first_frame_and_saved_preference
+    )
+    test_other_model_names = (
+        runtime.DashboardRuntimeTests.test_other_model_names_match_windows_and_escape_html
+    )
+    test_other_zero_net_change = (
+        runtime.DashboardRuntimeTests.test_other_zero_net_change_keeps_model_churn_visible
+    )
+    test_other_evidence_guard = (
+        runtime.DashboardRuntimeTests.test_other_change_has_no_misleading_project_evidence_button
+    )
+    test_mouse_drag_interval = (
+        runtime.DashboardRuntimeTests.test_mouse_drag_selects_a_then_click_selects_b
+    )
+
+    interval_url = runtime.DashboardRuntimeTests.interval_url
+    interval_snapshot = runtime.DashboardRuntimeTests.interval_snapshot
+    click_bar = runtime.DashboardRuntimeTests.click_bar
+    test_delta_evidence_exact_windows = (
+        runtime.DashboardRuntimeTests.test_delta_evidence_exact_windows_keyboard_navigation_and_privacy
+    )
+    test_delta_evidence_english_and_escape = (
+        runtime.DashboardRuntimeTests.test_delta_evidence_partial_missing_english_escape_and_project_lens
+    )
+    test_delta_evidence_mobile_geometry = (
+        runtime.DashboardRuntimeTests.test_delta_evidence_mobile_geometry
+    )
+    test_delta_evidence_project_navigation = (
+        runtime.DashboardRuntimeTests.test_delta_evidence_project_navigation_preserves_global_filters
+    )
+    test_delta_evidence_open_period = (
+        runtime.DashboardRuntimeTests.test_delta_evidence_uses_open_period_elapsed_days
+    )
 
     def test_row_keyboard_flow(self):
         context, page, page_errors, console_errors = self.new_page()

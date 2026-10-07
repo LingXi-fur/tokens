@@ -179,7 +179,48 @@ class DashboardRuntimeTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        cls._overflow_path = Path(cls._tmp.name) / "synthetic-dashboard-other.html"
+        overflow_records = [
+            interval_record("2026-01-01", f"model-{index}", 10, f"synthetic-base-{index}")
+            for index in range(7)
+        ] + [
+            interval_record("2026-02-05", "model-6", 1, "synthetic-keep"),
+            interval_record("2026-01-06", "other", 5, "synthetic-raw-other"),
+            interval_record("2026-01-06", "older-<img src=x onerror=window.__otherXss=1>", 40, "synthetic-overflow-a"),
+            interval_record("2026-01-07", "older-<img src=x onerror=window.__otherXss=1>", 20, "synthetic-overflow-b"),
+            interval_record("2026-02-04", "older-<img src=x onerror=window.__otherXss=1>", 10, "synthetic-overflow-c"),
+            interval_record("2026-02-04", "other", 5, "synthetic-raw-other-b"),
+        ]
+        with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
+            overflow_payload = report_dashboard.build_payload(
+                overflow_records, since="2026-01-01", until="2026-02-28",
+                sources=["claude"], generated_at=datetime(2026, 3, 15, 12, 0),
+            )
+        cls._overflow_path.write_text(
+            report_dashboard.render_dashboard(dashboard_wire.encode_payload(overflow_payload)),
+            encoding="utf-8",
+        )
+        untimed_records = overflow_records + [{
+            **interval_record("2026-02-04", "older-<img src=x onerror=window.__otherXss=1>",
+                              50, "synthetic-untimed"),
+            "ts": "invalid-timestamp",
+        }]
+        with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
+            untimed_payload = report_dashboard.build_payload(
+                untimed_records, since="2026-01-01", until="2026-02-28",
+                sources=["claude"], generated_at=datetime(2026, 2, 15, 12, 0),
+            )
+        cls._untimed_overflow_path = Path(cls._tmp.name) / "synthetic-dashboard-untimed-other.html"
+        cls._untimed_overflow_path.write_text(
+            report_dashboard.render_dashboard(dashboard_wire.encode_payload(untimed_payload)),
+            encoding="utf-8",
+        )
         cls._playwright = sync_playwright().start()
+
         try:
             cls._browser = getattr(cls._playwright, cls.BROWSER).launch(headless=True)
         except Exception as exc:
@@ -1185,6 +1226,216 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_other_model_names_match_windows_and_escape_html(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._overflow_path)
+        name = "older-<img src=x onerror=window.__otherXss=1>"
+        try:
+            self.assertEqual(0, page.locator("#donut-legend img, #delta-list img").count())
+            self.assertIsNone(page.evaluate("window.__otherXss"))
+            page.locator("#donut-legend .other-model-details summary").click()
+            self.assertGreaterEqual(
+                page.locator("#donut-legend .other-model-details summary").evaluate(
+                    "el => el.getBoundingClientRect().height"
+                ),
+                44,
+            )
+            self.assertIn(name, page.locator("#donut-legend .other-model-details").inner_text())
+            self.assertIn("70 Token", page.locator("#donut-legend .other-model-details").inner_text())
+            page.evaluate("setGran('month')")
+            details = page.locator("#delta-list .delta-other-details")
+            self.assertEqual(
+                ["listitem"] * page.locator("#delta-list > *").count(),
+                page.locator("#delta-list > *").evaluate_all(
+                    "items => items.map(item => item.getAttribute('role'))"
+                ),
+            )
+            self.assertGreaterEqual(
+                details.locator("summary").evaluate("el => el.getBoundingClientRect().height"),
+                44,
+            )
+            details.locator("summary").click()
+            row = details.locator("tbody tr", has=page.locator("th", has_text=name))
+            self.assertEqual(["60", "10", "-50"], row.locator("td").all_inner_texts())
+            remainder = details.locator("tbody tr", has_text="未识别的剩余量")
+            self.assertEqual(["5", "5", "0"], remainder.locator("td").all_inner_texts())
+            self.assertEqual(0, details.locator("button[data-delta-model]").count())
+            self.assertIsNone(page.evaluate("window.__otherXss"))
+            page.locator("#donut-legend .other-model-details summary").click()
+            self.assertIn(name, page.locator("#donut-legend .other-model-details").text_content())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_other_details_follow_filter_and_degrade_without_names(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._overflow_path)
+        try:
+            page.evaluate("setGran('month')")
+            page.locator('#donut-legend [data-model-toggle="other"]').click()
+            self.assertIn("70 Token", page.locator("#donut-legend .other-model-details").text_content())
+            self.assertEqual(0, page.locator("#delta-list .delta-other-details").count())
+            page.locator('#donut-legend [data-model-toggle="other"]').click()
+            page.evaluate("() => { DATA.other_models = []; renderDonut(); renderAttribution(); }")
+            self.assertIn("暂无可展示的具体模型名", page.locator("#donut-legend").inner_text())
+            self.assertEqual(0, page.locator("#delta-list .delta-other-details").count())
+            page.evaluate("applyLanguage('en', false)")
+            page.evaluate("renderDonut()")
+            self.assertIn("Specific names are unavailable", page.locator("#donut-legend").inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_other_details_mobile_and_english(self):
+        for width in (320, 390):
+            context, page, page_errors, console_errors = self.new_page(
+                path=self._overflow_path, viewport={"width": width, "height": 760}
+            )
+            try:
+                page.evaluate("applyLanguage('en', false)")
+                page.locator("#donut-legend .other-model-details summary").click()
+                page.locator("#delta-list .delta-other-details summary").click()
+                self.assertIn("Models within Other", page.locator("#delta-list").inner_text())
+                self.assertIn("Unidentified remainder", page.locator("#delta-list").inner_text())
+                self.assertEqual(0, page.locator("#delta-list img, #donut-legend img").count())
+                metrics = page.evaluate("""() => ({page:document.documentElement.scrollWidth,
+                    viewport:document.documentElement.clientWidth})""")
+                self.assertLessEqual(metrics["page"], metrics["viewport"] + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
+    def test_card_tilt_removed_and_theme_refreshes_inline_model_colors(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._overflow_path)
+        try:
+            page.evaluate("setGran('month')")
+            page.evaluate("applyMotion('full')")
+            card = page.locator("#section-delta")
+            card.hover(position={"x": 22, "y": 22})
+            page.wait_for_timeout(80)
+            self.assertEqual("", card.evaluate("el => el.style.transform"))
+            page.locator("#delta-list button[data-delta-model]").first.click()
+            self.assertFalse(page.locator("#delta-evidence").is_hidden())
+            before = page.locator("#delta-list .delta-name i").first.evaluate("el => el.style.background")
+            page.evaluate("applyTheme('dark')")
+            after = page.locator("#delta-list .delta-name i").first.evaluate("el => el.style.background")
+            self.assertNotEqual(before, after)
+            self.assertFalse(page.locator("#delta-evidence").is_hidden())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+
+    def test_url_theme_first_frame_and_saved_preference(self):
+        html = self._path.read_text(encoding="utf-8")
+        marker = "</head>"
+        self.assertEqual(1, html.count(marker))
+        probe = Path(self._tmp.name) / "synthetic-dashboard-theme-probe.html"
+        probe.write_text(
+            html.replace(marker, "<script>window.__preTheme=document.documentElement.getAttribute('data-theme')</script>" + marker),
+            encoding="utf-8",
+        )
+        for query, saved, scheme, expected in (
+            ("dark", "light", "light", "dark"),
+            ("light", "dark", "dark", "light"),
+            ("auto", "dark", "light", "light"),
+            ("auto", "light", "dark", "dark"),
+        ):
+            context = self._browser.new_context(color_scheme=scheme)
+            page = context.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.add_init_script(f"localStorage.setItem('tk-theme', '{saved}')")
+            try:
+                page.goto(probe.as_uri() + "?t=" + query, wait_until="load")
+                actual = page.evaluate("""() => ({first:window.__preTheme,
+                    selected:currentTheme(),effective:effectiveTheme(),saved:localStorage.getItem('tk-theme'),
+                    query:new URLSearchParams(location.search).get('t')})""")
+                self.assertEqual(None if query == "auto" else query, actual["first"])
+                self.assertEqual(query, actual["selected"])
+                self.assertEqual(expected, actual["effective"])
+                self.assertEqual(saved, actual["saved"])
+                self.assertEqual(query, actual["query"])
+                self.assertEqual([], errors)
+                if query == "auto" and scheme == "light":
+                    page.locator("#theme-btn").click()
+                    self.assertEqual("light", page.evaluate("currentTheme()"))
+                    self.assertEqual("light", page.evaluate("localStorage.getItem('tk-theme')"))
+            finally:
+                context.close()
+
+    def test_other_zero_net_change_keeps_model_churn_visible(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._overflow_path)
+        try:
+            page.evaluate("""() => {
+              const older='older-<img src=x onerror=window.__otherXss=1>';
+              DATA.other_models.push({day:'2026-02-04',models:{[older]:50}});
+              DATA.month.find(row=>row.period==='2026-02-01').models.other+=50;
+              DATA.month.find(row=>row.period==='2026-02-01').total+=50;
+              DATA.day.find(row=>row.period==='2026-02-04').models.other+=50;
+              DATA.day.find(row=>row.period==='2026-02-04').total+=50;
+              invalidateDerived();renderAttribution();
+            }""")
+            self.assertEqual(0, page.locator('#delta-list [data-delta-model="other"]').count())
+            details = page.locator("#delta-list .delta-other-details")
+            self.assertEqual(1, details.count())
+            details.locator("summary").click()
+            self.assertIn("older-<img", details.inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_other_change_has_no_misleading_project_evidence_button(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._overflow_path)
+        try:
+            page.evaluate("""() => {
+              DATA.month.find(row=>row.period==='2026-02-01').models.other+=60;
+              DATA.month.find(row=>row.period==='2026-02-01').total+=60;
+              DATA.day.find(row=>row.period==='2026-02-04').models.other+=60;
+              DATA.day.find(row=>row.period==='2026-02-04').total+=60;
+              DATA.other_models.push({day:'2026-02-04',models:{'older-<img src=x onerror=window.__otherXss=1>':60}});
+              invalidateDerived();renderAttribution();
+            }""")
+            self.assertEqual(0, page.locator('#delta-list button[data-delta-model="other"]').count())
+            other_row = page.locator("#delta-list .delta-row", has=page.locator(".delta-name", has_text="Other"))
+            self.assertEqual(1, other_row.count())
+            self.assertIn("+10", other_row.inner_text())
+            self.assertEqual(1, page.locator("#delta-list .delta-other-details").count())
+            page.evaluate("() => {deltaEvidenceState.model='other';renderAttribution();}")
+            self.assertTrue(page.locator("#delta-evidence").is_hidden())
+            self.assertIsNone(page.evaluate("deltaEvidenceState.model"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_untimed_overflow_matches_open_window_without_negative_remainder(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._untimed_overflow_path
+        )
+        try:
+            page.evaluate("setGran('month')")
+            details = page.locator("#delta-list .delta-other-details")
+            self.assertEqual(1, details.count())
+            details.locator("summary").click()
+            rows = details.locator("tbody tr")
+            self.assertGreaterEqual(rows.count(), 1)
+            for row in rows.all():
+                for cell in row.locator("td").all_inner_texts()[:2]:
+                    self.assertGreaterEqual(int(cell.replace(",", "")), 0)
+            self.assertEqual("65", page.evaluate("""() => {
+              const result=attributionFor(selectedRows());
+              return String(result.parts.find(part=>part.model==='other').curr);
+            }"""))
+            self.assertIn("60", details.inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
     def test_faint_color_contrast_meets_aa_in_both_themes(self):
         context, page, page_errors, console_errors = self.new_page()
         try:
@@ -1235,6 +1486,29 @@ class DashboardRuntimeTests(unittest.TestCase):
                     """
                 )
                 self.assertGreaterEqual(ratio, 4.5, f"--faint contrast in {theme} theme")
+                mode_ratio = page.evaluate(
+                    """() => {
+                      const rgb = value => value.match(/[\\d.]+/g).slice(0, 3).map(Number);
+                      const linear = channel => channel <= .04045
+                        ? channel / 12.92 : Math.pow((channel + .055) / 1.055, 2.4);
+                      const lum = color => rgb(color).reduce((sum, channel, index) =>
+                        sum + linear(channel > 1 ? channel / 255 : channel) * [.2126,.7152,.0722][index], 0);
+                      const ratio = (first, second) => {
+                        const a = lum(first), b = lum(second);
+                        return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+                      };
+                      const scope = getComputedStyle(document.querySelector('.mode-scope'));
+                      const selected = getComputedStyle(document.querySelector('.tabs button.on'));
+                      const logo = getComputedStyle(document.querySelector('.logo'));
+                      return {
+                        scope:ratio(scope.color, scope.backgroundColor),
+                        tab:ratio(selected.color, selected.backgroundColor),
+                        logo:ratio(logo.color, logo.backgroundColor),
+                      };
+                    }"""
+                )
+                for name, contrast in mode_ratio.items():
+                    self.assertGreaterEqual(contrast, 4.5, f"{name} contrast in {theme} theme")
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:
@@ -1323,6 +1597,185 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertEqual([], console_errors)
         finally:
             context.close()
+
+    def test_delta_evidence_exact_windows_keyboard_navigation_and_privacy(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url()
+        )
+        try:
+            page.locator("#interval-btn").click()
+            for period in ("2026-02-01", "2026-03-01", "2026-04-01"):
+                self.click_bar(page, period)
+            before = page.evaluate("viewParams().toString()")
+            button = page.locator('#delta-list button[data-delta-model="model-a"]')
+            button.focus()
+            page.keyboard.press("Enter")
+            self.assertEqual("true", button.get_attribute("aria-expanded"))
+            self.assertEqual(before, page.evaluate("viewParams().toString()"))
+            self.assertEqual(None, page.evaluate("state.focusPeriod"))
+            self.assertEqual(
+                [["2026-02-01", "2026-03-01"], ["2026-04-01", "2026-05-01"]],
+                page.evaluate(
+                    """() => [
+                      deltaEvidenceState.scope && attributionScope(intervalResult()).a.map(x => x.period),
+                      attributionScope(intervalResult()).b.map(x => x.period)
+                    ]"""
+                ),
+            )
+            windows = page.locator(".delta-evidence-window")
+            self.assertEqual(2, windows.count())
+            self.assertIn("900 Token", windows.nth(0).inner_text())
+            self.assertIn("350 Token", windows.nth(1).inner_text())
+            self.assertIn("2026-02-01 → 2026-03-31", windows.nth(0).inner_text())
+            self.assertEqual(2, windows.nth(0).locator("[data-delta-period]").count())
+            self.assertEqual(2, windows.nth(1).locator("[data-delta-period]").count())
+            self.assertIn("interval-fixture", windows.nth(0).inner_text())
+            self.assertIn("不能证明项目导致了模型变化", page.inner_text("#delta-evidence"))
+            self.assertNotIn("/synthetic/interval-fixture", before)
+            self.assertFalse(page.evaluate("Object.keys(localStorage).some(k => k.includes('delta'))"))
+            page.locator("#delta-evidence").locator("[data-delta-period='2026-03-01']").click()
+            self.assertEqual("2026-03-01", page.evaluate("state.focusPeriod"))
+            page.evaluate("renderAttribution()")
+            self.assertEqual("2026-03-01", page.evaluate("state.focusPeriod"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_delta_evidence_partial_missing_english_escape_and_project_lens(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url()
+        )
+        try:
+            page.evaluate("applyLanguage('en',false)")
+            page.locator("#interval-btn").click()
+            for period in ("2026-02-01", "2026-03-01", "2026-04-01"):
+                self.click_bar(page, period)
+            page.evaluate(
+                """() => {
+                  const march = DATA.day_details['2026-03-05'];
+                  delete march.cwds;
+                  march.top_cwds = [];
+                  const april = DATA.day_details['2026-04-07'];
+                  delete april.cwds;
+                  delete april.top_cwds;
+                }"""
+            )
+            button = page.locator('#delta-list button[data-delta-model="model-a"]')
+            button.focus()
+            page.keyboard.press("Space")
+            self.assertEqual("true", button.get_attribute("aria-expanded"))
+            self.assertIn("Some dates retain only top projects", page.inner_text("#delta-evidence"))
+            self.assertIn("Some dates lack project details", page.inner_text("#delta-evidence"))
+            self.assertIn("cannot be broken down by project", page.inner_text("#delta-evidence"))
+            page.evaluate("delete DATA.day_details['2026-04-07']")
+            page.evaluate("renderDeltaEvidence(attributionScope(intervalResult()),intervalResult().parts)")
+            self.assertTrue(page.evaluate("deltaEvidenceWindow('model-a',['2026-04-07'],100).missing"))
+            self.assertIn("Some dates lack project details", page.inner_text("#delta-evidence"))
+            self.assertEqual("true", page.locator("#interval-btn").get_attribute("aria-pressed"))
+            untranslated = page.evaluate(
+                """() => {
+                  const root = document.getElementById('section-delta'), out = [];
+                  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+                  while (walker.nextNode()) if (walker.currentNode.parentElement?.getClientRects().length &&
+                    /[㐀-鿿]/.test(walker.currentNode.nodeValue)) out.push(walker.currentNode.nodeValue.trim());
+                  for (const el of root.querySelectorAll('[aria-label],[title]'))
+                    for (const name of ['aria-label','title']) if (/[㐀-鿿]/.test(el.getAttribute(name)||''))
+                      out.push(el.getAttribute(name));
+                  return out;
+                }"""
+            )
+            self.assertEqual([], untranslated)
+            page.keyboard.press("Escape")
+            self.assertTrue(page.locator("#delta-evidence").is_hidden())
+            self.assertEqual("false", button.get_attribute("aria-expanded"))
+            self.assertEqual("true", page.locator("#interval-btn").get_attribute("aria-pressed"))
+            self.assertEqual("model-a", button.get_attribute("data-delta-model"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_delta_evidence_project_navigation_preserves_global_filters(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url()
+        )
+        try:
+            page.locator("#interval-btn").click()
+            for period in ("2026-02-01", "2026-03-01", "2026-04-01"):
+                self.click_bar(page, period)
+            page.locator('#delta-list button[data-delta-model="model-a"]').click()
+            previous = page.evaluate("[...state.models].sort()")
+            page.locator("#delta-evidence [data-delta-project]").first.click()
+            self.assertEqual(previous, page.evaluate("[...state.models].sort()"))
+            self.assertEqual(None, page.evaluate("state.focusPeriod"))
+            self.assertIn("interval-fixture", page.locator("#project-select").input_value())
+            self.assertTrue(page.locator("#section-project").is_visible())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_delta_evidence_uses_open_period_elapsed_days(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self.interval_url()
+        )
+        try:
+            page.evaluate("""() => {
+              DATA.generated = '2026-06-10T12:00:00';
+              renderAttribution();
+            }""")
+            page.locator('#delta-list button[data-delta-model="model-b"]').click()
+            evidence = page.evaluate("""() => {
+              const scope = attributionScope(null);
+              return {
+                aDays:scope.aDays,
+                bDays:scope.bDays,
+                a:deltaEvidenceWindow('model-b',scope.aDays,200).total,
+                b:deltaEvidenceWindow('model-b',scope.bDays,210).total,
+              };
+            }""")
+            self.assertEqual("2026-05-01", evidence["aDays"][0])
+            self.assertEqual("2026-05-09", evidence["aDays"][-1])
+            self.assertEqual("2026-06-01", evidence["bDays"][0])
+            self.assertEqual("2026-06-09", evidence["bDays"][-1])
+            self.assertEqual((200, 210), (evidence["a"], evidence["b"]))
+            windows = page.locator(".delta-evidence-window")
+            self.assertIn("2026-05-01 → 2026-05-09", windows.first.inner_text())
+            self.assertIn("2026-06-01 → 2026-06-09", windows.last.inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_delta_evidence_mobile_geometry(self):
+        for width in (320, 390):
+            context, page, page_errors, console_errors = self.new_page(
+                path=self.interval_url(), viewport={"width": width, "height": 800}
+            )
+            try:
+                page.evaluate("""() => {
+                  intervalState.active = true;
+                  intervalState.start = '2026-02-01';
+                  intervalState.end = '2026-03-01';
+                  intervalState.bStart = '2026-04-01';
+                  renderAttribution();
+                }""")
+                page.locator('#delta-list button[data-delta-model="model-a"]').click()
+                self.assertTrue(page.locator("#delta-evidence").is_visible())
+                self.assertEqual(
+                    1,
+                    page.evaluate(
+                        "getComputedStyle(document.querySelector('.delta-evidence-grid')).gridTemplateColumns.split(' ').length"
+                    ),
+                )
+                self.assertLessEqual(
+                    page.evaluate("document.documentElement.scrollWidth"), width
+                )
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
 
     def test_interval_day_granularity_keyboard_and_click_select_same_span(self):
         context, page, page_errors, console_errors = self.new_page(

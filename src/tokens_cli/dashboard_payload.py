@@ -314,6 +314,11 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
                   aliases=None, generated_at=None, session_titles=None):
     records = tuple(records)
     model_registry, model_slots = _model_registry(records)
+    overflow_names = {
+        name for name, canonical in model_registry.items()
+        if canonical == OTHER_MODEL and name != OTHER_MODEL
+    }
+    other_model_days = defaultdict(lambda: defaultdict(int))
     generated_at = generated_at or datetime.now(config.TZ)
     aliases = aliases or (_ReportAliases() if anonymize else None)
     model_totals = {}
@@ -366,8 +371,11 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             continue
 
         total = record.get("total", 0) or 0
+        raw_model = _record_model(record)
         model = _canonical_model(record, model_registry)
-        latest_key = (_model_last_seen_key(record), _record_model(record))
+        if not anonymize and raw_model in overflow_names:
+            other_model_days[day][raw_model] += total
+        latest_key = (_model_last_seen_key(record), raw_model)
         if latest_backend_key is None or latest_key > latest_backend_key:
             latest_backend_key = latest_key
             latest_backend = model
@@ -603,6 +611,10 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             "latest_backend_folded": latest_backend_grouped,
         },
         "models": models,
+        "other_models": [
+            {"day": day, "models": dict(sorted(values.items()))}
+            for day, values in sorted(other_model_days.items())
+        ],
         "pretty": pretty,
         "colors": colors,
         "cache_read": cache_read,
