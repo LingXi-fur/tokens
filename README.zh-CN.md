@@ -13,38 +13,34 @@
 [![License](https://img.shields.io/badge/license-MIT-f59e0b)](https://github.com/LingXi-fur/tokens/blob/main/LICENSE)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-a78bfa)](#隐私边界)
 
-[在线体验 Demo](https://lingxi-fur.github.io/tokens/demo/) · [克隆并运行](#克隆并运行) · [在线文档](https://lingxi-fur.github.io/tokens/zh/) · [Dashboard 指南](https://lingxi-fur.github.io/tokens/zh/dashboard.html) · [English](https://github.com/LingXi-fur/tokens/blob/main/README.md)
+[体验交互 Demo](https://lingxi-fur.github.io/tokens/demo/) · [克隆并运行](#克隆并运行) · [在线文档](https://lingxi-fur.github.io/tokens/zh/) · [Dashboard 指南](https://lingxi-fur.github.io/tokens/zh/dashboard.html) · [English](https://github.com/LingXi-fur/tokens/blob/main/README.md)
 
-**安装前先体验：**打开[在线合成 Dashboard](https://lingxi-fur.github.io/tokens/demo/)，无需 clone，也无需本地日志；如果它值得留在工具箱里，欢迎在 [GitHub 点亮 Star 或克隆项目](https://github.com/LingXi-fur/tokens)。
+**用自己的数据前先看看：**在浏览器打开[合成 Dashboard](https://lingxi-fur.github.io/tokens/demo/)，无需安装、账户或本地日志。在线页面可交互，但不会实时读取你的电脑；克隆后可用 `./run demo --open` 在本机体验。
 
 </div>
 
 [![tokens Dashboard 合成数据预览](https://raw.githubusercontent.com/LingXi-fur/tokens/main/docs/assets/readme-preview.png)](https://lingxi-fur.github.io/tokens/demo/)
 
-> 预览由真实 Dashboard 在隔离临时主目录中读取虚构记录生成，不含本地日志、路径、会话或私有路由配置。
+> 预览由真实 Dashboard 使用虚构记录生成，不含真实本地日志、私有路径、会话标识或路由配置。
 
-## 无需安装即可体验
+## 不用自己的日志也能体验
 
-打开[在线合成 Demo](https://lingxi-fur.github.io/tokens/demo/)，即可通过真实 Dashboard 管线体验筛选、项目、会话、数据可信度、Token 流光图与成就中心。需要分析自己的本地日志时，再克隆仓库运行。
+打开[交互式合成 Demo](https://lingxi-fur.github.io/tokens/demo/)，用虚构记录体验 Dashboard。在线 Demo 不会读取本机数据，也不实时刷新本机日志；克隆后运行 `./run demo --open` 可生成同类本地示例报告。
 
-## 为什么值得克隆？
+## 为什么值得用？
 
-AI 编程工具已经在本机留下有价值的用量记录，但各工具保存格式和 Token 口径不同。`tokens` 提供一个可检查的统一本地视图：
+AI 编程工具在本机留下用量记录，但格式和 Token 口径不同。`tokens` 提供可检查的本地视图：
 
-- 在同一份报告中查看 **Claude Code、Gemini CLI 与 Codex**
-- 查看**日、周、月趋势**，并提供精确表格、CSV 和 Markdown
-- 在来源字段允许时分析**模型、来源、项目、会话、Context 与活跃节奏**
-- **本机实时更新**，不整页刷新
-- 导出数据、CSS 与 JavaScript 全内嵌的**单文件离线快照**
-- **无账户、遥测、托管后端、数据库、CDN 或日志上传**
+- **在同一份报告中查看 Claude Code、Gemini CLI 与 Codex**，同时保留各来源的计数语义。
+- **找到值得继续查看的变化：**日 / 周 / 月趋势、两个时段的对比与用量峰值。
+- **追溯已有记录：**在来源字段允许时，查看模型、来源、项目和会话的用量构成。
+- **掌握输出：**精确表格、CSV / Markdown、本机实时刷新和自包含的离线 HTML 快照。
 
-与托管用量追踪器不同，`tokens` 只读取电脑上已经存在的日志。与一次性解析脚本不同，它让终端输出、精确表格、交互图表、数据质量说明和离线归档共用同一套聚合管线。
-
-核心解析、聚合、报告和回环服务使用 Python 标准库。Windows 另外需要纯数据包 `tzdata`，以稳定支持 IANA 时区。
+本地 CLI 与 Dashboard 无需账户、遥测端点、托管后端或外部运行资源；AI 编程工具和本站有各自的网络政策。核心解析、聚合、报告和回环服务使用 Python 标准库。Windows 另需纯数据包 `tzdata` 才能稳定使用 IANA 时区。
 
 ## 克隆并运行
 
-要求：macOS、Linux 或 Windows 上的 Python 3.9+，以及至少一种受支持 AI 编程 CLI 生成的本地日志。
+要求：macOS、Linux 或 Windows 上的 Python 3.9+。分析自己的用量还需要受支持 AI 编程 CLI 已生成的本地日志；合成 Demo 不需要日志。
 
 ```bash
 git clone https://github.com/LingXi-fur/tokens.git
@@ -52,6 +48,8 @@ cd tokens
 ./run doctor
 ./run serve --open
 ```
+
+默认只扫描 Claude。如果你使用 Gemini CLI 或 Codex，请给 `serve` 加上 `--source gemini` 或 `--source codex`；重复 `--source` 可以组合来源，否则这些日志不会出现在报告中。
 
 `./run doctor` 检查路径、候选文件数、时区、输出和缓存权限，不解析消息正文，也不打印项目或会话标识。
 
@@ -73,15 +71,19 @@ Demo 只使用生成的示例数据写入 `out/dashboard-demo.html`，不会读�
 
 ### Windows 源码检出
 
+先在本地虚拟环境中安装源码检出；这也会安装必需的 `tzdata`：
+
 ```powershell
 git clone https://github.com/LingXi-fur/tokens.git
 cd tokens
-$env:PYTHONPATH = "src"
-python -m tokens_cli doctor
-python -m tokens_cli serve --open
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+tokens doctor
+tokens serve --open
 ```
 
-Windows 需要 `tzdata`；可按下方方式本地安装当前检出以自动解决依赖，或在当前环境中单独安装 `tzdata`。
+如果使用 Gemini CLI 或 Codex，请给 `tokens serve --open` 加上 `--source gemini` 或 `--source codex`。
 
 ### 可选：安装本地命令
 
@@ -112,22 +114,18 @@ Windows PowerShell 激活命令为 `.venv\Scripts\Activate.ps1`。
 
 报告默认写入 `./out`；可用 `--output DIR` 更改位置。
 
-## Dashboard 能看什么？
+## 能看出什么？
 
-Dashboard 从总览、粒度、筛选、趋势、精确明细和数据可信度开始。继续向下可查看：
+找出用量最高的日子，对比两个等长时段，并查看哪些**已有记录**中的模型、项目或会话构成了差异。在来源确实提供相应字段时，你可以：
 
-- **Token 年鉴**：本地赛季、跨快照时间胶囊与个人峰值纪录
-- **成就中心**：本地门槛、阶位、解锁日期、收藏与进度；绝不代表全球排名
-- **项目透镜**、会话回放与 **Token Flow**：真实的项目 → 模型与模型 → 会话聚合
-- **Context Reuse River**、**工作模式图鉴**与作息织锦：Token 去向与时间分布
-- **Markdown、CSV、年鉴 JSON、体检摘要、Token 护照与收据导出**
+- **发现变化：**查看日 / 周 / 月趋势、峰值时段与 Token 构成。
+- **追溯记录：**按来源和模型筛选，查看项目与会话聚合；非脱敏 Dashboard 还可查看归入 Other 的原始模型名。
+- **核对数字：**从图表切换到精确表格，导出 CSV / Markdown，或保存自包含离线 HTML 快照。
 
-趋势卡新增**双时段 A/B 透镜**：先选连续且完整的 A 周期，再选 B 起点，B 自动取等长窗口。鼠标可拖刷，触屏依次点柱，键盘可聚焦柱按 Enter / Space；原归因区和明细表直接展示差额，零基线只报告绝对 Token 变化。**峰值剖面**可从趋势工具条或标记的峰值柱按 `P` 打开，展示相邻前期及确有记录的模型、小时、项目聚合，不判定故障。项目和会话 Top 保留为默认收起的详情。后端标签只反映报告范围最近一条记录；仅当数据确有 `gpt-6-sol` 且该模型保有独立身份时才显示该名，不按当前路由改写历史模型。完整分区列表（含 **Data Trail**、**Signal Dock** 与 **Exactness Key**）见[中文 Dashboard 指南](https://lingxi-fur.github.io/tokens/zh/dashboard.html)。
-
-Data Trail 状态只存在于页面内存，不写入 URL 或 `localStorage`。项目与会话保持为平行聚合，不会自动配对。固定上一期对比可在 URL 中表示为 `compare=1`；A/B 周期及打开的峰值剖面也可从 URL 恢复。项目 / 会话 ID 与精确 Token 明细不会写入 URL。
-
+交互方法、双时段透镜、峰值剖面、成就中心等见[中文 Dashboard 指南](https://lingxi-fur.github.io/tokens/zh/dashboard.html)。A/B 只比较记录中的 Token 构成，不能证明用量变化的原因；基线为零时只报告绝对 Token 变化。项目和会话是平行聚合，不会自动配对。选定的 A/B 周期及打开的峰值剖面可能从 URL 恢复；项目 / 会话 ID 与精确 Token 明细不会写入 URL。
 
 Token 增减只描述用量变化，不代表生产力或代码质量。Cache Read 是缓存 Token 读取量，不是已确认的货币节省。
+
 
 ## 支持的数据源
 
@@ -183,13 +181,13 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 - 精确日期、模型、Token 数值和逐轮 Token 序列
 - 可能识别个人或组织的行为模式
 
-`--anonymize` 会将项目路径、会话标识与自然语言标题替换为报告内别名，但仍保留精确日期、模型、Token、关系和逐轮回放。经 Router 解析出的 backend 名也会保留，并可能透露本地路由配置。因此它是**假名化，不是保证匿名**。
+`--anonymize` 会将项目路径、会话标识与自然语言标题替换为报告内别名，但仍保留精确日期、保留独立身份的模型名、Token、关系和逐轮回放。非脱敏 Dashboard 还会显示归入图表 Other 色槽的原始模型名和精确用量；脱敏导出不包含这些被折叠的原名。经 Router 解析出的 backend 名也可能透露本地路由配置。因此它是**假名化，不是保证匿名**。
 
 分享报告前：
 
-1. 使用 `./run dashboard --anonymize`
+1. 使用 `./run dashboard --anonymize`，确认分享的是 `dashboard-anonymized.html`，不是旧的普通 `dashboard.html`
 2. 限制日期范围
-3. 人工检查生成文件或截图
+3. 检查生成文件及其内嵌数据，也检查将要分享的截图、导出内容和视图 URL
 4. 搜索用户名、客户名、仓库名和自定义模型标签
 5. 不要向公开 Issue 附加原始日志
 
@@ -200,7 +198,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 - 当前公共安装入口是源码检出；在确认存在可用发布版本前，不宣传软件包注册表安装命令。
 - Claude 是唯一默认来源；Gemini 与 Codex 必须显式选择。
 - 来源格式提供的字段不同，部分项目、会话或 Context 视图可能不可用。
-- 终端输出和部分旧静态报告标签目前以中文为主；交互式 Dashboard 与文档提供中英文界面。
+- 终端和静态报告支持 `--lang en|zh`，默认跟随系统 locale；交互式 Dashboard 可在页面内切换语言。
 - 离线 Dashboard 是生成时快照。需要持续更新时使用 `./run serve --open`。
 
 ## 故障排查
@@ -215,7 +213,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 
 ## 开发
 
-下方完整测试套件与 JavaScript 检查需要 Node.js 22+。
+Node.js 22+ 仅用于开发检查；运行 CLI 或 Dashboard 不需要 Node.js。
 
 ```bash
 python -m pip install -e .

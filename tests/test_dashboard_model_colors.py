@@ -183,6 +183,38 @@ class DashboardModelColorTests(unittest.TestCase):
         self.assertEqual(15, payload["month"][0]["models"]["gpt-5.6-sol"])
         self.assertEqual(25, payload["month"][0]["models"]["gpt-6-sol"])
 
+    def test_overflow_names_keep_daily_totals_only_in_non_anonymized_reports(self):
+        records = [
+            self.record(f"model-{index}", "2026-07-01", index + 1, index)
+            for index in range(7)
+        ] + [
+            self.record("model-6", "2026-07-03", 1),
+            self.record("other", "2026-07-01", 3),
+            self.record("unknown", "2026-07-01", 4, 21),
+            self.record("overflow-name", "2026-07-01", 11, 20),
+            self.record("overflow-name", "2026-07-02", 13),
+            self.record("overflow-later", "2026-07-02", 17),
+        ]
+        forward = dashboard_payload.build_payload(records)
+        reverse = dashboard_payload.build_payload(list(reversed(records)))
+        self.assertEqual(forward["other_models"], reverse["other_models"])
+        self.assertEqual(8, len(forward["models"]))
+        self.assertNotIn("overflow-name", forward["models"])
+        self.assertEqual([
+            {"day": "2026-07-01", "models": {"overflow-name": 11, "unknown": 4}},
+            {"day": "2026-07-02", "models": {"overflow-later": 17, "overflow-name": 13}},
+        ], forward["other_models"])
+        for row in forward["other_models"]:
+            self.assertLessEqual(sum(row["models"].values()),
+                                 next(day["models"].get("other", 0) for day in forward["day"]
+                                      if day["period"] == row["day"]))
+        limited = dashboard_payload.build_payload(records, since="2026-07-02")
+        self.assertEqual([{"day": "2026-07-02", "models": {
+            "overflow-later": 17, "overflow-name": 13,
+        }}], limited["other_models"])
+        self.assertEqual([], self.payload(records)["other_models"])
+        self.assertNotIn('"overflow-name"', json.dumps(self.payload(records)))
+
     def test_model_order_uses_current_range_totals_with_stable_name_tie_break(self):
         records = [
             self.record("model-c", "2026-07-01", 20),

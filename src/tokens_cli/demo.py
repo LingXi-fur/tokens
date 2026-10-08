@@ -11,8 +11,8 @@ DEMO_SEED = 0x70C3A
 DEMO_SOURCES = ("claude", "gemini", "codex")
 
 _MODELS = {
-    "claude": ("claude-sonnet-4-5", "claude-opus-4-1"),
-    "gemini": ("gemini-2.5-pro", "gemini-2.5-flash"),
+    "claude": ("claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"),
+    "gemini": ("gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"),
     "codex": ("gpt-5-codex", "gpt-5-mini"),
 }
 _PROJECTS = (
