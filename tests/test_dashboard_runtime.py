@@ -1037,7 +1037,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             context.close()
 
     def test_donut_legend_syncs_surfaces_and_recovers_from_all_off(self):
-        context, page, page_errors, console_errors = self.new_page()
+        context, page, page_errors, console_errors = self.new_page(freeze_lazy=True)
         try:
             donut = page.locator("#donut-legend [data-model-toggle]")
             trend = page.locator("#trend-legend [data-model-toggle]")
