@@ -445,22 +445,22 @@ class DashboardTests(unittest.TestCase):
         template = report_dashboard._TEMPLATE
         self.assertIn("state.models.has(x[2])", template)
         self.assertIn("state.models.has(x[0])", template)
-        self.assertIn("Math.min(100,selectedTotal?total/selectedTotal*100:0)", template)
-        self.assertIn('class="flow-hit"', template)
-        self.assertRegex(template, r"\.flow-hit\{[^}]*pointer-events:all")
-        self.assertRegex(template, r"\.flow-map\{[^}]*min-width:900px")
+        self.assertIn("class=dest-usage", template)
+        self.assertIn("class=dest-toolbar", template)
+        self.assertIn('data-dest-view="cards"', template)
+        self.assertIn('data-dest-view="table"', template)
         self.assertIn(".tl-item,.chip,#tabs button{min-height:44px}", template)
         self.assertIn(".trend-legend{flex-wrap:nowrap;overflow-x:auto", template)
         self.assertIn("--faint:#5f6b7a", template)
         self.assertIn("--faint:#8b949e", template)
-        self.assertIn("width=\"172\" height=\"48\"", template)
+        self.assertIn("dest-viewswitch", template)
         self.assertIn("project_model", template)
         self.assertIn("model_session", template)
-        self.assertIn("flow-link motion", template)
+        self.assertIn("dest-filter-note", template)
         self.assertIn("signalActions(signal)", template)
         self.assertIn("openReplay(signal.id,signal.label)", template)
         self.assertIn("@media(prefers-reduced-motion:reduce)", template)
-        self.assertIn(":root[data-motion=low] .flow-link.motion{animation:none!important}", template)
+        self.assertIn(":root[data-motion=low] .trail-destination{animation:none!important}", template)
         self.assertIn("[id^=section-]{scroll-margin-top:112px}", template)
         self.assertIn(".probe{position:sticky;top:64px", template)
         self.assertIn("if(avg===0){if(last>0)", template)
@@ -481,11 +481,11 @@ class DashboardTests(unittest.TestCase):
         end = script.index("\nfunction ", start + 1)
         render_flow = script[start:end]
         self.assertEqual(1, script.count("const sumBy="))
-        self.assertIn("selectedTotal=sumBy(selectedRows(),'total')", render_flow)
-        self.assertIn("const groupSum=", render_flow)
+        self.assertIn("computeDestinations()", render_flow)
+        self.assertIn("destModelChip(", render_flow)
+        self.assertIn("destProjectRow(", render_flow)
+        self.assertIn("destSessionCard(", render_flow)
         self.assertNotIn("const sumBy=", render_flow)
-        for call in ("groupSum(pm,2,3)", "groupSum(ms,0,3)", "groupSum(modelPM,1,3)", "groupSum(modelMS,2,3)"):
-            self.assertIn(call, render_flow)
 
     def test_lazy_renderers_fail_visibly_and_can_retry(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
@@ -532,20 +532,21 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn('.lazy-pending::after{content:"进入视野后加载"', css)
         self.assertIn(".lazy-error{", css)
         self.assertIn(".lazy-error-state{", css)
-        self.assertRegex(css, r"\.flow-link\{[^}]*opacity:\.48")
+        self.assertIn(".dest-usage{", css)
 
     def test_flow_region_and_full_titles_are_accessible_and_localized(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
         template = (ASSETS / "template.html").read_text(encoding="utf-8")
 
+        self.assertIn("class=dest-grid id=flow-map", template)
         self.assertIn(
-            'class=flow-shell style=margin-top:14px tabindex=0 role=region '
-            'aria-label="Token 流光图，可横向滚动"',
-            template,
+            "class=dest-legend role=group aria-label=\"'+esc('模型图例，点击聚焦会话')+'\"",
+            script,
         )
-        self.assertIn(".flow-shell:focus{outline:2px solid var(--accent-2)", css)
-        self.assertIn("<title>'+esc(label)+' · 悬停 Peek · 点击 Pin 信号</title>", script)
+        self.assertIn("role=group aria-label=\"'+esc('视图切换')+'\"", script)
+        self.assertIn(".dest-usage{", css)
+        self.assertIn("'点击 Pin 到 Signal Dock':'Click to Pin in Signal Dock'", script)
         self.assertIn("'0 条流光链路':'0 flow links'", script)
         self.assertIn(
             "'Token 流光图，可横向滚动':'Token Flow; horizontally scrollable'",
@@ -705,8 +706,8 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("else if(e.key==='?') openHelp()", template)
         self.assertIn("查看快捷键与交互说明", template)
         self.assertIn("function saveFlowSVG()", template)
-        self.assertIn("svg.setAttribute('xmlns','http://www.w3.org/2000/svg')", template)
-        self.assertIn("bg.setAttribute('fill','#0b1120')", template)
+        self.assertIn('<svg xmlns="http://www.w3.org/2000/svg"', template)
+        self.assertIn("'#0f1524':'#ffffff'", template)
         self.assertIn("let barCursor=0", template)
         self.assertIn('role="button" aria-label="\'+esc(aria+', template)
         self.assertIn("e.key==='ArrowRight'||e.key==='ArrowLeft'", template)
@@ -715,7 +716,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("let previousModels=null", template)
         self.assertIn("覆盖 <b>'+pct(selected,all)", template)
         self.assertIn("当前模型筛选构成", template)
-        self.assertIn("dataSignalAttrs('session',it[2]||it[0],it[0],total,'top')", template)
+        self.assertIn("dataSignalAttrs('session',it[2]||it[0],name,total,'top')", template)
         self.assertIn("if(el.matches('select,input,textarea,option'))return", template)
         self.assertIn("document.getElementById('replay-ecg').addEventListener('pointerdown'", template)
         self.assertIn("const days=DATA.day||[],total=sumBy(days,'total'),calls=sumBy(days,'calls')", template)
@@ -779,7 +780,7 @@ class DashboardTests(unittest.TestCase):
             "function deltaWindowInfo(rows)", "function attributionFor(rows)",
             "function renderAttribution()", "renderTrendLegend();renderAttribution();",
             "function achievementStory(b)", "b.story=achievementStory(b)",
-            "<strong class=ach-story data-i18n-skip>", "达成条件：", "achievementStoryText(b)+' '+b.story+' '+b.d",
+            "<strong class=ach-story data-i18n-skip>", "达成条件：", "function achievementSearchText(b)",
             "if(auxView==='achievements')p.set('view','achievements')",
             "tokensAuxView:'achievements'", "function syncAuxViewFromState()",
             "history.pushState({tokensAuxView:'achievements'}",
@@ -1094,7 +1095,7 @@ if(refreshedReplayState(closed,{session_series:{}})!==closed)throw new Error('cl
             "回看这一天",
         ):
             self.assertIn(marker, template)
-        self.assertIn("['project','reuse','flow','modes']", template)
+        self.assertIn("['project','reuse','flow','modes','cost']", template)
         self.assertNotIn("event.key==='Enter'||event.key===' '){event.preventDefault();focusMomentDay", template)
         self.assertNotIn("localStorage.setItem('tk-modes", template)
         self.assertNotIn("p.set('mode'", template)
@@ -1369,7 +1370,7 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
             "function trapModalFocus(e,modal)",
             "function activeModal()",
             "openModal(document.getElementById('share-modal')",
-            "openModal(modal,document.getElementById('ach-search'),document.getElementById('ach-open'))",
+            "openModal(modal,document.getElementById('ach-search'),returnFocus||document.getElementById('ach-open'))",
             "openModal(modal,document.getElementById('help-close'))",
             "openModal(modal,document.getElementById('replay-x'))",
             "role=dialog aria-modal=true aria-label=\"Token 分享卡\"",
@@ -1762,7 +1763,7 @@ if(missing.compatible||!missing.label.includes('Peek'))throw new Error('missing 
             "const signalState = {peek:null,peekSource:null,pinnedSignal:null",
             "id=signal-pin-summary", "id=signal-peek-summary", "id=signal-delta-summary",
             "scope==='filters'", "canDim=!!root", "pair.pin.type===pair.peek.type",
-            "function currentFlow()", "fd||Object.keys(DATA.day_details||{})",
+            "function focusDays()", "focusDays()||Object.keys(DATA.day_details||{})",
             "if(!state.models.has(x[2]))return", "if(!state.models.has(x[0]))return",
             "scopedEntities('project')", "scopedEntities('session')",
         ):
@@ -2106,7 +2107,7 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
         storage_keys = set(re.findall(r"tk-[a-z0-9-]+", report_dashboard._TEMPLATE))
         storage_keys.discard("tk-motion-change")
         self.assertEqual(
-            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang"},
+            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang", "tk-cost-v1"},
             storage_keys,
         )
         self.assertNotIn("localStorage.setItem('tk-trail", script)
@@ -2136,3 +2137,162 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
             "synthetic-session-sensitive",
         ):
             self.assertNotIn(sensitive, html)
+
+
+class SessionContextTests(unittest.TestCase):
+    def _records(self):
+        def rec(day, ts, sid, cwd, source, total, model="model-a"):
+            return {
+                "source": source,
+                "ts": ts,
+                "date": day,
+                "model": model,
+                "input": total,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": total,
+                "session": sid,
+                "cwd": cwd,
+            }
+        return [
+            rec("2026-07-01", "2026-07-01T01:00:00+08:00", "s1", "/syn/proj-a", "claude", 100),
+            rec("2026-07-02", "2026-07-02T01:00:00+08:00", "s1", "/syn/proj-b", "claude", 40),
+            rec("2026-07-03", "2026-07-03T01:00:00+08:00", "s1", "/syn/proj-a", "codex", 10),
+            rec("2026-07-02", "2026-07-02T02:00:00+08:00", "s2", "/syn/proj-b", "claude", 50, model="model-b"),
+        ]
+
+    def test_session_context_dominant_multi_source_and_dates(self):
+        payload = dashboard_payload.build_payload(self._records())
+        ctx = payload["session_context"]["s1"]
+        self.assertEqual("syn/proj-a", ctx["p"])
+        self.assertTrue(ctx["pm"])
+        self.assertEqual(["claude", "codex"], ctx["s"])
+        self.assertEqual("2026-07-01", ctx["d0"])
+        self.assertEqual("2026-07-03", ctx["d1"])
+        s2 = payload["session_context"]["s2"]
+        self.assertFalse(s2["pm"])
+        self.assertEqual("syn/proj-b", s2["p"])
+
+    def test_report_sources_are_not_overwritten_by_session_context(self):
+        claude = self._records()[0]
+        codex = dict(claude, source="codex", session="", cwd="")
+        for records in ([claude, codex], [codex, claude]):
+            for sources in (None, ["claude"], ["claude", "codex"]):
+                with self.subTest(sources=sources, first_source=records[0]["source"]):
+                    payload = dashboard_payload.build_payload(
+                        records, sources=sources, session_titles={},
+                    )
+                    self.assertEqual(sources or [], payload["source"])
+                    self.assertEqual(["claude"], payload["session_context"]["s1"]["s"])
+                    self.assertEqual({"claude": 100, "codex": 100}, payload["achievement_stats"]["source_totals"])
+
+    def test_dominant_project_tie_is_stable(self):
+        records = [
+            {"source": "claude", "ts": "2026-07-01T01:00:00+08:00", "date": "2026-07-01",
+             "model": "model-a", "input": 50, "output": 0, "cache_read": 0, "cache_write": 0,
+             "total": 50, "session": "tie", "cwd": "/syn/zeta"},
+            {"source": "claude", "ts": "2026-07-01T02:00:00+08:00", "date": "2026-07-01",
+             "model": "model-a", "input": 50, "output": 0, "cache_read": 0, "cache_write": 0,
+             "total": 50, "session": "tie", "cwd": "/syn/alpha"},
+        ]
+        first = dashboard_payload.build_payload(records)["session_context"]["tie"]
+        second = dashboard_payload.build_payload(list(reversed(records)))["session_context"]["tie"]
+        self.assertEqual("syn/alpha", first["p"])
+        self.assertEqual(first, second)
+
+    def test_session_context_respects_range(self):
+        payload = dashboard_payload.build_payload(
+            self._records(), since="2026-07-02", until="2026-07-03",
+        )
+        ctx = payload["session_context"]["s1"]
+        self.assertEqual("2026-07-02", ctx["d0"])
+        self.assertEqual("2026-07-03", ctx["d1"])
+        s2 = payload["session_context"]["s2"]
+        self.assertEqual("2026-07-02", s2["d0"])
+
+    def test_session_context_anonymized_has_no_raw_identifiers(self):
+        payload = dashboard_payload.build_payload(self._records(), anonymize=True)
+        for ctx in payload["session_context"].values():
+            self.assertTrue(ctx["p"].startswith("Project-") or ctx["p"] == "")
+            self.assertNotIn("/syn/", ctx["p"])
+        for key in payload["session_context"]:
+            self.assertTrue(key.startswith("Session-"))
+
+    def test_empty_label_instead_of_short_uuid(self):
+        payload = dashboard_payload.build_payload(self._records(), session_titles={})
+        day = payload["day_details"]["2026-07-01"]
+        for row in day["sessions"]:
+            self.assertEqual("", row[0])
+        for row in day["top_sessions"]:
+            self.assertEqual("", row[0])
+        self.assertEqual("", day["flow"]["model_session"][0][1])
+
+    def test_injected_titles_are_sanitized(self):
+        payload = dashboard_payload.build_payload(
+            self._records(),
+            session_titles={
+                "s1": "This session is being continued from a previous conversation",
+                "s2": "优化导入向导",
+            },
+        )
+        labels = {
+            row[2]: row[0]
+            for row in payload["day_details"]["2026-07-02"]["sessions"]
+        }
+        self.assertEqual("", labels["s1"])
+        self.assertEqual("优化导入向导", labels["s2"])
+
+    def test_injected_titles_do_not_read_logs(self):
+        def boom(*args, **kwargs):
+            raise AssertionError("log read")
+        with mock.patch.object(dashboard_payload.readers, "session_title", boom), \
+                mock.patch.object(dashboard_payload.readers, "load_session_summaries", boom), \
+                mock.patch.object(dashboard_payload.readers, "build_session_index", boom):
+            payload = dashboard_payload.build_payload(
+                self._records(), session_titles={"s1": "修复登录"},
+            )
+        labels = {
+            row[2]: row[0]
+            for row in payload["day_details"]["2026-07-02"]["sessions"]
+        }
+        self.assertEqual("修复登录", labels["s1"])
+
+    def test_bad_sidecar_non_string_falls_back_without_crash(self):
+        with mock.patch.object(dashboard_payload.readers, "load_session_summaries",
+                               return_value={"s1": 42}), \
+                mock.patch.object(dashboard_payload.readers, "build_session_index",
+                                  return_value={}), \
+                mock.patch.object(dashboard_payload.readers, "session_title",
+                                  return_value=""):
+            payload = dashboard_payload.build_payload(self._records())
+        labels = {
+            row[2]: row[0]
+            for row in payload["day_details"]["2026-07-02"]["sessions"]
+        }
+        self.assertEqual("", labels["s1"])
+
+    def test_anonymize_priority_ignores_injected_titles(self):
+        records = [
+            {"source": "claude", "ts": "2026-07-01T01:00:00+08:00", "date": "2026-07-01",
+             "model": "model-a", "input": 10, "output": 0, "cache_read": 0, "cache_write": 0,
+             "total": 10, "session": "s1", "cwd": "/syn/private-project"},
+        ]
+        payload = dashboard_payload.build_payload(
+            records, anonymize=True, session_titles={"s1": "真实敏感标题"},
+        )
+        row = payload["day_details"]["2026-07-01"]["sessions"][0]
+        self.assertNotEqual("真实敏感标题", row[0])
+        self.assertTrue(row[0].startswith("Session-"))
+
+    def test_session_context_wire_roundtrip(self):
+        payload = dashboard_payload.build_payload(self._records())
+        wire = dashboard_wire.encode_payload(payload)
+        decoded = dashboard_wire.decode_payload(wire)
+        self.assertEqual(payload["session_context"], decoded["session_context"])
+
+    def test_legacy_payload_without_session_context_still_decodes(self):
+        legacy = {"v": 1, "s": [], "d": {"range": {}}}
+        wire = dashboard_wire.encode_payload(legacy)
+        decoded = dashboard_wire.decode_payload(wire)
+        self.assertNotIn("session_context", decoded)

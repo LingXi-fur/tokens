@@ -15,6 +15,7 @@ class DashboardCrossBrowserTests(unittest.TestCase):
     setUpClass = classmethod(runtime.DashboardRuntimeTests.setUpClass.__func__)
     tearDownClass = classmethod(runtime.DashboardRuntimeTests.tearDownClass.__func__)
     new_page = runtime.DashboardRuntimeTests.new_page
+    wait_for_flow = runtime.DashboardRuntimeTests.wait_for_flow
 
     test_table_sort_tri_state = (
         runtime.DashboardRuntimeTests.test_table_sort_cycles_three_states_and_returns_to_time_order
@@ -27,6 +28,15 @@ class DashboardCrossBrowserTests(unittest.TestCase):
     )
     test_achievement_archive_mobile_geometry = (
         runtime.DashboardRuntimeTests.test_achievement_archive_copy_and_mobile_geometry
+    )
+    test_achievement_archive_language_switch = (
+        runtime.DashboardRuntimeTests.test_achievement_archive_language_switch_updates_badges_and_details
+    )
+    test_achievement_archive_rendered_before_scroll = (
+        runtime.DashboardRuntimeTests.test_achievement_archive_rendered_before_first_scroll
+    )
+    test_achievement_preview_pagination_and_privacy = (
+        runtime.DashboardRuntimeTests.test_achievement_preview_pagination_and_secret_privacy
     )
     test_donut_legend_sync = (
         runtime.DashboardRuntimeTests.test_donut_legend_syncs_surfaces_and_recovers_from_all_off
@@ -42,6 +52,12 @@ class DashboardCrossBrowserTests(unittest.TestCase):
     )
     test_other_model_names = (
         runtime.DashboardRuntimeTests.test_other_model_names_match_windows_and_escape_html
+    )
+    test_sol_variants = (
+        runtime.DashboardRuntimeTests.test_sol_variants_are_independently_selectable
+    )
+    test_long_backend_name_wraps = (
+        runtime.DashboardRuntimeTests.test_long_backend_name_wraps_without_horizontal_overflow
     )
     test_other_zero_net_change = (
         runtime.DashboardRuntimeTests.test_other_zero_net_change_keeps_model_churn_visible
@@ -64,6 +80,9 @@ class DashboardCrossBrowserTests(unittest.TestCase):
     )
     test_delta_evidence_mobile_geometry = (
         runtime.DashboardRuntimeTests.test_delta_evidence_mobile_geometry
+    )
+    test_destinations_mobile_touch_targets = (
+        runtime.DashboardRuntimeTests.test_destinations_mobile_no_horizontal_overflow_all_locales
     )
     test_delta_evidence_project_navigation = (
         runtime.DashboardRuntimeTests.test_delta_evidence_project_navigation_preserves_global_filters

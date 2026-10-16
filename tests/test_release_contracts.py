@@ -68,7 +68,11 @@ class ReleaseContractsTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(0, version.returncode, version.stderr)
-            self.assertRegex(version.stdout.strip(), r"^tokens \d+\.\d+\.\d+$")
+            project_version = _toml_string(
+                _toml_section(PYPROJECT.read_text(encoding="utf-8"), "project"),
+                "version",
+            )
+            self.assertEqual(version.stdout.strip(), f"tokens {project_version}")
 
             doctor = subprocess.run(
                 [sys.executable, "-m", "tokens_cli", "doctor"],
@@ -120,6 +124,68 @@ class ReleaseContractsTests(unittest.TestCase):
             },
             set(re.findall(r'"([^"]+)"', tokens_assets.group(1))),
         )
+
+    def test_package_and_project_versions_agree(self):
+        project_version = _toml_string(
+            _toml_section(PYPROJECT.read_text(encoding="utf-8"), "project"),
+            "version",
+        )
+        package_text = (SRC / "tokens_cli" / "__init__.py").read_text(encoding="utf-8")
+        match = re.search(r'^__version__\s*=\s*"([^"]+)"\s*$', package_text, re.M)
+        self.assertIsNotNone(match, "missing package version")
+        self.assertEqual(project_version, match.group(1))
+        self.assertRegex(project_version, r"^\d+\.\d+\.\d+$")
+
+    def test_candidate_checklist_lists_all_dashboard_assets(self):
+        checklist = (ROOT / "docs" / "release-candidate-checklist.md").read_text(
+            encoding="utf-8"
+        )
+        staging = checklist.split("工具与依赖（离线纪律）：", 1)[0].split(
+            "源码白名单暂存区（clean staging）：", 1
+        )[1]
+        for asset in (SRC / "tokens_cli" / "dashboard_assets").iterdir():
+            if asset.suffix in (".html", ".css", ".js"):
+                with self.subTest(asset=asset.name):
+                    self.assertIn(f"`{asset.name}`", staging)
+
+    def test_dashboard_assets_exist_and_are_embedded(self):
+        assets = SRC / "tokens_cli" / "dashboard_assets"
+        for name in ("template.html", "dashboard.css", "cost_core.js", "dashboard.js"):
+            with self.subTest(asset=name):
+                self.assertTrue((assets / name).is_file())
+                self.assertGreater((assets / name).stat().st_size, 0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox = Path(tmp)
+            home = sandbox / "home"
+            work = sandbox / "work"
+            home.mkdir()
+            work.mkdir()
+            env = os.environ.copy()
+            env.update(HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(SRC))
+            env.pop("XDG_CACHE_HOME", None)
+            env.pop("LOCALAPPDATA", None)
+            probe = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "from tokens_cli import report_dashboard as r; "
+                    "assert 'cost-price-btn' in r._TEMPLATE; "
+                    "assert 'cost-csv-btn' in r._TEMPLATE; "
+                    "assert 'function exportCostCSV' in r._TEMPLATE; "
+                    "assert 'data-cost-restore' in r._TEMPLATE; "
+                    "assert 'function costComputeView' in r._TEMPLATE; "
+                    "assert '.cost-' in r._TEMPLATE; "
+                    "assert '__STYLE__' not in r._TEMPLATE; "
+                    "assert '__SCRIPT__' not in r._TEMPLATE",
+                ],
+                cwd=work,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, probe.returncode, probe.stderr)
 
     def test_dashboard_javascript_contract_tests_are_node_guarded(self):
         expected = {

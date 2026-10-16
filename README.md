@@ -33,7 +33,7 @@ AI coding tools already leave usage records on your machine, but each tool store
 
 - **See usage from Claude Code, Gemini CLI, and Codex** in one report while keeping each source's reported token semantics visible.
 - **Find changes worth inspecting:** daily, weekly, and monthly trends, two-period comparisons, and peak periods.
-- **Trace recorded contributors:** model, source, project, and session details where the logs provide them.
+- **Follow token destinations:** a project and model overview beside per-session cards, tracing model, source, project, and session details where the logs provide them.
 - **Keep results under your control:** exact tables, CSV and Markdown exports, local live refresh, or a self-contained offline HTML snapshot.
 
 The local CLI and dashboard require no account, telemetry endpoint, hosted backend, or external runtime assets; your AI coding tools and this documentation site have their own network policies. Core parsing, aggregation, reporting, and loopback serving use the Python standard library. Windows additionally needs the data-only `tzdata` package for consistent IANA timezone support.
@@ -53,7 +53,7 @@ Claude is the default source. If you use Gemini CLI or Codex, add `--source gemi
 
 `./run doctor` checks paths, candidate file counts, timezone, output, and cache permissions. It does not parse message contents or print project and session identifiers.
 
-The live dashboard binds only to `127.0.0.1`. It checks for local log changes every five minutes by default; the page can switch between 1, 5, 15, or 30 minutes, or pause refresh. Unchanged files are not reparsed or retransmitted.
+The live dashboard binds only to `127.0.0.1`. A background worker checks local logs every five minutes by default (`--interval`); page requests read the latest successful in-memory snapshot without waiting for a scan. The page checks for published updates at most every minute by default, with shorter checks while data is being prepared. Its 1, 5, 15, or 30 minute selector and pause control affect browser checks only, not background scans. Initial preparation is shown explicitly; later scan failures keep the last successful data visible with its last successful check time. Unchanged files are not reparsed, and unchanged response versions use conditional requests.
 
 No local logs yet? Open a full synthetic dashboard generated through the same reporting pipeline:
 
@@ -99,6 +99,33 @@ tokens serve --open
 
 This installs from your local checkout. No package-registry release is required by these instructions.
 
+### Local 0.3.0 candidate — not a public release
+
+The 0.3.0 material in this checkout is a **local release candidate**, not a public release. No public release date or PyPI availability of 0.3.0 is claimed. The instructions below are a local installation recipe, **not evidence that the candidate has already been built or tested**. Candidate builds, artifact review, clean-environment smoke tests, and service updates installed from candidate artifacts must pass the candidate release checklist (`docs/release-candidate-checklist.md` in this local checkout) first; an external release requires separate approval. A separately authorized restart of a tested source-checkout service is not a candidate-artifact verification and does not mark those checklist items complete.
+
+If you receive a verified local candidate wheel, install it without contacting an index or resolving dependencies:
+
+```bash
+python3 -m venv /tmp/tokens-030-venv
+/tmp/tokens-030-venv/bin/python -m pip install --no-index --no-deps /ABSOLUTE/PATH/TO/ai_cli_tokens-0.3.0-py3-none-any.whl
+/tmp/tokens-030-venv/bin/tokens --version
+/tmp/tokens-030-venv/bin/tokens demo --output /tmp/tokens-030-demo --open
+```
+
+Replace the wheel path with the actual approved artifact; the path is a placeholder, not a download location. Use fresh destination directories (or choose other fresh paths). `--no-deps` deliberately skips dependencies. On Windows, make the venv and use its `Scripts\python.exe` / `Scripts\tokens.exe`; `tzdata` must already be available or be installed separately from a reviewed local wheel with the same offline flags. Missing local tools or dependencies are a blocker, not permission to download them. Platform support is a product requirement, not proof that this candidate has passed that platform's checks.
+
+Alternatively, run the **approved candidate source checkout** directly, without an install or package registry:
+
+```bash
+cd /ABSOLUTE/PATH/TO/APPROVED/CANDIDATE/SOURCE
+./run --version
+./run demo --output /tmp/tokens-030-source-demo --open
+# Portable source launcher (set PYTHONPATH only for this command):
+PYTHONPATH=src python3 -m tokens_cli demo --output /tmp/tokens-030-source-demo --open
+```
+
+That explicit source-run path is separate from the checklist's wheel verification, which clears `PYTHONPATH` and checks that imports originate in the installed venv. The monthly-budget specification (`docs/monthly-budget-design.md` in this local checkout) is design-only in this round; it does not add a budget feature or create browser budget storage.
+
 ## Choose an output
 
 | Goal | Source-checkout command | Behavior |
@@ -114,7 +141,7 @@ Reports are written to `./out` by default. Use `--output DIR` to choose another 
 
 ## What can you learn?
 
-Find your busiest days, compare two equal-length periods, and see which **recorded** models, projects, or sessions contributed to the difference. When source records provide the fields, you can:
+Find your busiest days, compare two equal-length periods, and see which **recorded** models, projects, or sessions contributed to the difference. Names folded into `Other` are listed beside the model filters with their token totals for the current period. They share the `Other` color and group filter, not separate model filters; anonymized reports do not expose unavailable names. When source records provide the fields, you can:
 
 - **Spot changes:** explore daily, weekly, and monthly trends, peak periods, and token composition.
 - **Follow the records:** filter by source and model, inspect project and session aggregates, and see original model names grouped under Other in a non-anonymized dashboard.
@@ -123,6 +150,22 @@ Find your busiest days, compare two equal-length periods, and see which **record
 The interactive [Dashboard guide](https://lingxi-fur.github.io/tokens/dashboard.html) covers the A/B interval lens, peak profile, keyboard controls, achievements, and other views. A/B compares recorded token contributions; it does not establish why usage changed. A zero baseline reports absolute Token change only. Projects and sessions are parallel aggregates, not automatically paired. Selected A/B periods and an open peak profile may be restored from the URL; project/session IDs and exact token details are not written there.
 
 Token change describes usage, not productivity or code quality. Cache Read is cached-token volume, not guaranteed monetary savings.
+
+### Local cost estimates
+
+The **Cost ledger** estimates model costs from independently recorded billing components. It ships with built-in official **reference prices** for ten exact model names and also accepts prices you enter under **Set prices**. With no local settings, it shows USD reference estimates by default and writes nothing to browser storage until you save.
+
+- **Built-in reference prices** are official USD rates per million tokens, verified on 2026-10-12 for ten precise model names: OpenAI Standard short-context tiers (≤272K), DeepSeek peak-time baselines, and Z.ai international USD rates, which are not the domestic Zhipu equivalent. The page never requests them from a provider; published rates travel with the page assets, and vendor source links open only when you click them.
+- **Manual prices** are keyed by log source and original model, including individual models grouped under Other, and take full priority over the built-in reference for that entry. A log source is not a provider or billing channel; model names may reflect routing aliases rather than billing SKUs. A configured zero price is free usage, while a blank price remains unknown. Saving an all-empty set keeps that explicit choice instead of letting reference prices fill back in, and CNY never draws on the USD reference prices. Gemini thoughts are a separate component.
+- **Set prices** includes a **Use official reference price (USD)** switch. If the current currency is CNY with prices already entered, enabling it first asks you to confirm, then does both at once: it clears your custom entries including notes and switches to USD. No exchange rate is assumed and entries are not converted; cancelling keeps the current prices and currency. Configurations saved before this switch existed carry no reference flag, so they keep their currency and manual prices with the reference layer off.
+- **Restore official reference** acts on one model at a time inside the price editor. It appears only for a USD draft with the reference layer on, a non-hidden model whose exact name hits a built-in reference, and a saved override for that source/model — an all-empty entry, an explicit zero, or a note-only entry all count as overrides. Confirming clears that entry's unit prices and note only; other models are untouched. Cancelling changes nothing, and closing the editor without saving persists nothing. Re-entering a price afterwards creates a normal override again.
+- **Export CSV** downloads the current cost ledger locally on click: no fetch, no new endpoint, nothing exported until you press the button. It follows the current granularity, selection, model filters, currency, and effective prices, and includes every entry regardless of pagination. Rows carry row type, range, source/model, currency, pricing status, the five billing components with tokens, effective unit prices, and estimated amounts — never sessions, titles, project paths, or notes. Reference-priced, manually priced, pending, and hidden rows stay distinct; unknown stays blank while an explicit zero means free. Amounts are exact decimals from the scaled-integer cost pipeline, not display rounding. Summary records carry unknown calls/tokens, invalid rows, incomplete totals, the priced subtotal, and the full-estimate flag; with no priceable amount the amount stays blank, and the file never invents a complete total. Cells are escaped against delimiters and dangerous formula prefixes.
+- The ledger follows model filters, reporting granularity, and the selected period. It shows an **estimated total** only when the entire selection can be priced reliably; otherwise it shows a **priced subtotal** and unpriced or uncertain coverage. Unsupported or inconsistent token components are not guessed. If reported token totals are invalid or cannot be represented safely, token coverage is unavailable; call coverage remains visible.
+- Costs are unified reference-or-manual estimates for the selected range, not the amount a billing channel actually charged. Records are daily, so the ledger cannot identify per-context or per-time-period discounts, and it does not fold subscription plans, cache storage, or similar costs into spend. A combined cache-write rate is a user-confirmed effective rate, not automatic 5-minute/1-hour tier accounting.
+- One currency is used at a time (CNY or USD). Changing currency requires clearing and re-entering rates; no exchange rate is assumed.
+- Price settings stay in this browser under the existing `tk-cost-v1` local-storage key, with no provider calls or API keys and no new storage key; readers and usage statistics are unchanged. Manually entered private prices are not embedded in the report. Browser storage for a live page and an offline file may be separate; if storage fails, settings remain available for the current page only.
+
+Older offline snapshots without billing data must be regenerated to use the ledger. The record cache moves to `records-v5.json` to capture independent billing fields; old cache files are retained.
 
 ## Supported sources
 
@@ -160,7 +203,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # after local
 | `--output DIR` | Choose the report directory; default is `./out`. |
 | `--html` | Add a static HTML report to terminal modes. |
 | `--anonymize` | Pseudonymize identifiers in dashboard or live mode. |
-| `--interval SECONDS` | Set initial live check interval; minimum 1, default 300. |
+| `--interval SECONDS` | Set the background log-scan interval; minimum 1, default 300. Browser checks are separate. |
 | `--port PORT` | Set loopback port; default 8765, or 0 for an available port. |
 | `--open` | Open generated file or local URL in the default browser. |
 | `--no-cache` | Re-read all selected log files. |
@@ -192,7 +235,7 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 
 ## Current boundaries
 
-- Public setup currently starts from a source checkout; registry install commands are intentionally not advertised until a verified release exists.
+- Public setup currently starts from a source checkout; registry install commands are intentionally not advertised until a verified release exists. The 0.3.0 local candidate does not change this: it is offline and local-only, and no verified public 0.3.0 package-index release is claimed.
 - Claude is the only default source. Gemini and Codex must be selected explicitly.
 - Source formats expose different fields, so some project, session, or context views can be unavailable.
 - Terminal and static reports support English and Chinese via `--lang en|zh`, defaulting to your system locale; the interactive dashboard has its own in-page language switch.

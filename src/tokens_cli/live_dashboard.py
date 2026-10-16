@@ -1,11 +1,30 @@
-"""Loopback-only live Dashboard server."""
+"""Loopback-only live Dashboard server.
+
+The server never scans logs while answering a request. A single background
+daemon thread owns the periodic scan; the HTTP handlers only read the most
+recently published in-memory snapshot under a short state lock, so ``/`` and
+``/api/snapshot`` stay fast even while a scan is running or blocked.
+"""
 import json
 import os
 import threading
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 from . import dashboard_payload, dashboard_wire, readers, report_dashboard
+
+
+_SCAN_FAILED_ERROR = (
+    "The local log scan failed; the last successful snapshot is still shown."
+)
+_SCAN_THREAD_NAME = "tokens-live-scan"
+_STOP_JOIN_TIMEOUT = 5.0
+_MAX_CLIENT_POLL_SECONDS = 60
+
+
+def _utc_timestamp():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class LiveDashboard:
@@ -20,8 +39,69 @@ class LiveDashboard:
         self._wire = None
         self._snapshot_id = None
         self._error = None
+        self._checked_at = None
+        self._has_snapshot = False
+        self._refreshing = False
+        self._revision = 0
+        # ``_lock`` only guards the atomic publish/read of the small state above.
+        # ``_work_lock`` serializes the heavy scan and is taken non-blocking so a
+        # new scan request is dropped instead of queueing behind a running one.
         self._lock = threading.Lock()
+        self._work_lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._scan_thread = None
+        # Render shell for the very first page before any real scan succeeded.
+        # Built with explicit empty records and an explicit empty title map, so
+        # it never reads raw session titles. It is never published as a snapshot.
+        self._placeholder_wire = dashboard_wire.encode_payload(
+            dashboard_payload.build_payload(
+                [],
+                since=self.since,
+                until=self.until,
+                sources=self.sources,
+                anonymize=self.anonymize,
+                aliases=self._aliases,
+                session_titles={},
+            )
+        )
 
+    # -- background lifecycle -------------------------------------------------
+    def start(self, interval):
+        """Start the single scan thread; the first scan runs immediately."""
+        if self._scan_thread is not None and self._scan_thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._scan_thread = threading.Thread(
+            target=self._scan_loop,
+            args=(float(interval),),
+            name=_SCAN_THREAD_NAME,
+            daemon=True,
+        )
+        self._scan_thread.start()
+
+    def stop(self, timeout=_STOP_JOIN_TIMEOUT):
+        """Wake the scan thread and stop scheduling new scans.
+
+        A scan already blocked inside file parsing is not forcibly cancelled;
+        the daemon thread is joined with a bounded timeout and will not start
+        another scan once the in-flight one returns.
+        """
+        self._stop_event.set()
+        thread = self._scan_thread
+        if thread is not None:
+            thread.join(timeout)
+            # Keep the reference while the daemon is still alive so a later
+            # ``start`` cannot clear the stop event and spawn a second loop.
+            if not thread.is_alive():
+                self._scan_thread = None
+
+    def _scan_loop(self, interval):
+        while not self._stop_event.is_set():
+            self.refresh()
+            if self._stop_event.wait(interval):
+                break
+
+    # -- scanning -------------------------------------------------------------
     def _file_signature(self):
         entries = []
         for source in self.sources:
@@ -41,11 +121,32 @@ class LiveDashboard:
         return tuple(sorted(entries))
 
     def refresh(self, force=False):
-        with self._lock:
+        """Run one scan and publish it atomically.
+
+        Returns ``True`` when the published snapshot identity changed. Returns
+        ``False`` when the work lock is already held (no queueing), when the
+        file signature is unchanged, or when the scan failed.
+        """
+        if not self._work_lock.acquire(blocking=False):
+            return False
+        try:
+            with self._lock:
+                self._refreshing = True
+                self._revision += 1
             try:
+                # stat / read / build / encode all happen outside the state
+                # lock, and any failure here (not just OSError) is contained so
+                # the background loop can never die on a bad signature.
                 signature = self._file_signature()
-                if not force and signature == self._signature and self._wire is not None:
-                    return False
+                with self._lock:
+                    if not force and signature == self._signature and self._wire is not None:
+                        # Unchanged files are still a successful check: clear
+                        # any stale error and advance the time and revision.
+                        self._error = None
+                        self._checked_at = _utc_timestamp()
+                        self._refreshing = False
+                        self._revision += 1
+                        return False
                 records = readers.read_all(sources=self.sources, use_cache=self.use_cache)
                 payload = dashboard_payload.build_payload(
                     records,
@@ -55,43 +156,62 @@ class LiveDashboard:
                     anonymize=self.anonymize,
                     aliases=self._aliases,
                 )
+                wire = dashboard_wire.encode_payload(payload)
                 snapshot_id = payload["snapshot"]["id"]
+            except Exception:
+                # Keep the last successful wire/snapshot; only a generic local
+                # message is exposed so private paths never leak.
+                with self._lock:
+                    self._error = _SCAN_FAILED_ERROR
+                    self._refreshing = False
+                    self._revision += 1
+                return False
+            with self._lock:
                 changed = snapshot_id != self._snapshot_id
                 self._signature = signature
                 self._error = None
+                self._checked_at = _utc_timestamp()
+                self._has_snapshot = True
                 if changed or self._wire is None:
-                    self._wire = dashboard_wire.encode_payload(payload)
+                    self._wire = wire
                     self._snapshot_id = snapshot_id
-                return changed
-            except Exception:
-                self._error = "The local log scan failed; the last successful snapshot is still shown."
-                if self._wire is None:
-                    payload = dashboard_payload.build_payload(
-                        [],
-                        since=self.since,
-                        until=self.until,
-                        sources=self.sources,
-                        anonymize=self.anonymize,
-                        aliases=self._aliases,
-                    )
-                    self._wire = dashboard_wire.encode_payload(payload)
-                    self._snapshot_id = payload["snapshot"]["id"]
-                return False
+                self._refreshing = False
+                self._revision += 1
+            return changed
+        finally:
+            self._work_lock.release()
 
+    # -- request-time reads (never scan) -------------------------------------
     def page(self, interval):
-        self.refresh(force=self._wire is None)
-        return report_dashboard.render_dashboard(
-            self._wire,
-            live={"enabled": True, "interval": interval},
-        )
+        with self._lock:
+            wire = self._wire if self._wire is not None else self._placeholder_wire
+            live = {
+                "enabled": True,
+                "interval": interval,
+                "poll_interval": min(_MAX_CLIENT_POLL_SECONDS, interval),
+                "has_snapshot": self._has_snapshot,
+                "refreshing": self._refreshing,
+                "checked_at": self._checked_at,
+                "error": self._error,
+                "snapshot": self._snapshot_id,
+                "revision": self._revision,
+                "etag": f'"live-{self._revision}"',
+            }
+        # Rendering happens outside the state lock, on an already-captured wire.
+        return report_dashboard.render_dashboard(wire, live=live)
 
     def response(self):
-        self.refresh()
         with self._lock:
+            revision = self._revision
             return {
                 "wire": self._wire,
                 "snapshot": self._snapshot_id,
                 "error": self._error,
+                "has_snapshot": self._has_snapshot,
+                "refreshing": self._refreshing,
+                "checked_at": self._checked_at,
+                "revision": revision,
+                "etag": f'"live-{revision}"',
             }
 
 
@@ -103,6 +223,13 @@ class LiveDashboardServer(ThreadingHTTPServer):
         self.dashboard = dashboard
         self.interval = interval
         super().__init__(("127.0.0.1", port), LiveDashboardHandler)
+        dashboard.start(interval)
+
+    def server_close(self):
+        try:
+            self.dashboard.stop()
+        finally:
+            super().server_close()
 
 
 class LiveDashboardHandler(BaseHTTPRequestHandler):
@@ -130,6 +257,14 @@ class LiveDashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        # A client that navigates away cancels its request; drop that quietly at
+        # this boundary without masking any other error.
+        try:
+            self._handle_get()
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+    def _handle_get(self):
         if not self._allowed_request():
             self._headers(403, "text/plain; charset=utf-8")
             return
@@ -141,8 +276,8 @@ class LiveDashboardHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/snapshot":
             response = self.server.dashboard.response()
-            etag = f'"{response["snapshot"]}"'
-            if self.headers.get("If-None-Match") == etag and not response["error"]:
+            etag = response.get("etag") or f'"live-{response.get("revision", 0)}"'
+            if self.headers.get("If-None-Match") == etag and not response.get("error"):
                 self._headers(304, "application/json; charset=utf-8", etag=etag)
                 return
             body = json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

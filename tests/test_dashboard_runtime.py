@@ -181,7 +181,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         )
         cls._overflow_path = Path(cls._tmp.name) / "synthetic-dashboard-other.html"
         overflow_records = [
-            interval_record("2026-01-01", f"model-{index}", 10, f"synthetic-base-{index}")
+            interval_record("2026-01-01", f"model-{index}", 200, f"synthetic-base-{index}")
             for index in range(7)
         ] + [
             interval_record("2026-02-05", "model-6", 1, "synthetic-keep"),
@@ -202,6 +202,21 @@ class DashboardRuntimeTests(unittest.TestCase):
             report_dashboard.render_dashboard(dashboard_wire.encode_payload(overflow_payload)),
             encoding="utf-8",
         )
+        cls._visible_other_path = Path(cls._tmp.name) / "synthetic-visible-other.html"
+        with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
+            visible_payload = report_dashboard.build_payload(
+                overflow_records + [
+                    interval_record("2026-01-07", "glm-5.3-flash", 13, "synthetic-flash-a"),
+                    interval_record("2026-02-04", "glm-5.3-flash", 7, "synthetic-flash-b"),
+                ], since="2026-01-01", until="2026-02-28",
+                sources=["claude"], generated_at=datetime(2026, 3, 15, 12, 0),
+            )
+        cls._visible_other_path.write_text(
+            report_dashboard.render_dashboard(dashboard_wire.encode_payload(visible_payload)),
+            encoding="utf-8",
+        )
         untimed_records = overflow_records + [{
             **interval_record("2026-02-04", "older-<img src=x onerror=window.__otherXss=1>",
                               50, "synthetic-untimed"),
@@ -217,6 +232,84 @@ class DashboardRuntimeTests(unittest.TestCase):
         cls._untimed_overflow_path = Path(cls._tmp.name) / "synthetic-dashboard-untimed-other.html"
         cls._untimed_overflow_path.write_text(
             report_dashboard.render_dashboard(dashboard_wire.encode_payload(untimed_payload)),
+            encoding="utf-8",
+        )
+        # Synthetic fixture with an historical and a current Sol backend, both
+        # heavily used, plus low-usage legacy models that overflow into Other.
+        cls._sol_path = Path(cls._tmp.name) / "synthetic-dashboard-sol.html"
+        # A single unbreakable backend identity longer than any viewport column:
+        # 38 characters with no hyphen break opportunity, so it can only stay put
+        # if the legend lets the name span shrink and wrap.
+        cls._long_backend_name = "claude_opus_4_6_very_long_backend_name"
+        sol_records = [
+            interval_record("2026-05-01", "gpt-6-sol", 300, "synthetic-sol-old"),
+            # Second-heaviest so it lands in the right-hand legend column, where a
+            # spill past the button would push the document wider than 390px.
+            interval_record(
+                "2026-05-10", cls._long_backend_name, 280, "synthetic-sol-long"
+            ),
+            interval_record("2026-05-09", "gpt-6.1-sol", 250, "synthetic-sol-new"),
+        ] + [
+            interval_record(
+                f"2026-05-{index + 2:02d}", f"legacy-model-{index}", 20 - index,
+                f"synthetic-sol-legacy-{index}",
+            )
+            for index in range(7)
+        ]
+        with mock.patch(
+            "tokens_cli.dashboard_payload.readers.build_session_index", return_value={}
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}
+        ):
+            sol_payload = report_dashboard.build_payload(
+                sol_records, since="2026-05-01", until="2026-05-31",
+                sources=["claude"], generated_at=datetime(2026, 6, 15, 12, 0),
+            )
+        cls._sol_path.write_text(
+            report_dashboard.render_dashboard(dashboard_wire.encode_payload(sol_payload)),
+            encoding="utf-8",
+        )
+        # High-volume fixture: 1000 sessions across two long-named projects and two
+        # models. Session labels are blank, so the destinations module exercises its
+        # Untitled fallback, pagination remainder and lazy full-set table.
+        volume_records = []
+        for index in range(1000):
+            day = 1 + (index % 28)
+            model = "model-a" if index % 3 else "model-b"
+            cwd = (
+                "/synthetic/volume-long-project-name-alpha"
+                if index % 2 == 0
+                else "/synthetic/volume-long-project-name-beta"
+            )
+            volume_records.append({
+                "source": "claude",
+                "ts": f"2026-08-{day:02d}T09:00:00+08:00",
+                "date": f"2026-08-{day:02d}",
+                "model": model,
+                "input": 10 + (index % 7),
+                "output": 5,
+                "cache_read": 2,
+                "cache_write": 0,
+                "total": 20 + (index % 40),
+                "session": f"synthetic-volume-{index:04d}",
+                "cwd": cwd,
+            })
+        with mock.patch(
+            "tokens_cli.dashboard_payload.readers.build_session_index", return_value={}
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}
+        ):
+            volume_payload = report_dashboard.build_payload(
+                volume_records, since="2026-08-01", until="2026-08-31",
+                sources=["claude"], generated_at=datetime(2026, 9, 15, 12, 0),
+            )
+        cls._volume_path = Path(cls._tmp.name) / "synthetic-dashboard-volume.html"
+        cls._volume_path.write_text(
+            report_dashboard.render_dashboard(dashboard_wire.encode_payload(volume_payload)),
             encoding="utf-8",
         )
         cls._playwright = sync_playwright().start()
@@ -278,8 +371,8 @@ class DashboardRuntimeTests(unittest.TestCase):
     def wait_for_flow(self, page):
         page.locator("#section-flow").scroll_into_view_if_needed()
         page.wait_for_function(
-            "document.querySelectorAll('#flow-map .flow-node').length > 0 && "
-            "document.querySelectorAll('#flow-map .flow-link').length > 0"
+            "document.querySelectorAll('#flow-map .dest-project').length > 0 && "
+            "document.querySelectorAll('#flow-map .dest-session').length > 0"
         )
 
     def force_flow_error(self, page):
@@ -295,11 +388,8 @@ class DashboardRuntimeTests(unittest.TestCase):
     def restore_flow_map(self, page):
         page.evaluate("""
             () => {
-              const shell=document.querySelector('#section-flow .flow-shell');
-              shell.insertBefore(
-                window.__detachedFlowMap,
-                document.getElementById('flow-panel')
-              );
+              const panel=document.getElementById('flow-panel');
+              panel.parentNode.insertBefore(window.__detachedFlowMap, panel);
             }
         """)
 
@@ -323,99 +413,65 @@ class DashboardRuntimeTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             self.wait_for_flow(page)
-            page.evaluate("applyLanguage('en',false)")
-            visible = page.evaluate("""
+            state = page.evaluate("""
                 () => {
                   const section=document.getElementById('section-flow');
-                  const svg=document.getElementById('flow-map');
-                  const node=svg.querySelector('.flow-node');
-                  const path=svg.querySelector('.flow-link');
-                  const sectionStyle=getComputedStyle(section);
-                  const svgStyle=getComputedStyle(svg);
-                  const pathStyle=getComputedStyle(path);
-                  const rect=svg.getBoundingClientRect();
-                  const box=node.getBBox();
+                  const grid=document.getElementById('flow-map');
+                  const proj=grid.querySelector('.dest-project-name');
                   return {
-                    sectionDisplay:sectionStyle.display,
+                    sectionDisplay:getComputedStyle(section).display,
                     pending:section.classList.contains('lazy-pending'),
                     error:!!section.querySelector('.lazy-error-state'),
                     ariaBusy:section.getAttribute('aria-busy'),
-                    nodes:svg.querySelectorAll('.flow-node').length,
-                    links:svg.querySelectorAll('.flow-link').length,
-                    svgDisplay:svgStyle.display,
-                    svgVisibility:svgStyle.visibility,
-                    width:rect.width,
-                    height:rect.height,
-                    nodeWidth:box.width,
-                    nodeHeight:box.height,
-                    pathLength:path.getTotalLength(),
-                    pathOpacity:Number(pathStyle.opacity),
+                    projects:grid.querySelectorAll('.dest-project').length,
+                    sessions:grid.querySelectorAll('.dest-session').length,
+                    pager:!!grid.querySelector('.dest-pager'),
                     stats:document.getElementById('flow-stats').textContent,
+                    gridWidth:grid.getBoundingClientRect().width,
+                    gridVisibility:getComputedStyle(grid).visibility,
+                    projectText:proj?proj.textContent:'',
                   };
                 }
             """)
-            self.assertNotEqual("none", visible["sectionDisplay"])
-            self.assertFalse(visible["pending"])
-            self.assertFalse(visible["error"])
-            self.assertEqual("false", visible["ariaBusy"])
-            self.assertGreater(visible["nodes"], 0)
-            self.assertGreater(visible["links"], 0)
-            self.assertEqual("block", visible["svgDisplay"])
-            self.assertNotEqual("hidden", visible["svgVisibility"])
-            self.assertGreater(visible["width"], 0)
-            self.assertGreater(visible["height"], 0)
-            self.assertGreater(visible["nodeWidth"], 0)
-            self.assertGreater(visible["nodeHeight"], 0)
-            self.assertGreater(visible["pathLength"], 0)
-            self.assertGreaterEqual(visible["pathOpacity"], 0.45)
-            self.assertIn("actual flows", visible["stats"])
-            page.evaluate("applyLanguage('zh',false)")
-
-            page.wait_for_function("""
-                [...document.querySelectorAll('#flow-map .flow-node.project')]
-                  .some(item=>item.querySelector('title').textContent.includes('悬停 Peek'))
-            """)
-            title = page.evaluate("""
-                () => {
-                  const node=[...document.querySelectorAll('#flow-map .flow-node.project')]
-                    .find(item=>item.dataset.flowName.includes('long-running-project-alpha'));
-                  return {
-                    full:node.dataset.flowName,
-                    visible:node.querySelector('text').textContent,
-                    title:node.querySelector('title').textContent,
-                  };
-                }
-            """)
-            self.assertGreater(len(title["full"]), 20)
-            self.assertNotEqual(title["full"], title["visible"])
-            self.assertTrue(title["visible"].endswith("…"))
-            self.assertEqual(
-                title["full"] + " · 悬停 Peek · 点击 Pin 信号",
-                title["title"],
-            )
+            self.assertNotEqual("none", state["sectionDisplay"])
+            self.assertFalse(state["pending"])
+            self.assertFalse(state["error"])
+            self.assertEqual("false", state["ariaBusy"])
+            self.assertGreater(state["projects"], 0)
+            self.assertGreater(state["sessions"], 0)
+            self.assertLessEqual(state["sessions"], 12)
+            self.assertTrue(state["pager"])
+            self.assertGreater(state["gridWidth"], 0)
+            self.assertNotEqual("hidden", state["gridVisibility"])
+            self.assertIn("个会话", state["stats"])
+            self.assertIn("long-running-project-alpha", state["projectText"])
+            self.assertNotIn("…", state["projectText"])
 
             page.evaluate("applyLanguage('en',false)")
-            page.wait_for_function("""
-                [...document.querySelectorAll('#flow-map .flow-node.project')]
-                  .some(item=>item.querySelector('title').textContent.includes('Hover to Peek'))
+            english = page.evaluate("""
+                () => ({
+                  stats:document.getElementById('flow-stats').textContent,
+                  pager:document.querySelector('#flow-map .dest-pagecount').textContent,
+                })
             """)
-            translated = page.evaluate("""
-                () => {
-                  const node=[...document.querySelectorAll('#flow-map .flow-node.project')]
-                    .find(item=>item.dataset.flowName.includes('long-running-project-alpha'));
-                  return node.querySelector('title').textContent;
-                }
-            """)
-            self.assertEqual(
-                title["full"] + " · Hover to Peek · Click to Pin",
-                translated,
-            )
+            self.assertIn("sessions", english["stats"])
+            self.assertIn("Page", english["pager"])
 
+            page.evaluate("applyLanguage('zh',false)")
             page.evaluate("state.models.clear();renderLazy('flow',true)")
             page.wait_for_function(
-                "document.getElementById('flow-stats').textContent === '0 flow links'"
+                "document.getElementById('flow-stats').textContent.includes('0 个会话')"
             )
-            self.assertEqual("0 flow links", page.locator("#flow-stats").inner_text())
+            empty = page.evaluate("""
+                () => ({
+                  stats:document.getElementById('flow-stats').textContent,
+                  empty:!!document.querySelector('#flow-map .dest-empty'),
+                  sessions:document.querySelectorAll('#flow-map .dest-session').length,
+                })
+            """)
+            self.assertIn("0 个会话", empty["stats"])
+            self.assertTrue(empty["empty"])
+            self.assertEqual(0, empty["sessions"])
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:
@@ -477,24 +533,27 @@ class DashboardRuntimeTests(unittest.TestCase):
                     )
                     geometry = page.evaluate("""
                         () => {
-                          const svg=document.getElementById('flow-map');
+                          const grid=document.getElementById('flow-map');
+                          const first=grid.querySelector('.dest-session');
                           return {
-                            nodes:svg.querySelectorAll('.flow-node').length,
-                            length:svg.querySelector('.flow-link').getTotalLength(),
-                            visibility:getComputedStyle(svg).visibility,
+                            sessions:grid.querySelectorAll('.dest-session').length,
+                            projects:grid.querySelectorAll('.dest-project').length,
+                            visibility:getComputedStyle(grid).visibility,
+                            anim:first?getComputedStyle(first).animationName:'none',
                           };
                         }
                     """)
-                    self.assertGreater(geometry["nodes"], 0)
-                    self.assertGreater(geometry["length"], 0)
+                    self.assertGreater(geometry["sessions"], 0)
+                    self.assertGreater(geometry["projects"], 0)
                     self.assertNotEqual("hidden", geometry["visibility"])
+                    self.assertEqual("none", geometry["anim"])
 
             page.emulate_media(reduced_motion="reduce", color_scheme="dark")
             page.evaluate("applyTheme('auto'); renderLazy('flow',true)")
-            self.assertGreater(page.locator("#flow-map .flow-link").count(), 0)
+            self.assertGreater(page.locator("#flow-map .dest-project").count(), 0)
             self.assertEqual(
                 "none",
-                page.locator("#flow-map .flow-link").first.evaluate(
+                page.locator("#flow-map .dest-project").first.evaluate(
                     "element => getComputedStyle(element).animationName"
                 ),
             )
@@ -525,7 +584,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             """)
             page.wait_for_function(
                 "document.getElementById('section-flow').style.display !== 'none' && "
-                "document.querySelectorAll('#flow-map .flow-node').length > 0"
+                "document.querySelectorAll('#flow-map .dest-project').length > 0"
             )
 
             self.assertFalse(self.force_flow_error(page))
@@ -550,7 +609,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             page.evaluate("document.querySelector('[data-lazy-retry]').click()")
             page.wait_for_function(
                 "!document.querySelector('#section-flow .lazy-error-state') && "
-                "document.querySelectorAll('#flow-map .flow-node').length > 0 && "
+                "document.querySelectorAll('#flow-map .dest-project').length > 0 && "
                 "lazyState.flow.status === 'ready' && "
                 "document.activeElement.matches('#section-flow h2, #section-flow h3')"
             )
@@ -564,7 +623,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             """)
             self.assertEqual("H2", focus["tag"])
             self.assertTrue(focus["inside"])
-            self.assertIn("Token", focus["text"])
+            self.assertIn("去向", focus["text"])
             self.assertEqual("-1", focus["tabindex"])
             self.assertFalse(
                 flow.evaluate("element => element.classList.contains('lazy-error')")
@@ -577,6 +636,374 @@ class DashboardRuntimeTests(unittest.TestCase):
             ))
         finally:
             context.close()
+
+    def test_destinations_model_filter_and_reset_preserve_global_models(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            self.wait_for_flow(page)
+            baseline = page.evaluate("""
+                () => ({
+                  sessions:document.querySelectorAll('#flow-map .dest-session').length,
+                  models:[...state.models],
+                })
+            """)
+            model = page.evaluate("""
+                () => [...document.querySelectorAll('#flow-map .dest-chip')]
+                  .map(chip=>chip.dataset.destModel).find(value=>value)
+            """)
+            self.assertTrue(model)
+            page.locator(
+                '#flow-map .dest-chip[data-dest-model="' + model + '"]'
+            ).click()
+            filtered = page.evaluate("""
+                () => ({
+                  model:destState.model,
+                  page:destState.page,
+                  note:!!document.querySelector('#flow-map .dest-filter-note'),
+                  active:document.querySelectorAll('#flow-map .dest-chip.is-active').length,
+                  global:[...state.models],
+                })
+            """)
+            self.assertEqual(model, filtered["model"])
+            self.assertEqual(0, filtered["page"])
+            self.assertTrue(filtered["note"])
+            self.assertEqual(baseline["models"], filtered["global"])
+
+            page.locator("#flow-map .dest-filter-note button").click()
+            reset = page.evaluate(
+                "() => ({model:destState.model, global:[...state.models]})"
+            )
+            self.assertIsNone(reset["model"])
+            self.assertEqual(baseline["models"], reset["global"])
+            self.assertEqual(
+                baseline["sessions"], page.locator("#flow-map .dest-session").count()
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_destinations_pagination_builds_only_page_and_full_table(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._volume_path
+        )
+        try:
+            self.wait_for_flow(page)
+            info = page.evaluate("""
+                () => {
+                  const c=computeDestinations();
+                  return {
+                    total:c.filtered.length, pageCount:c.pageCount,
+                    rendered:document.querySelectorAll('#flow-map .dest-session').length,
+                    untitled:document.querySelector('#flow-map .dest-session-title').textContent,
+                    sid:document.querySelector('#flow-map .dest-sid').textContent,
+                    tableRows:document.querySelectorAll('#flow-map .dest-table tbody tr').length,
+                  };
+                }
+            """)
+            self.assertEqual(1000, info["total"])
+            self.assertEqual(84, info["pageCount"])
+            self.assertEqual(12, info["rendered"])
+            self.assertEqual("未命名会话", info["untitled"])
+            self.assertTrue(info["sid"].startswith("synthetic-"))
+            self.assertTrue(info["sid"].endswith("\u2026"))
+            self.assertEqual(0, info["tableRows"])
+
+            page.locator('#flow-map [data-dest-page="next"]').click()
+            paged = page.evaluate("""
+                () => ({
+                  page:destState.page,
+                  rendered:document.querySelectorAll('#flow-map .dest-session').length,
+                  usage:document.querySelector('#flow-map .dest-usage').textContent,
+                })
+            """)
+            self.assertEqual(1, paged["page"])
+            self.assertEqual(12, paged["rendered"])
+            self.assertIn("页外", paged["usage"])
+
+            last = page.evaluate("""
+                () => {
+                  destState.page=computeDestinations().pageCount-1;
+                  renderFlow();
+                  const c=computeDestinations();
+                  return {
+                    remainder:c.pageSessions.length,
+                    pageTotal:c.pageTotal,
+                    outside:c.outsideTotal,
+                    filteredTotal:c.filteredTotal,
+                  };
+                }
+            """)
+            self.assertEqual(1000 - 83 * 12, last["remainder"])
+            self.assertEqual(last["filteredTotal"], last["pageTotal"] + last["outside"])
+
+            page.locator('#flow-map [data-dest-view="table"]').click()
+            table = page.evaluate("""
+                () => ({
+                  pressed:document.querySelector('#flow-map [data-dest-view="table"]').getAttribute('aria-pressed'),
+                  rows:document.querySelectorAll('#flow-map .dest-table tbody tr').length,
+                  cards:document.querySelectorAll('#flow-map .dest-session').length,
+                  sessionsHidden:getComputedStyle(document.querySelector('#flow-map .dest-sessions')).display,
+                })
+            """)
+            self.assertEqual("true", table["pressed"])
+            self.assertEqual(1000, table["rows"])
+            self.assertEqual("none", table["sessionsHidden"])
+            replay = page.locator("#flow-map .dest-table [data-dest-replay]").first
+            self.assertEqual(1000, page.locator("#flow-map .dest-table [data-dest-replay]").count())
+            replay_id = replay.get_attribute("data-dest-replay")
+            self.assertNotIn(replay_id, page.evaluate(
+                "computeDestinations().pageSessions.map(session=>session.id)"
+            ))
+            replay.click()
+            self.assertTrue(page.locator("#replay-modal").is_visible())
+            self.assertEqual(replay_id, page.evaluate("rp.sid"))
+            page.locator("#replay-x").click()
+            self.assertFalse(page.locator("#replay-modal").is_visible())
+
+            page.evaluate("destState.page=0;")
+            page.locator('#flow-map [data-dest-view="cards"]').click()
+            self.assertEqual(
+                12, page.locator("#flow-map .dest-session").count()
+            )
+            self.assertEqual(
+                0,
+                page.locator("#flow-map .dest-table tbody tr").count(),
+            )
+            self.assertNotEqual(
+                "none",
+                page.locator("#flow-map .dest-sessions").evaluate(
+                    "element => getComputedStyle(element).display"
+                ),
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_destinations_scope_change_resets_pagination_and_filter(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._volume_path
+        )
+        try:
+            self.wait_for_flow(page)
+            before = page.evaluate("""
+                () => {
+                  destState.page=1;
+                  destState.model=computeDestinations().data.models[0];
+                  renderFlow();
+                  return {page:destState.page, model:destState.model};
+                }
+            """)
+            self.assertEqual(1, before["page"])
+            self.assertTrue(before["model"])
+            after = page.evaluate("""
+                () => {
+                  state.gran = state.gran === 'day' ? 'month' : 'day';
+                  computeDestinations();
+                  renderFlow();
+                  return {page:destState.page, model:destState.model};
+                }
+            """)
+            self.assertEqual(0, after["page"])
+            self.assertIsNone(after["model"])
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_destinations_model_totals_use_single_projection(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._volume_path
+        )
+        try:
+            self.wait_for_flow(page)
+            measured = page.evaluate("""
+                () => {
+                  const proj={}, sess={};
+                  Object.values(DATA.day_details||{}).forEach(d=>{
+                    const f=d.flow||{};
+                    (f.project_model||[]).forEach(x=>{
+                      if(!state.models.has(x[2]))return;
+                      proj[x[2]]=(proj[x[2]]||0)+(x[3]||0);
+                    });
+                    (f.model_session||[]).forEach(x=>{
+                      if(!state.models.has(x[0]))return;
+                      sess[x[0]]=(sess[x[0]]||0)+(x[3]||0);
+                    });
+                  });
+                  const chips={};
+                  document.querySelectorAll('#flow-map .dest-chip[data-dest-model]')
+                    .forEach(c=>{
+                      const m=c.getAttribute('data-dest-model');
+                      if(m)chips[m]=Number(c.getAttribute('data-signal-value'));
+                    });
+                  return {proj,sess,chips,totals:destinationData().modelTotals};
+                }
+            """)
+            self.assertTrue(measured["chips"])
+            for model, value in measured["chips"].items():
+                proj = measured["proj"].get(model, 0)
+                sess = measured["sess"].get(model, 0)
+                self.assertNotEqual(0, value)
+                # chip Signal value equals ONE projection, never the sum (2x)
+                self.assertEqual(max(proj, sess), value)
+                self.assertEqual(measured["totals"][model], value)
+                if proj and sess:
+                    self.assertNotEqual(proj + sess, value)
+            model, value = next(iter(measured["chips"].items()))
+            with page.expect_download() as download_info:
+                page.locator("#flow-save").click()
+            svg = Path(download_info.value.path()).read_text(encoding="utf-8")
+            self.assertIn("{:,}".format(value), svg)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_destinations_session_cards_show_short_secondary_id(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._volume_path
+        )
+        try:
+            self.wait_for_flow(page)
+            data = page.evaluate("""
+                () => {
+                  const card=document.querySelector('#flow-map .dest-session');
+                  const open=card.querySelector('.dest-card-open');
+                  const sid=card.querySelector('.dest-sid');
+                  const replay=card.querySelector('.dest-replay');
+                  return {
+                    sidText:sid.textContent,
+                    sidTitle:sid.getAttribute('title'),
+                    signalId:open.getAttribute('data-signal-id'),
+                    replayId:replay.getAttribute('data-dest-replay'),
+                    aliasShort:shortSid('Session-ABCDEFGHIJ'),
+                    aliasProject:shortSid('Project-ABCDEFGHIJ'),
+                    longId:shortSid('abcdefghijklmnopqrstuvwxyz'),
+                  };
+                }
+            """)
+            # anonymous aliases stay verbatim (never truncated)
+            self.assertEqual("Session-ABCDEFGHIJ", data["aliasShort"])
+            self.assertEqual("Project-ABCDEFGHIJ", data["aliasProject"])
+            # real opaque ids truncated to first 10 chars + ellipsis
+            self.assertEqual("abcdefghij\u2026", data["longId"])
+            # card secondary id is the SHORT form, full id only as tooltip
+            self.assertTrue(data["sidTitle"])
+            self.assertNotEqual(data["sidTitle"], data["sidText"])
+            self.assertEqual(data["sidTitle"][:10] + "\u2026", data["sidText"])
+            # identity for signal + replay keeps the FULL sid
+            self.assertEqual(data["sidTitle"], data["signalId"])
+            self.assertEqual(data["sidTitle"], data["replayId"])
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_destinations_legacy_payload_hides_missing_context_fields(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._volume_path
+        )
+        try:
+            self.wait_for_flow(page)
+            legacy = page.evaluate("""
+                () => {
+                  delete DATA.session_context;
+                  renderFlow();
+                  const card=document.querySelector('#flow-map .dest-session');
+                  return {
+                    sessions:document.querySelectorAll('#flow-map .dest-session').length,
+                    meta:card.querySelector('.dest-meta').textContent.trim(),
+                    title:card.querySelector('.dest-session-title').textContent,
+                  };
+                }
+            """)
+            self.assertGreater(legacy["sessions"], 0)
+            self.assertTrue(legacy["meta"])
+            self.assertEqual("未命名会话", legacy["title"])
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_destinations_mobile_no_horizontal_overflow_all_locales(self):
+        for width in (375, 390):
+            for scheme in ("light", "dark"):
+                for language in ("zh", "en"):
+                    with self.subTest(width=width, scheme=scheme, language=language):
+                        context, page, page_errors, console_errors = self.new_page(
+                            viewport={"width": width, "height": 760},
+                            color_scheme=scheme,
+                            path=self._volume_path,
+                        )
+                        try:
+                            self.wait_for_flow(page)
+                            page.evaluate(
+                                "lang => applyLanguage(lang,false)", language
+                            )
+                            overflow = page.evaluate("""
+                                () => {
+                                  const h = sel => {
+                                    const el = document.querySelector('#flow-map ' + sel);
+                                    return el ? Math.round(el.getBoundingClientRect().height) : null;
+                                  };
+                                  return {
+                                    scroll:document.documentElement.scrollWidth,
+                                    client:document.documentElement.clientWidth,
+                                    sessions:document.querySelectorAll('#flow-map .dest-session').length,
+                                    replay:h('.dest-replay'),
+                                    chip:h('.dest-chip'),
+                                    trail:h('.dest-trail'),
+                                    viewswitch:h('.dest-viewswitch button'),
+                                    pager:h('.dest-pager button'),
+                                  };
+                                }
+                            """)
+                            self.assertLessEqual(
+                                overflow["scroll"], overflow["client"] + 1
+                            )
+                            self.assertGreater(overflow["sessions"], 0)
+                            for name in ("replay", "chip", "trail", "viewswitch", "pager"):
+                                self.assertIsNotNone(
+                                    overflow[name], f"{name} button missing on mobile"
+                                )
+                                self.assertGreaterEqual(
+                                    overflow[name], 44,
+                                    f"{name} touch target below 44px: {overflow[name]}",
+                                )
+                            self.assertEqual([], page_errors)
+                            self.assertEqual([], console_errors)
+                        finally:
+                            context.close()
+
+    def test_destinations_svg_export_reports_theme_and_page(self):
+        for scheme, expected in (("light", "#ffffff"), ("dark", "#0f1524")):
+            with self.subTest(scheme=scheme):
+                context, page, page_errors, console_errors = self.new_page(
+                    color_scheme=scheme, path=self._volume_path
+                )
+                try:
+                    self.wait_for_flow(page)
+                    page.evaluate(
+                        "theme => { applyTheme(theme); applyLanguage('en',false); renderLazy('flow',true); }",
+                        scheme,
+                    )
+                    with page.expect_download() as download_info:
+                        page.locator("#flow-save").click()
+                    download = download_info.value
+                    svg = Path(download.path()).read_text(encoding="utf-8")
+                    self.assertIn("<svg", svg)
+                    self.assertIn(expected, svg)
+                    self.assertIn("Current page sessions", svg)
+                    self.assertIn("page 1 /", svg)
+                    self.assertIn("not all sessions", svg)
+                    self.assertIn("Untitled session", svg)
+                    self.assertNotIn("\u672a\u547d\u540d\u4f1a\u8bdd", svg)
+                    self.assertEqual([], page_errors)
+                    self.assertEqual([], console_errors)
+                finally:
+                    context.close()
 
     def test_new_attribution_and_archive_labels_localize_to_english(self):
         context, page, page_errors, console_errors = self.new_page()
@@ -670,41 +1097,37 @@ class DashboardRuntimeTests(unittest.TestCase):
         try:
             self.wait_for_flow(page)
             page.evaluate("applyLanguage('en',false)")
-            shell = page.locator("#section-flow .flow-shell")
-            page.locator("#flow-save").focus()
-            page.keyboard.press("Tab")
-            self.assertTrue(shell.evaluate("element => document.activeElement === element"))
-            self.assertEqual("region", shell.get_attribute("role"))
-            self.assertEqual(
-                "Token Flow; horizontally scrollable",
-                shell.get_attribute("aria-label"),
-            )
-            before = shell.evaluate("element => element.scrollLeft")
-            for _ in range(8):
-                page.keyboard.press("ArrowRight")
-            page.wait_for_timeout(250)
             mobile = page.evaluate("""
                 () => {
-                  const shell=document.querySelector('#section-flow .flow-shell');
-                  const svg=document.getElementById('flow-map');
+                  const grid=document.getElementById('flow-map');
                   return {
                     pageWidth:document.documentElement.scrollWidth,
                     viewportWidth:document.documentElement.clientWidth,
-                    shellClient:shell.clientWidth,
-                    shellScroll:shell.scrollWidth,
-                    shellLeft:shell.scrollLeft,
-                    svgWidth:svg.getBoundingClientRect().width,
-                    nodes:svg.querySelectorAll('.flow-node').length,
-                    outline:getComputedStyle(shell).outlineStyle,
+                    gridWidth:grid.getBoundingClientRect().width,
+                    gridColumns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+                    gridScroll:grid.scrollWidth,
+                    gridClient:grid.clientWidth,
+                    sessions:grid.querySelectorAll('.dest-session').length,
                   };
                 }
             """)
             self.assertLessEqual(mobile["pageWidth"], mobile["viewportWidth"] + 1)
-            self.assertGreater(mobile["shellScroll"], mobile["shellClient"])
-            self.assertGreater(mobile["svgWidth"], mobile["shellClient"])
-            self.assertGreater(mobile["nodes"], 0)
-            self.assertGreater(mobile["shellLeft"], before)
-            self.assertNotEqual("none", mobile["outline"])
+            self.assertEqual(1, mobile["gridColumns"])
+            self.assertLessEqual(mobile["gridScroll"], mobile["gridClient"] + 1)
+            self.assertLessEqual(mobile["gridWidth"], mobile["viewportWidth"] + 1)
+            self.assertGreater(mobile["sessions"], 0)
+            # Session cards stay reachable by keyboard instead of hover-only.
+            page.locator("#flow-map .dest-card-open").first.focus()
+            page.keyboard.press("Enter")
+            self.assertEqual(
+                "session", page.evaluate("effectiveSignal() && effectiveSignal().type")
+            )
+            self.assertNotEqual(
+                "hidden",
+                page.locator("#flow-map .dest-session").first.evaluate(
+                    "element => getComputedStyle(element).visibility"
+                ),
+            )
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:
@@ -962,6 +1385,106 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertEqual([], console_errors)
         finally:
             context.close()
+
+    def test_achievement_preview_pagination_and_secret_privacy(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.locator('#section-dock button[data-target="section-achievements"]').click()
+            preview = page.locator('#ach-preview .badge.on')
+            self.assertGreater(preview.count(), 0)
+            preview.first.click()
+            self.assertTrue(page.locator('#ach-modal').evaluate("el => el.classList.contains('open')"))
+            self.assertNotEqual('', page.locator('#ach-detail .ach-story').inner_text())
+            self.assertIn('达成条件：', page.locator('#ach-detail .ach-condition').inner_text())
+            page.keyboard.press('Escape')
+            page.wait_for_function("!document.getElementById('ach-modal').classList.contains('open')")
+            self.assertTrue(preview.first.evaluate('el => document.activeElement === el'))
+
+            page.locator('#ach-view-earned').click()
+            total = page.evaluate('getBadgeData().got')
+            self.assertGreater(total, 24)
+            self.assertEqual(24, page.locator('#ach-earned-grid .badge.on').count())
+            self.assertEqual(0, page.locator('#ach-body .badge').count())
+            while page.locator('#ach-earned-more').is_visible():
+                page.locator('#ach-earned-more').click()
+            self.assertEqual(total, page.locator('#ach-earned-grid .badge.on').count())
+            self.assertLess(page.locator('#ach-earned-grid .badge.on').count(), page.evaluate('getBadgeData().all.length'))
+            self.assertIn(str(total), page.locator('#ach-earned-count').inner_text())
+            page.locator('#ach-earned-grid .badge.on').last.click()
+            self.assertNotEqual('', page.locator('#ach-detail .ach-story').inner_text())
+            self.assertIn('达成条件：', page.locator('#ach-detail .ach-condition').inner_text())
+            page.locator('#ach-filter').select_option('secret')
+            self.assertTrue(page.locator('#ach-earned').is_hidden())
+            masked = page.locator('#ach-body .badge.secret[disabled]')
+            self.assertGreater(masked.count(), 0)
+            self.assertTrue(all('???' in text and '隐藏' in text for text in masked.all_inner_texts()))
+            self.assertEqual({'隐藏成就，达成自动揭晓'}, set(masked.evaluate_all('els => els.map(el => el.getAttribute("aria-label"))')))
+            secret = page.evaluate("getBadgeData().all.find(b => b.secret && !b.ok && b.n.length > 3).n")
+            page.locator('#ach-search').fill(secret)
+            self.assertEqual(0, page.locator('#ach-body .badge.secret[disabled]').count())
+            page.locator('#ach-search').fill('')
+            page.keyboard.press('Escape')
+            page.wait_for_function("!document.getElementById('ach-modal').classList.contains('open')")
+            page.locator('#ach-view-earned').click()
+            self.assertFalse(page.locator('#ach-earned').is_hidden())
+            self.assertEqual('all', page.locator('#ach-filter').input_value())
+            self.assertEqual('', page.locator('#ach-search').input_value())
+            self.assertEqual(total, page.locator('#ach-earned-grid .badge.on').count())
+            page.evaluate("""() => {
+              const all=_ach.all.map(b=>({...b,ok:false}));
+              _ach={..._ach,all,got:0,cats:_ach.cats.map(c=>({...c,items:c.items.map(b=>({...b,ok:false}))}))};
+              renderAchievements('');
+            }""")
+            self.assertIn('当前报告没有已解锁成就', page.locator('#ach-earned-grid').inner_text())
+            self.assertEqual(0, page.locator('#ach-earned-grid .badge').count())
+            self.assertTrue(page.locator('#ach-earned-more').is_hidden())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_achievement_archive_language_switch_updates_badges_and_details(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("applyLanguage('en',false)")
+            page.locator('#ach-view-earned').scroll_into_view_if_needed()
+            page.locator('#ach-view-earned').click()
+            badge = page.locator('#ach-earned-grid .badge.on').first
+            self.assertFalse(badge.evaluate('el => /[㐀-鿿]/.test(el.innerText + el.getAttribute("aria-label"))'))
+            badge.click()
+            self.assertIn('Unlock condition:', page.locator('#ach-detail').inner_text())
+            self.assertFalse(page.locator('#ach-detail').evaluate('el => /[㐀-鿿]/.test(el.innerText)'))
+            page.evaluate("applyLanguage('zh',false)")
+            self.assertIn('达成条件：', page.locator('#ach-detail').inner_text())
+            self.assertIn('已解锁', page.locator('#ach-earned-grid .badge.on').first.get_attribute('aria-label'))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_achievement_archive_rendered_before_first_scroll(self):
+        for width in (1280, 390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                viewport={"width": width, "height": 820}, freeze_lazy=True,
+            )
+            try:
+                result = page.evaluate("""() => {
+                  const card=document.getElementById('section-achievements');
+                  const next=document.getElementById('section-project');
+                  const before=next.getBoundingClientRect().y;
+                  const ready=lazyState.badges.status==='ready' &&
+                    !card.classList.contains('lazy-pending');
+                  renderLazy('badges',true);
+                  return {ready,shift:Math.abs(next.getBoundingClientRect().y-before),
+                    preview:card.querySelectorAll('#ach-preview .badge.on').length};
+                }""")
+                self.assertTrue(result['ready'], result)
+                self.assertGreater(result['preview'], 0)
+                self.assertLess(result['shift'], 2, result)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
 
     def test_achievement_archive_copy_and_mobile_geometry(self):
         for width in (390, 320):
@@ -1226,6 +1749,71 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_other_names_are_visible_beside_filters_and_follow_period(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._visible_other_path)
+        try:
+            summary = page.locator("#other-model-summary")
+            self.assertTrue(summary.is_visible())
+            self.assertIn("glm-5.3-flash", summary.inner_text())
+            self.assertIn("20 Token", summary.inner_text())
+            self.assertIn("共用 Other 颜色和筛选", summary.inner_text())
+            self.assertEqual(0, summary.locator("details, button, input, img").count())
+            self.assertIsNone(page.evaluate("window.__otherXss"))
+            self.assertIn("未识别的剩余量", summary.inner_text())
+            page.locator('#donut-legend [data-model-toggle="other"]').click()
+            self.assertIn("Other 分组未选中", summary.inner_text())
+            self.assertIn("20 Token", summary.inner_text())
+            page.evaluate("() => { state.focusPeriod='2026-01-01'; renderDataViews(); }")
+            self.assertIn("13 Token", summary.inner_text())
+            self.assertNotIn("20 Token", summary.inner_text())
+            page.evaluate("() => { state.focusPeriod='2026-02-01'; renderDataViews(); }")
+            self.assertIn("7 Token", summary.inner_text())
+            self.assertNotIn("13 Token", summary.inner_text())
+            page.evaluate("setGran('day')")
+            page.evaluate("() => { state.focusPeriod='2026-01-07'; renderDataViews(); }")
+            self.assertIn("13 Token", summary.inner_text())
+            page.evaluate("setGran('week')")
+            page.evaluate("() => { state.focusPeriod='2026-01-05'; renderDataViews(); }")
+            self.assertIn("13 Token", summary.inner_text())
+            page.evaluate("applyLanguage('en', false)")
+            self.assertIn("share the Other color and filter", summary.inner_text())
+            self.assertIn("Other group is not selected", summary.inner_text())
+            page.evaluate("applyLanguage('zh', false)")
+            self.assertIn("共用 Other 颜色和筛选", summary.inner_text())
+            page.evaluate("() => { DATA.other_models=[]; renderDataViews(); }")
+            self.assertNotIn("glm-5.3-flash", summary.inner_text())
+            self.assertIn("暂无可展示的具体模型名", summary.inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_other_summary_mobile_themes_and_no_other(self):
+        for width in (320, 390):
+            context, page, page_errors, console_errors = self.new_page(
+                path=self._visible_other_path, viewport={"width": width, "height": 760}
+            )
+            try:
+                for theme in ("light", "dark"):
+                    page.evaluate("theme => applyTheme(theme)", theme)
+                    page.evaluate("applyLanguage('en', false)")
+                    summary = page.locator("#other-model-summary")
+                    self.assertIn("glm-5.3-flash", summary.inner_text())
+                    self.assertIn("older-<img", summary.inner_text())
+                    self.assertEqual(0, summary.locator("img").count())
+                    self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            self.assertFalse(page.locator("#other-model-summary").is_visible())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
     def test_other_model_names_match_windows_and_escape_html(self):
         context, page, page_errors, console_errors = self.new_page(path=self._overflow_path)
         name = "older-<img src=x onerror=window.__otherXss=1>"
@@ -1431,6 +2019,96 @@ class DashboardRuntimeTests(unittest.TestCase):
               return String(result.parts.find(part=>part.model==='other').curr);
             }"""))
             self.assertIn("60", details.inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_sol_variants_are_independently_selectable(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._sol_path)
+        try:
+            legend = page.locator("#donut-legend")
+            legend_text = legend.inner_text()
+            # Both Sol generations show up as literal, distinct identities.
+            self.assertIn("gpt-6-sol", legend_text)
+            self.assertIn("gpt-6.1-sol", legend_text)
+            old_toggle = legend.locator('[data-model-toggle="gpt-6-sol"]')
+            new_toggle = legend.locator('[data-model-toggle="gpt-6.1-sol"]')
+            self.assertEqual(1, old_toggle.count())
+            self.assertEqual(1, new_toggle.count())
+            # Distinct legend swatches prove the two are never merged.
+            self.assertNotEqual(
+                old_toggle.locator(".ldot").get_attribute("style"),
+                new_toggle.locator(".ldot").get_attribute("style"),
+            )
+            # The newer backend is selectable on its own and stays visible.
+            self.assertEqual("true", new_toggle.get_attribute("aria-pressed"))
+            new_toggle.click()
+            self.assertEqual("false", new_toggle.get_attribute("aria-pressed"))
+            self.assertIn("gpt-6.1-sol", page.locator("#donut-legend").inner_text())
+            new_toggle.click()
+            self.assertEqual("true", new_toggle.get_attribute("aria-pressed"))
+            # The command palette lists both as literal, independently runnable rows.
+            page.evaluate("openPalette()")
+            palette_text = page.locator("#palette-list").inner_text()
+            self.assertIn("gpt-6-sol", palette_text)
+            self.assertIn("gpt-6.1-sol", palette_text)
+            page.evaluate("closePalette()")
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_long_backend_name_wraps_without_horizontal_overflow(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._sol_path, viewport={"width": 390, "height": 760}
+        )
+        try:
+            name = self._long_backend_name
+            selector = f'#donut-legend [data-model-toggle="{name}"]'
+            toggle = page.locator(selector)
+            self.assertEqual(1, toggle.count())
+            # The whole identity survives in the DOM text: nothing is hidden or
+            # merged into Other just because the label is long.
+            self.assertIn(name, toggle.inner_text())
+            metrics = page.evaluate(
+                """
+                name => {
+                  const button = [...document.querySelectorAll('#donut-legend [data-model-toggle]')]
+                    .find(node => node.dataset.modelToggle === name);
+                  const span = button.querySelector('span:not(.ldot)');
+                  const em = button.querySelector('em');
+                  const legend = document.querySelector('#donut-legend');
+                  const doc = document.documentElement;
+                  return {
+                    docScroll: doc.scrollWidth, docClient: doc.clientWidth,
+                    legendScroll: legend.scrollWidth, legendClient: legend.clientWidth,
+                    buttonRight: button.getBoundingClientRect().right,
+                    spanRight: span.getBoundingClientRect().right,
+                    emRight: em.getBoundingClientRect().right,
+                    spanScroll: span.scrollWidth, spanClient: span.clientWidth,
+                  };
+                }
+                """,
+                name,
+            )
+            # The name wraps onto extra lines inside the button instead of
+            # spilling past its right edge (that spill is what widened the page).
+            self.assertLessEqual(metrics["spanRight"], metrics["buttonRight"] + 1)
+            self.assertLessEqual(metrics["emRight"], metrics["buttonRight"] + 1)
+            # Wrapping, not clipping: the full label is laid out, no ellipsis cut.
+            self.assertLessEqual(metrics["spanScroll"], metrics["spanClient"] + 1)
+            # Neither the legend nor the document scrolls sideways at 390px.
+            self.assertLessEqual(metrics["legendScroll"], metrics["legendClient"] + 1)
+            self.assertLessEqual(metrics["docScroll"], metrics["docClient"] + 1)
+            # The long-named model still filters on its own and keeps its seat.
+            self.assertEqual("true", toggle.get_attribute("aria-pressed"))
+            toggle.click()
+            self.assertEqual("false", toggle.get_attribute("aria-pressed"))
+            self.assertIn(name, page.locator("#donut-legend").inner_text())
+            self.assertIn("gpt-6.1-sol", page.locator("#donut-legend").inner_text())
+            toggle.click()
+            self.assertEqual("true", toggle.get_attribute("aria-pressed"))
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:

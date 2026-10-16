@@ -4,11 +4,42 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+> 本机 0.3.0 候选（未正式发布）。This section collects the local 0.3.0 release-candidate content. It has **not been publicly released**: no public release date exists, and no verified 0.3.0 package-index release is claimed. The candidate wheel, if built, is a local offline artifact only.
+
 ### Added
 
+- Cost ledger "restore official reference" for a single model in the price editor. The control appears only when the draft is USD with the reference layer on, the model is not hidden, the exact model name hits a built-in reference, and a saved override exists for that source/model (all-empty, an explicit zero, or a note-only entry all count as overrides). Confirming clears that entry's unit prices and note only and leaves other models untouched; cancelling changes nothing; closing the editor without saving persists nothing. Re-entering a price afterwards creates a normal override again.
+- Cost ledger CSV export. A click-only local download with no fetch and no new endpoint, it reuses the current granularity, selection, model filters, currency, and effective prices, and exports every entry regardless of pagination. Rows carry row type, range, source/model, currency, pricing status, the five billing components with tokens, effective unit prices, and estimated amounts; sessions, titles, project paths, and notes are never included. Reference-priced, manually priced, pending, and hidden rows stay distinct; unknown stays blank while an explicit zero means free. Amounts are computed with the 10^12-scaled BigInt pipeline into exact decimals (at most 12 fractional digits, trailing zeros trimmed), never through Number or display rounding.
+- Cost CSV summary records for what the entry table cannot show: unknown calls/tokens, invalid rows, `totalIncomplete`, the priced subtotal, and the full-estimate flag. With no priceable amount the amount stays blank instead of inventing a complete total, and a no-records state is explicit.
+- Shared CSV cell escaping for quotes, commas, CR, and LF plus dangerous formula prefixes (`=`, `+`, `-`, `@`, including after leading whitespace or control characters), applied to the new cost CSV and back-ported to the existing trend CSV. Markdown export keeps its separate escaping. UTF-8 with BOM, the existing `downloadBlob`, and a fixed safe filename remain.
+- Release-candidate documentation: a local 0.3.0 install path (offline wheel or source checkout) and the candidate release checklist under `docs/release-candidate-checklist.md`, plus the monthly-budget design specification under `docs/monthly-budget-design.md` (specification only; no budget code or storage key this round).
+- Local model cost estimates with browser-only channel-price settings, explicit unpriced and uncertain coverage, and independent billing components without changing existing usage statistics.
+- Built-in official USD reference prices for ten exact model names (OpenAI Standard short-context ≤272K, DeepSeek peak-time baseline, and Z.ai international rates, which are not the domestic Zhipu equivalent), shown by default with no local settings, overridable per source/model by manual prices, and toggled by a "Use official reference price (USD)" switch. The page never contacts providers, and private manual prices stay local under the existing `tk-cost-v1` key.
 - Demo-first README paths, public share metadata, sitemap discovery, and package project metadata for the zero-install synthetic Dashboard.
 - Interactive equal-length A/B trend comparison and peak-period profile using logged model and backend identities.
 - `--lang en|zh` for terminal and static HTML reports; Markdown export follows Dashboard language.
+
+### Changed
+
+- Live log scans run in a single background worker; page and snapshot requests read published in-memory data without waiting for parsing or aggregation.
+- `--interval` controls background scanning. Browser checks default to at most one minute, check sooner during preparation, and can be changed or paused independently.
+- Token Flow is redesigned as Token destinations: a project/model overview beside readable session cards, with a stacked mobile layout and the existing seven-plus-`Other` palette.
+- Model buttons filter the session list locally; project actions open recorded evidence without inferring project-to-session pairings.
+- Sessions paginate twelve per page with exact off-page usage, an accessible full-list table, and separate replay actions.
+- SVG export identifies the current page, scope, model filters, and theme instead of implying that it includes every session.
+- Cost-ledger documentation limits the "not embedded in reports" statement to manually entered private prices; built-in public reference prices ship with the page assets.
+
+### Fixed
+
+- The full session table retains an independent replay button for every row, including sessions outside the current card page.
+- Report-level source metadata retains the requested sources instead of being overwritten by the last session's sources, including when another source has records without session IDs.
+- Model filters now show the names and token totals inside `Other` without requiring an expanded chart legend. These names follow the current period and share the `Other` color and group filter; they are not independent model filters. Anonymous reports do not invent or expose missing names.
+- Slow local scans no longer block snapshot requests until the browser's network timeout. Initial preparation is explicit, and failed background scans preserve the last successful data with its check time instead of reporting a network disconnection.
+- Dashboard overflow selects the seven major models by all-record token totals, retaining a seat for the most recently active backend, instead of letting early low-usage identities hide newer major backends in `Other`. Selected identities keep first-seen palette order and are independent of the displayed date range; colors may change when the retained identity set changes.
+- Achievement previews open their details directly, and the archive lists all unlocked achievements with pagination while keeping locked secret achievements private.
+- Long backend names wrap inside model legend buttons instead of overflowing narrow mobile layouts.
+- Session titles wrap instead of being truncated in the visualization. Conservative local cleaning rejects continuation summaries and system boilerplate; missing titles are explicitly unnamed and accompanied by available recorded context, without AI summarization or uploads.
+- Session background metadata is labeled as report-scoped context, not a precise project pairing for a locally filtered view.
 
 ## [0.2.0] - 2026-09-21
 
