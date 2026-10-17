@@ -20,6 +20,8 @@ DARK_PALETTE = [
     "#d55181", "#008300", "#9085e9", "#e66767",
 ]
 MODEL_IDENTITY_CAPACITY = 7
+# Keep explicitly compared GLM variants independently filterable when present.
+COMPARISON_MODELS = ("glm-5.3", "glm-5.3-flash")
 OTHER_MODEL = "other"
 SNAPSHOT_SCHEMA = 1
 METRIC_SCHEMA = 1
@@ -102,10 +104,14 @@ def _model_registry(records):
     ranked.sort(key=lambda model: token_totals[model], reverse=True)
     retained = ranked[:MODEL_IDENTITY_CAPACITY]
     if len(ranked) > MODEL_IDENTITY_CAPACITY:
-        # Keep the most recently active backend visible even when its usage is small.
+        # Reserve comparison identities and the latest backend, then fill by usage.
         recent = max(ranked, key=lambda model: (last_seen[model], model))
-        if recent not in retained:
-            retained[-1] = recent
+        required = {model for model in COMPARISON_MODELS if model in first_seen}
+        required.add(recent)
+        retained = [model for model in ranked if model in required]
+        retained += [model for model in ranked if model not in required][
+            :MODEL_IDENTITY_CAPACITY - len(retained)
+        ]
     retained.sort(key=lambda model: (first_seen[model], model))
     overflow = [model for model in ranked if model not in retained]
     aliases = {model: model for model in retained}

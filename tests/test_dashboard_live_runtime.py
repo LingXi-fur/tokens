@@ -475,12 +475,12 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         records = _records([
             dict(base, model=f"major-{index}", total=1000,
                  session=f"synthetic-major-{index}") for index in range(7)
-        ] + [dict(base, model="glm-5.3-flash", total=13, session="synthetic-flash")])
+        ] + [dict(base, model="overflow-small", total=13, session="synthetic-flash")])
         payload, wire = _build_wire(records)
         state.push(_ready(wire, payload["snapshot"]["id"], etag='"live-2"', revision=2))
         self._force_check(page)
         page.wait_for_function(
-            "()=>document.getElementById('other-model-summary')?.textContent.includes('glm-5.3-flash')"
+            "()=>document.getElementById('other-model-summary')?.textContent.includes('overflow-small')"
         )
         self.assertTrue(page.locator("#other-model-summary").is_visible())
         self.assertIn("13 Token", page.locator("#other-model-summary").inner_text())

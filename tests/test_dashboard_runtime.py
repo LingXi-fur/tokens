@@ -202,14 +202,30 @@ class DashboardRuntimeTests(unittest.TestCase):
             report_dashboard.render_dashboard(dashboard_wire.encode_payload(overflow_payload)),
             encoding="utf-8",
         )
+        cls._glm_path = Path(cls._tmp.name) / "synthetic-dashboard-glm-pair.html"
+        glm_records = overflow_records + [
+            interval_record("2026-02-05", "glm-5.3", 11, "synthetic-glm-a"),
+            interval_record("2026-02-05", "glm-5.3-flash", 13, "synthetic-glm-b"),
+        ]
+        with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
+            glm_payload = report_dashboard.build_payload(
+                glm_records, since="2026-01-01", until="2026-02-28",
+                sources=["claude"], generated_at=datetime(2026, 3, 15, 12, 0),
+            )
+        cls._glm_path.write_text(
+            report_dashboard.render_dashboard(dashboard_wire.encode_payload(glm_payload)),
+            encoding="utf-8",
+        )
         cls._visible_other_path = Path(cls._tmp.name) / "synthetic-visible-other.html"
         with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
             "tokens_cli.dashboard_payload.readers.session_title", return_value=""
         ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
             visible_payload = report_dashboard.build_payload(
                 overflow_records + [
-                    interval_record("2026-01-07", "glm-5.3-flash", 13, "synthetic-flash-a"),
-                    interval_record("2026-02-04", "glm-5.3-flash", 7, "synthetic-flash-b"),
+                    interval_record("2026-01-07", "overflow-small", 13, "synthetic-flash-a"),
+                    interval_record("2026-02-04", "overflow-small", 7, "synthetic-flash-b"),
                 ], since="2026-01-01", until="2026-02-28",
                 sources=["claude"], generated_at=datetime(2026, 3, 15, 12, 0),
             )
@@ -1749,12 +1765,35 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_glm_variants_are_independently_filterable_with_overflow(self):
+        for width in (1280, 320, 390):
+            context, page, page_errors, console_errors = self.new_page(
+                path=self._glm_path, viewport={"width": width, "height": 820}
+            )
+            try:
+                page.evaluate("setGran('day')")
+                page.evaluate("() => { state.focusPeriod='2026-02-05'; renderDataViews(); }")
+                for theme in ("light", "dark"):
+                    page.evaluate("theme => applyTheme(theme)", theme)
+                    for name, total in (("glm-5.3", 11), ("glm-5.3-flash", 13)):
+                        self.assertEqual(1, page.locator('#filters input[value="' + name + '"]').count())
+                        page.evaluate("name => setModels([name])", name)
+                        page.wait_for_function("total => document.querySelector('#k-total').textContent.trim() === String(total)", arg=total)
+                        self.assertEqual(str(total), page.locator("#k-total").inner_text().strip())
+                        self.assertEqual(total, page.evaluate("selectedRows().reduce((n,r)=>n+r.total,0)"))
+                        self.assertNotIn(name, page.locator("#other-model-summary").inner_text())
+                self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
     def test_other_names_are_visible_beside_filters_and_follow_period(self):
         context, page, page_errors, console_errors = self.new_page(path=self._visible_other_path)
         try:
             summary = page.locator("#other-model-summary")
             self.assertTrue(summary.is_visible())
-            self.assertIn("glm-5.3-flash", summary.inner_text())
+            self.assertIn("overflow-small", summary.inner_text())
             self.assertIn("20 Token", summary.inner_text())
             self.assertIn("共用 Other 颜色和筛选", summary.inner_text())
             self.assertEqual(0, summary.locator("details, button, input, img").count())
@@ -1781,7 +1820,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             page.evaluate("applyLanguage('zh', false)")
             self.assertIn("共用 Other 颜色和筛选", summary.inner_text())
             page.evaluate("() => { DATA.other_models=[]; renderDataViews(); }")
-            self.assertNotIn("glm-5.3-flash", summary.inner_text())
+            self.assertNotIn("overflow-small", summary.inner_text())
             self.assertIn("暂无可展示的具体模型名", summary.inner_text())
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
@@ -1798,7 +1837,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                     page.evaluate("theme => applyTheme(theme)", theme)
                     page.evaluate("applyLanguage('en', false)")
                     summary = page.locator("#other-model-summary")
-                    self.assertIn("glm-5.3-flash", summary.inner_text())
+                    self.assertIn("overflow-small", summary.inner_text())
                     self.assertIn("older-<img", summary.inner_text())
                     self.assertEqual(0, summary.locator("img").count())
                     self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width + 1)

@@ -31,6 +31,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- `glm-5.3` and `glm-5.3-flash`, when present under those exact recorded names, retain separate filter identities even when model capacity overflows. They share the existing seven-identity capacity with the latest backend and usage-ranked models; no historical records are relabeled and no absent Flash usage is inferred.
 - The full session table retains an independent replay button for every row, including sessions outside the current card page.
 - Report-level source metadata retains the requested sources instead of being overwritten by the last session's sources, including when another source has records without session IDs.
 - Model filters now show the names and token totals inside `Other` without requiring an expanded chart legend. These names follow the current period and share the `Other` color and group filter; they are not independent model filters. Anonymous reports do not invent or expose missing names.

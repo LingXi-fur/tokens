@@ -180,6 +180,34 @@ class DashboardModelColorTests(unittest.TestCase):
         payload = self.payload([late, early])
         self.assertEqual("model-late", payload["range"]["latest_backend"])
 
+    def test_glm_variants_keep_separate_seats_under_overflow(self):
+        records = [self.record(f"major-{i}", "2026-10-14", 1000 - i) for i in range(8)] + [
+            self.record("glm-5.3", "2026-10-15", 11),
+            self.record("glm-5.3-flash", "2026-10-15", 13),
+            self.record("glm-5.3", "2026-10-16", 17),
+            self.record("glm-5.3-flash", "2026-10-16", 19),
+            self.record("latest-backend", "2026-10-17", 1),
+        ]
+        payload = self.payload(records)
+        self.assertEqual(8, len(payload["models"]))
+        for name in ("glm-5.3", "glm-5.3-flash", "latest-backend"):
+            self.assertIn(name, payload["models"])
+        yesterday = next(row for row in payload["day"] if row["period"] == "2026-10-16")
+        self.assertEqual({"glm-5.3": 17, "glm-5.3-flash": 19}, yesterday["models"])
+        self.assertEqual(36, yesterday["total"])
+        self.assertEqual(sum(r["total"] for r in records), sum(row["total"] for row in payload["day"]))
+        reverse = self.payload(list(reversed(records)))
+        self.assertEqual(payload["colors"], reverse["colors"])
+        self.assertEqual(payload["day"], reverse["day"])
+        for theme in ("light", "dark"):
+            self.assertEqual(8, len(set(payload["colors"][theme].values())))
+
+    def test_glm_seats_only_use_exact_recorded_names(self):
+        payload = self.payload([self.record("glm-5.3-preview", "2026-10-16", 5)])
+        self.assertEqual(["glm-5.3-preview"], payload["models"])
+        self.assertNotIn("glm-5.3", payload["models"])
+        self.assertNotIn("glm-5.3-flash", payload["models"])
+
     def test_historical_and_current_sol_stay_distinct_without_overflow(self):
         payload = self.payload([
             self.record("gpt-5.6-sol", "2026-07-01", 15),
