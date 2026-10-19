@@ -76,6 +76,91 @@ class ReadersTests(unittest.TestCase):
                 self.assertEqual(0o600, stat.S_IMODE(cache_file.stat().st_mode))
 
 
+class TimezoneCacheTests(unittest.TestCase):
+    def test_cache_reparses_for_timezone_and_preserves_hits_within_zone(self):
+        from zoneinfo import ZoneInfo
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "synthetic.log"
+            path.write_text("synthetic", encoding="utf-8")
+            cache_file = Path(tmp) / "records.json"
+            parse = mock.Mock(side_effect=lambda _: [{
+                "date": readers._to_local_date("2026-10-18T20:00:00Z"),
+                "model": "glm-5.3-flash",
+            }])
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(cache_file)), \
+                    mock.patch.object(readers, "_ccr_signature", return_value=None), \
+                    mock.patch.dict(readers.SOURCES, {"synthetic": (lambda: [str(path)], parse)}, clear=True):
+                with mock.patch.object(readers.config, "TZ", ZoneInfo("UTC")):
+                    self.assertEqual("2026-10-18", readers.read_all()[0]["date"])
+                    self.assertEqual("2026-10-18", readers.read_all()[0]["date"])
+                    self.assertEqual(1, parse.call_count)
+                with mock.patch.object(readers.config, "TZ", ZoneInfo("Asia/Shanghai")):
+                    self.assertEqual("2026-10-19", readers.read_all()[0]["date"])
+                    self.assertEqual("2026-10-19", readers.read_all()[0]["date"])
+                    self.assertEqual(2, parse.call_count)
+                    cache = json.loads(cache_file.read_text(encoding="utf-8"))
+                    self.assertEqual("Asia/Shanghai", cache["_timezone"])
+                    del cache["_timezone"]
+                    cache_file.write_text(json.dumps(cache), encoding="utf-8")
+                    self.assertEqual("2026-10-19", readers.read_all()[0]["date"])
+                    self.assertEqual(3, parse.call_count)
+
+                with mock.patch.object(readers.config, "TZ", readers.config._SYSTEM_LOCAL_TIMEZONE):
+                    readers.read_all()
+                    readers.read_all()
+                    self.assertEqual(5, parse.call_count)
+
+    def test_uncached_read_never_loads_or_writes_cache(self):
+        with mock.patch.object(readers, "_load_cache") as load, \
+                mock.patch.object(readers, "_save_cache") as save, \
+                mock.patch.object(readers, "_ccr_signature", return_value=None), \
+                mock.patch.dict(readers.SOURCES, {"synthetic": (lambda: [], mock.Mock())}, clear=True):
+            self.assertEqual([], readers.read_all(use_cache=False))
+            load.assert_not_called()
+            save.assert_not_called()
+
+    def test_timezone_rebuild_does_not_reuse_other_source_dates(self):
+        from zoneinfo import ZoneInfo
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = {source: Path(tmp) / (source + ".log") for source in ("first", "second")}
+            for path in paths.values():
+                path.write_text("synthetic", encoding="utf-8")
+            parses = {
+                source: mock.Mock(side_effect=lambda _, model=source: [{
+                    "date": readers._to_local_date("2026-10-18T20:00:00Z"), "model": model,
+                }]) for source in paths
+            }
+            sources = {source: (lambda path=path: [str(path)], parses[source])
+                       for source, path in paths.items()}
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(Path(tmp) / "records.json")), \
+                    mock.patch.object(readers, "_ccr_signature", return_value=None), \
+                    mock.patch.dict(readers.SOURCES, sources, clear=True):
+                with mock.patch.object(readers.config, "TZ", ZoneInfo("UTC")):
+                    self.assertEqual(2, len(readers.read_all()))
+                with mock.patch.object(readers.config, "TZ", ZoneInfo("Asia/Shanghai")):
+                    self.assertEqual("2026-10-19", readers.read_all(sources=["first"])[0]["date"])
+                    self.assertEqual("2026-10-19", readers.read_all(sources=["second"])[0]["date"])
+                    self.assertEqual([2, 2], [parse.call_count for parse in parses.values()])
+
+    def test_system_local_fallback_never_reuses_unverifiable_dates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "synthetic.log"
+            path.write_text("synthetic", encoding="utf-8")
+            parse = mock.Mock(return_value=[{"date": "2026-10-19"}])
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(Path(tmp) / "records.json")), \
+                    mock.patch.object(readers.config, "TZ", readers.config._SYSTEM_LOCAL_TIMEZONE), \
+                    mock.patch.object(readers, "_ccr_signature", return_value=None), \
+                    mock.patch.dict(readers.SOURCES, {"synthetic": (lambda: [str(path)], parse)}, clear=True):
+                readers.read_all()
+                readers.read_all()
+                self.assertEqual(2, parse.call_count)
+
+
 class CcrModelResolutionTests(unittest.TestCase):
     ROUTER_JS = """module.exports = async function router(req, config) {
   const model = req.body.model || '';

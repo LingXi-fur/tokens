@@ -777,7 +777,7 @@ def _save_cache(cache):
 
 
 def read_all(sources=None, use_cache=True):
-    """读所有源，返回 record 列表。按文件 mtime+size 缓存，未变则秒出。"""
+    """读所有源，返回 record 列表。按统计时区及文件 mtime+size 缓存。"""
     sources = sources or list(SOURCES)
     cache = _load_cache() if use_cache else {}
     seen_keys = set()
@@ -786,6 +786,12 @@ def read_all(sources=None, use_cache=True):
 
     # 缓存结构版本：解析口径变更（如 Claude 按 message.id 去重）后旧缓存作废。
     if use_cache and cache.get("_v") != CACHE_VERSION:
+        cache = {}
+        changed = True
+
+    # Cached dates depend on the reporting timezone, not just file contents.
+    timezone_key = config.timezone_name()
+    if use_cache and (timezone_key == "system local time" or cache.get("_timezone") != timezone_key):
         cache = {}
         changed = True
 
@@ -834,5 +840,6 @@ def read_all(sources=None, use_cache=True):
 
     if changed and use_cache:
         cache["_router"] = router_sig
+        cache["_timezone"] = timezone_key
         _save_cache(cache)
     return out

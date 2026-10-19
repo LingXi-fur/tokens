@@ -301,7 +301,7 @@ class DashboardTests(unittest.TestCase):
             sources=["claude"],
         )
         for key in (
-            "generated", "snapshot", "source", "range", "models", "colors", "hourly",
+            "generated", "calendar_day", "snapshot", "source", "range", "models", "colors", "hourly",
             "day_details", "top_cwds", "session_series",
             "reuse", "day", "week", "month", "provenance", "achievement_stats",
             "achievement_daily",
@@ -379,6 +379,8 @@ class DashboardTests(unittest.TestCase):
             first = report_dashboard.build_payload(records, sources=["claude"])
             second = report_dashboard.build_payload(records, sources=["claude"])
         self.assertNotEqual(first["generated"], second["generated"])
+        self.assertEqual("2026-07-10", first["calendar_day"])
+        self.assertEqual("2026-07-11", second["calendar_day"])
         self.assertEqual(first["snapshot"]["id"], second["snapshot"]["id"])
 
         changed = [dict(item) for item in records]
@@ -824,10 +826,12 @@ class DashboardTests(unittest.TestCase):
         agg_start = script.index("const sumList=")
         agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
         helpers = "\n".join(extract_function(name) for name in (
+            "isoDayValid",
             "selectedDayModelTotals", "selectedDayTotal", "deltaWindowInfo",
             "periodDelta", "attributionFor",
         ))
-        node_script = script[agg_start:agg_end] + "\n" + r'''
+        iso_day_re = next(line for line in script.splitlines() if line.startswith("const ISO_DAY_RE="))
+        node_script = iso_day_re + "\n" + script[agg_start:agg_end] + "\n" + r'''
 const DATA={models:['alpha','beta'],generated:'2026-07-31 12:00',range:{until:'2026-07-31'},day_details:{}};
 const state={gran:'month',models:new Set(DATA.models)};
 function periodDays(){return [];}
@@ -1304,6 +1308,7 @@ if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical
             self.fail(name)
 
         helpers = "\n".join(extract_function(name) for name in (
+            "isoDayValid",
             "localISO",
             "periodDays",
             "selectedDayModelTotals",
@@ -1313,7 +1318,8 @@ if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical
         ))
         agg_start = script.index("const sumList=")
         agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
-        node_script = script[agg_start:agg_end] + "\n" + helpers + r'''
+        iso_day_re = next(line for line in script.splitlines() if line.startswith("const ISO_DAY_RE="))
+        node_script = iso_day_re + "\n" + script[agg_start:agg_end] + "\n" + helpers + r'''
 let DATA, state;
 function detail(total){return {hourly_models:{a:[total,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}};}
 state={gran:'month',models:new Set(['a'])};

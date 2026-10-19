@@ -18,7 +18,7 @@ import socket
 import struct
 import time
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
@@ -389,10 +389,12 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             timeout=timeout,
         )
 
-    def _wait_requests(self, state, count, timeout=6.0):
+    def _wait_requests(self, page, state, count, timeout=6.0):
         deadline = time.monotonic() + timeout
         while state.requests() < count and time.monotonic() < deadline:
-            time.sleep(0.02)
+            # Pump Playwright events, including loopback request routing, while
+            # waiting for the server thread to observe the requested count.
+            page.wait_for_timeout(20)
         self.assertGreaterEqual(state.requests(), count)
 
     @staticmethod
@@ -530,7 +532,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         start = state.requests()
         state.push({"status": 304, "etag": '"live-1"', "body": None})
         self._force_check(page)
-        self._wait_requests(state, start + 1)
+        self._wait_requests(page, state, start + 1)
         sent = state.last_if_none_match()
         self.assertEqual('"live-1"', sent)
         self.assertNotEqual('"%s"' % self._snap1_id, sent)  # header value, not id
@@ -555,13 +557,103 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1)
         )
         self._force_check(page)
-        self._wait_requests(state, start + 1)
+        self._wait_requests(page, state, start + 1)
         time.sleep(0.4)
         # Same snapshot identity: the table node is reused wholesale, so the
         # expando survives and the lens the user set is untouched.
         self.assertEqual(1, page.evaluate("document.getElementById('tbody').__keep||0"))
         self.assertEqual(summary, page.text_content("#filter-summary"))
         self.assertEqual([], errors)
+
+    def test_custom_range_scope_survives_live_snapshot_update(self):
+        state, page, errors, console = self._open(
+            self._ready_html,
+            _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1),
+        )
+        self._wait_rows(page)
+        # Applying the range through the real #range-date change listener (the
+        # native picker and keyboard dismissal are covered by the runtime suite).
+        page.evaluate(
+            """() => {
+                const input = document.getElementById('range-date');
+                input.value = '2026-07-01';
+                input.dispatchEvent(new Event('change', {bubbles: true}));
+            }"""
+        )
+        page.wait_for_function(
+            "()=>state.range==='custom'&&state.rangeDate==='2026-07-01'"
+        )
+        page.bring_to_front()
+        page.wait_for_function("()=>document.visibilityState==='visible'")
+        self._wait_kind(page, "live")
+        self.assertIn("2026-07-01", page.locator("#daily-tbody").inner_text())
+        self.assertNotIn("2026-07-02", page.locator("#daily-tbody").inner_text())
+        models_before = page.evaluate("DATA.models.slice()")
+
+        start = state.requests()
+        state.push(
+            _ready(self._snap2_wire, self._snap2_id, etag='"live-2"', revision=2)
+        )
+        self._force_check(page)
+        self._wait_requests(page, state, start + 1)
+        page.wait_for_function("id=>DATA.snapshot.id===id", arg=self._snap2_id)
+
+        self.assertEqual("custom", page.evaluate("state.range"))
+        self.assertEqual("2026-07-01", page.evaluate("state.rangeDate"))
+        daily = page.locator("#daily-tbody").inner_text()
+        self.assertIn("2026-07-01", daily)
+        self.assertNotIn("2026-07-02", daily)
+        self.assertEqual(models_before, page.evaluate("DATA.models.slice()"))
+        self.assertIn("未出现", page.locator("#glm-compare").inner_text())
+        self.assertEqual([], errors)
+        self.assertEqual([], console)
+
+    def test_relative_range_rolls_over_on_unchanged_live_responses(self):
+        state, page, errors, console = self._open(
+            self._ready_html,
+            _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1),
+        )
+        self._wait_rows(page)
+        page.bring_to_front()
+        page.wait_for_function("()=>document.visibilityState==='visible'")
+        self._wait_requests(page, state, 1)
+        self._wait_kind(page, "live")
+        # Keep the reporting calendar deterministic without changing snapshot
+        # identity or replacing the production range/check implementations.
+        page.evaluate("DATA.snapshot.timezone='UTC'")
+        page.clock.set_fixed_time(datetime(2026, 7, 2, 23, 59, tzinfo=timezone.utc))
+        page.locator('#range-presets [data-range="today"]').click()
+        page.wait_for_function("()=>state.range==='today'&&rangeInfo().since==='2026-07-02'")
+        self.assertIn("2026-07-02", page.locator("#daily-tbody").inner_text())
+        self.assertNotIn("2026-07-01", page.locator("#daily-tbody").inner_text())
+        models_before = page.evaluate("[...state.models]")
+
+        for day, response in (
+            (3, {"status": 304, "etag": '"live-1"', "body": None}),
+            (4, _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1)),
+        ):
+            page.clock.set_fixed_time(datetime(2026, 7, day, 0, 1, tzinfo=timezone.utc))
+            start = state.requests()
+            state.push(response)
+            self._force_check(page)
+            self._wait_requests(page, state, start + 1)
+            expected = "2026-07-%02d" % day
+            page.wait_for_function(
+                "day=>state.renderedRangeStateKey.includes('|'+day+'|'+day+'|')",
+                arg=expected,
+            )
+            self._wait_kind(page, "live")
+            self.assertIn(expected, page.locator("#range-ledger").inner_text())
+            self.assertNotIn("2026-07-02", page.locator("#daily-tbody").inner_text())
+            self.assertEqual(self._snap1_id, page.evaluate("DATA.snapshot.id"))
+            self.assertEqual(models_before, page.evaluate("[...state.models]"))
+
+        page.locator('#range-presets [data-range="yesterday"]').click()
+        page.clock.set_fixed_time(datetime(2026, 7, 5, 0, 1, tzinfo=timezone.utc))
+        page.locator('#range-presets [data-range="yesterday"]').click()
+        self.assertIn("2026-07-04", page.locator("#range-ledger").inner_text())
+        self.assertEqual([], errors)
+        self.assertEqual([], console)
 
     # -- 6. pause / resume / hidden tab --------------------------------------
     def test_pause_resume_and_hidden_tab_cancel(self):
@@ -579,7 +671,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         self.assertEqual(paused, state.requests())  # pause stops this page polling
 
         page.select_option("#live-refresh", "60")
-        self._wait_requests(state, paused + 1)  # resume checks at once
+        self._wait_requests(page, state, paused + 1)  # resume checks at once
 
         page.evaluate(
             "Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});"
@@ -594,7 +686,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             "Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});"
             "document.dispatchEvent(new Event('visibilitychange'));"
         )
-        self._wait_requests(state, hidden + 1)
+        self._wait_requests(page, state, hidden + 1)
         self.assertEqual([], errors)
 
     # -- 7. legacy and static pages ------------------------------------------
@@ -653,7 +745,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         state, page, errors, console = self._open(
             self._prepare_html, {"status": 304, "etag": '"live-0"', "body": None}
         )
-        self._wait_requests(state, 2)
+        self._wait_requests(page, state, 2)
         time.sleep(1.2)
         self.assertEqual("prepare", self._kind(page))
         self.assertEqual("prepare", self._body_live(page))
@@ -719,7 +811,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         # The corrupt response's ETag must never be adopted.
         start = state.requests()
         self._force_check(page)
-        self._wait_requests(state, start + 1)
+        self._wait_requests(page, state, start + 1)
         self.assertEqual('"live-1"', state.last_if_none_match())
 
         # ...and a later good snapshot still recovers.
@@ -785,7 +877,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         for seconds in (300, 900, 1800, 60):
             start = state.requests()
             page.select_option("#live-refresh", str(seconds))
-            self._wait_requests(state, start + 1)  # an explicit change checks at once
+            self._wait_requests(page, state, start + 1)  # an explicit change checks at once
             time.sleep(0.3)
             baseline = state.requests()
             time.sleep(2.6)
@@ -810,19 +902,19 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             self.skipTest("browser clock is unavailable: %s" % exc)
         start = state.requests()
         self._force_check(page)  # re-arm the idle timer under the virtual clock
-        self._wait_requests(state, start + 1)
+        self._wait_requests(page, state, start + 1)
         time.sleep(0.4)
         for seconds in (300, 900, 1800, 60):
             arm = state.requests()
             page.select_option("#live-refresh", str(seconds))
-            self._wait_requests(state, arm + 1)
+            self._wait_requests(page, state, arm + 1)
             time.sleep(0.4)
             baseline = state.requests()
             page.clock.fast_forward(seconds * 1000 - 1000)
             time.sleep(0.4)
             self.assertEqual(baseline, state.requests())
             page.clock.fast_forward(2000)
-            self._wait_requests(state, baseline + 1)
+            self._wait_requests(page, state, baseline + 1)
         self.assertEqual([], errors)
 
 

@@ -820,6 +820,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
 
     return {
         "generated": generated_at.strftime("%Y-%m-%d %H:%M"),
+        "calendar_day": generated_at.date().isoformat(),
         "snapshot": snapshot,
         **dashboard_data,
     }

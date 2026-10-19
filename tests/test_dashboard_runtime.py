@@ -1,3 +1,5 @@
+import csv
+import io
 import tempfile
 import unittest
 from datetime import datetime
@@ -207,6 +209,11 @@ class DashboardRuntimeTests(unittest.TestCase):
             interval_record("2026-02-05", "glm-5.3", 11, "synthetic-glm-a"),
             interval_record("2026-02-05", "glm-5.3-flash", 13, "synthetic-glm-b"),
         ]
+        for record in glm_records[-2:]:
+            quarter = record["total"] // 4
+            parts = [record["total"] - 2 * quarter, quarter, quarter, 0, 0]
+            record.update(input=parts[0], output=parts[1], cache_read=parts[2])
+            record["billing"] = {"v": 1, "uncertain": False, "parts": parts}
         with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
             "tokens_cli.dashboard_payload.readers.session_title", return_value=""
         ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
@@ -1764,6 +1771,143 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertEqual([], console_errors)
         finally:
             context.close()
+
+    def test_range_controls_keyboard_scope_daily_and_glm(self):
+        for width in (1280, 390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                path=self._glm_path, viewport={"width": width, "height": 820}
+            )
+            try:
+                page.evaluate("setGran('day')")
+                page.locator('#range-presets .range-btn[data-range="custom"]').click()
+                self.assertEqual("range-date", page.evaluate("document.activeElement.id"))
+                date_input = page.locator("#range-date")
+                date_input.fill("2026-02-05")
+                date_input.press("Escape")
+                date_input.press("Tab")
+                date_input.dispatch_event("change")
+                page.wait_for_function(
+                    "()=>state.range==='custom'&&state.rangeDate==='2026-02-05'"
+                )
+                ledger = page.locator("#range-ledger").inner_text()
+                self.assertIn("2026-02-05", ledger)
+                self.assertIn("range=custom", page.url)
+                self.assertIn("date=2026-02-05", page.url)
+                daily = page.locator("#daily-tbody").inner_text()
+                self.assertIn("2026-02-05", daily)
+                self.assertNotIn("2026-02-04", daily)
+                flash = page.locator('#daily-tbody tr:has-text("glm-5.3-flash")')
+                self.assertEqual(1, flash.count())
+                self.assertIn("13", flash.inner_text())
+                glm_text = page.locator("#glm-compare").inner_text()
+                self.assertIn("GLM-5.3", glm_text)
+                self.assertIn("GLM-5.3 Flash", glm_text)
+                self.assertIn("11", glm_text)
+                self.assertIn("13", glm_text)
+                self.assertIn("范围查数完成", glm_text)
+
+                # The shortcut selects only real catalog identities; every view
+                # then uses the same model filter and date range.
+                models_before = page.evaluate("DATA.models.slice()")
+                page.evaluate("setModels(['model-a'])")
+                self.assertEqual(0, page.locator("#glm-compare .glm-stats").count())
+                compare_button = page.locator("#glm-compare-btn")
+                compare_button.focus()
+                self.assertEqual(
+                    "glm-compare-btn", page.evaluate("document.activeElement.id"),
+                    page.evaluate("({hidden:document.hidden, active:document.activeElement.outerHTML.slice(0,400)})"),
+                )
+                page.keyboard.press("Enter")
+                self.assertEqual(
+                    ["glm-5.3", "glm-5.3-flash"],
+                    page.evaluate("[...state.models].sort()"),
+                )
+                self.assertIn("13", page.locator("#glm-compare").inner_text())
+                self.assertEqual(models_before, page.evaluate("DATA.models.slice()"))
+                self.assertIn("Input", page.locator("#daily-thead").inner_text())
+                with page.expect_download() as download_info:
+                    page.locator("#daily-csv-btn").click()
+                download = download_info.value
+                self.assertEqual("tokens-daily-models.csv", download.suggested_filename)
+                csv_text = Path(download.path()).read_text(encoding="utf-8-sig")
+                self.assertIn("component_coverage", csv_text)
+                self.assertIn("2026-02-05", csv_text)
+                self.assertNotIn("2026-02-04", csv_text)
+                for theme in ("light", "dark"):
+                    for language in ("zh", "en"):
+                        page.evaluate("theme => applyTheme(theme)", theme)
+                        page.evaluate("language => applyLanguage(language,false)", language)
+                        self.assertEqual(
+                            "Compare GLM" if language == "en" else "GLM 对比",
+                            compare_button.inner_text(),
+                        )
+                        self.assertIn(
+                            "Component coverage" if language == "en" else "分量完整性",
+                            page.locator("#daily-thead").inner_text(),
+                        )
+                        self.assertLessEqual(
+                            page.evaluate("document.documentElement.scrollWidth"), width + 1,
+                            (width, theme, language, page.evaluate("""() => [...document.querySelectorAll('body *')].filter(el=>{const r=el.getBoundingClientRect();if(!r.width||r.right<=innerWidth+1)return false;for(let p=el.parentElement;p&&p!==document.body;p=p.parentElement)if(['auto','scroll','hidden','clip'].includes(getComputedStyle(p).overflowX))return false;return true;}).sort((a,b)=>b.getBoundingClientRect().right-a.getBoundingClientRect().right).slice(0,8).map(el=>({id:el.id,classes:el.className,text:el.textContent.slice(0,80),right:el.getBoundingClientRect().right,width:el.getBoundingClientRect().width}))""")),
+                        )
+                        self.assertLessEqual(
+                            page.locator("#glm-compare .scope-tag").evaluate("e=>e.getBoundingClientRect().right"),
+                            width + 1,
+                        )
+                        with page.expect_download() as download_info:
+                            page.locator("#daily-csv-btn").click()
+                        downloaded = list(csv.DictReader(io.StringIO(
+                            Path(download_info.value.path()).read_text(encoding="utf-8-sig")
+                        )))
+                        self.assertEqual(2, len(downloaded))
+                        for row in downloaded:
+                            self.assertEqual("2026-02-05", row["date"])
+                            total = 13 if row["model"] == "glm-5.3-flash" else 11
+                            self.assertEqual(str(total), row["total_tokens"])
+                            self.assertEqual("1", row["recorded_calls"])
+                            self.assertEqual(str(total - 2 * (total // 4)), row["input"])
+                            self.assertEqual(str(total // 4), row["output"])
+                            self.assertEqual(str(total // 4), row["cache_read"])
+                            self.assertEqual("0", row["cache_write"])
+                            self.assertEqual("complete", row["component_coverage"])
+                            self.assertEqual("exact", row["token_precision"])
+                            self.assertEqual("exact", row["call_precision"])
+                            self.assertEqual("2026-02-05", row["scope"])
+                page.evaluate("applyLanguage('zh',false)")
+                page.locator("#filter-all").click()
+
+                # Keyboard activation returns to the full report.
+                all_button = page.locator(
+                    '#range-presets .range-btn[data-range="all"]'
+                )
+                all_button.focus()
+                page.keyboard.press("Enter")
+                page.wait_for_function("()=>state.range==='all'")
+                self.assertIn("全部报告", page.locator("#range-ledger").inner_text())
+                self.assertNotIn("range=", page.url)
+                self.assertGreater(page.locator("#daily-tbody tr").count(), 3)
+
+                # Re-applying an out-of-range custom day clears the stale focus.
+                page.evaluate(
+                    "() => { state.focusPeriod='2026-01-01'; renderDataViews(); }"
+                )
+                page.locator('#range-presets .range-btn[data-range="custom"]').click()
+                date_input.fill("2026-02-05")
+                date_input.press("Escape")
+                date_input.press("Tab")
+                date_input.dispatch_event("change")
+                page.wait_for_function(
+                    "()=>state.range==='custom'&&state.rangeDate==='2026-02-05'"
+                )
+                self.assertIsNone(page.evaluate("state.focusPeriod"))
+                overflow = page.evaluate("""() => [...document.querySelectorAll('body *')].filter(el=>{const r=el.getBoundingClientRect();if(!r.width||r.right<=innerWidth+1)return false;for(let p=el.parentElement;p&&p!==document.body;p=p.parentElement)if(['auto','scroll','hidden','clip'].includes(getComputedStyle(p).overflowX))return false;return true;}).sort((a,b)=>b.getBoundingClientRect().right-a.getBoundingClientRect().right).slice(0,16).map(el=>({id:el.id,tag:el.tagName,classes:el.className,section:el.closest('section')?.id,text:el.textContent.slice(0,80),right:el.getBoundingClientRect().right,width:el.getBoundingClientRect().width}))""")
+                self.assertLessEqual(
+                    page.evaluate("document.documentElement.scrollWidth"), width + 1,
+                    overflow,
+                )
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
 
     def test_glm_variants_are_independently_filterable_with_overflow(self):
         for width in (1280, 320, 390):

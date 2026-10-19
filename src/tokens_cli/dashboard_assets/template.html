@@ -128,6 +128,14 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
      <button type=button data-gran=month class=on aria-pressed=true>按月</button>
    </div>
  </div>
+ <div class=range-controls id=range-controls aria-label="统计日期范围">
+  <div class=range-head>
+   <span class=range-k data-i18n-key="DATE RANGE · Statistics">DATE RANGE · 统计日期</span>
+   <div class=range-presets id=range-presets role=group aria-label="日期范围快捷选择"></div>
+   <label class=range-date-wrap><span data-i18n-key="Specific day">指定日</span> <input type=date id=range-date></label>
+  </div>
+  <div class=range-ledger id=range-ledger role=status aria-live=polite></div>
+ </div>
  <div class=filters id=filters aria-label="模型筛选"></div>
  <div class=other-model-summary id=other-model-summary hidden></div>
  <div class=filter-ledger id=filter-ledger><span class=summary id=filter-summary aria-live=polite></span><button class=ghostbtn id=filter-all type=button>全选</button><button class=ghostbtn id=filter-none type=button>清空</button><button class=ghostbtn id=filter-undo type=button disabled>撤销</button></div>
@@ -154,6 +162,16 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  </div>
 </section>
 
+<section class=card id=section-daily-models>
+ <div class=row-between>
+  <div><h2 style=margin:0 data-i18n-key="Daily model usage">每日模型用量</h2><p class=sub style="margin:3px 0 0;color:var(--faint)" data-i18n-key="Filtered by the current date range and models; tokens and recorded calls use day aggregates; costs sum trusted parts rows only.">按当前日期范围与模型筛选；Token/已记录调用取 day 聚合，费用只汇总可信 parts 行</p></div>
+  <div><span id=daily-scope></span><button type=button class=ghostbtn id=glm-compare-btn data-i18n-key="Compare GLM">GLM 对比</button><button type=button class=ghostbtn id=daily-csv-btn data-i18n-key="Export model usage CSV">导出模型用量 CSV</button></div>
+ </div>
+ <div class=glm-compare id=glm-compare aria-live=polite></div>
+ <div class=table-scroll id=daily-table-region tabindex=0 role=region aria-label="每日模型明细，可横向滚动"><table class="detail-table daily-table"><thead id=daily-thead></thead><tbody id=daily-tbody></tbody></table></div>
+ <p class=daily-note id=daily-note></p>
+</section>
+
 <section class="card delta-card" id=section-delta>
  <div class=row-between><div><div class=delta-k>CHANGE ATTRIBUTION · 变化归因</div><h2 style=margin:0 id=delta-title>这一期，变化从哪里来</h2><p class=sub id=delta-window style="margin:3px 0 0;color:var(--faint)">与趋势卡共用比较窗口</p></div><div class=delta-total id=delta-total aria-live=polite aria-atomic=true></div></div>
  <p class=delta-story id=delta-story></p>
@@ -175,7 +193,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
 <section class="card token-almanac" data-module=almanac data-lazy=almanac id=section-almanac>
  <div class=almanac-head>
   <div><div class=almanac-k>THE TOKEN ALMANAC · LOCAL MEMORY</div><h2>Token 年鉴 · 会记得你的 Dashboard</h2><p>赛季与跨快照时间胶囊只由本地聚合数据生成；这是个人历史，不是全球排名。</p></div>
-  <div class=almanac-actions><button class=ghostbtn id=almanac-open type=button>✦ 打开时间胶囊</button><button class=ghostbtn id=almanac-export type=button>导出年鉴</button><button class=ghostbtn id=almanac-clear type=button>清除本地年鉴</button></div>
+  <div class=almanac-actions><span class=scope-tag data-i18n-key="Full report · not filtered by the date range">全报告 · 不受日期范围筛选</span><button class=ghostbtn id=almanac-open type=button>✦ 打开时间胶囊</button><button class=ghostbtn id=almanac-export type=button>导出年鉴</button><button class=ghostbtn id=almanac-clear type=button>清除本地年鉴</button></div>
  </div>
  <div class=almanac-letter id=almanac-letter aria-live=polite></div>
  <div class=almanac-grid>
@@ -187,7 +205,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
 <section class="card achievement-center" data-module=badges data-lazy=badges id=section-achievements>
  <div class=row-between>
   <div><h2 style=margin:0>🏆 Achievement Center · 成就中心</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">把本地日志聚合出的指标（累计、连续、缓存、模型、作息、彩蛋）拆成 3000+ 道阶梯门槛，报告范围内首次越过即解锁；纯本地收藏，阶位不代表全球用户稀有度</p></div>
-  <div class=ach-entry><span class=ach-meta id=ach-meta></span><button type=button class="ghostbtn ach-view-earned" id=ach-view-earned>查看已解锁成就与达成条件 →</button></div>
+  <div class=ach-entry><span class=scope-tag data-i18n-key="Full report · not filtered by the date range">全报告 · 不受日期范围筛选</span><span class=ach-meta id=ach-meta></span><button type=button class="ghostbtn ach-view-earned" id=ach-view-earned>查看已解锁成就与达成条件 →</button></div>
  </div>
  <div class=ach-center-grid>
   <section class=ach-latest aria-labelledby=ach-latest-title><h3 class=ach-section-k id=ach-latest-title>LAST UNLOCK · 最近解锁</h3><div id=ach-latest aria-live=polite></div><div class=ach-preview id=ach-preview aria-label=已解锁成就预览></div></section>
@@ -216,7 +234,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  </section>
  <section class=card data-module=block>
   <div class=row-between>
-   <h2 style=margin:0>近 6 个小时桶，非计费窗口</h2>
+   <h2 style=margin:0>近 6 个小时桶，非计费窗口 <span class=scope-tag data-i18n-key="Fixed window">固定窗口</span></h2>
    <span class=sub id=block-total style=margin:0;color:var(--faint)></span>
   </div>
   <div class=block-bars id=block-bars></div>
@@ -228,7 +246,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
 <section class=card data-module=rhythm id=section-rhythm>
  <div class=row-between>
    <h2 style=margin:0>作息织锦 · 14 天 × 24 小时</h2>
-   <span class=sub style="margin:0;color:var(--faint)">每一个方格，都是一小时留下的算力纹理</span>
+   <span class=sub style="margin:0;color:var(--faint)"><span id=rhythm-scope>最近 14 个日历日 · 固定窗口</span> · <span data-i18n-key="Each cell is an hour of compute texture">每一个方格，都是一小时留下的算力纹理</span></span>
  </div>
  <div class=rhythm id=rhythm style=margin-top:16px></div>
  <div class=rh-foot><div class=persona id=rhythm-persona></div><div class=rh-legend>静 <i></i><i class=l1></i><i class=l2></i><i class=l3></i><i class=l4></i> 沸</div></div>

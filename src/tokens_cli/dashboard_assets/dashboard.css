@@ -610,3 +610,52 @@ body[data-live=prepare] #meta{display:none}
 @media(max-width:640px){.cost-value{font-size:26px}.cost-bar-row{grid-template-columns:minmax(90px,1fr) minmax(50px,1.2fr) auto;font-size:12px}.cost-table{min-width:0}.cost-rate,.cost-note,#cost-currency{min-height:44px}.cost-ed-actions{flex-direction:column}.cost-ed-actions .ghostbtn{min-height:44px}.cost-actions{flex-direction:column;align-items:stretch}.cost-actions .ghostbtn{min-height:44px}.cost-ed-restore-btn{margin-left:0;min-height:44px}.cost-ed-restore-confirm .ghostbtn{min-height:44px}}
 
 .cost-confirm[hidden]{display:none}
+
+/* 日期范围与每日模型明细 */
+.scope-tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:650;color:var(--muted);border:1px solid var(--glass-brd);border-radius:999px;padding:3px 9px;background:var(--surface-2);white-space:nowrap}
+.range-controls{display:flex;flex-direction:column;gap:8px;margin:12px 0 14px;padding:12px 14px;border:1px solid var(--glass-brd);border-radius:14px;background:var(--glass)}
+.range-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.range-k{font-size:11px;letter-spacing:.06em;font-weight:700;color:var(--faint)}
+.range-presets{display:flex;gap:6px;flex-wrap:wrap}
+.range-btn{font:inherit;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 11px;cursor:pointer}
+.range-btn:hover{color:var(--ink);border-color:var(--accent-2)}
+.range-btn.on{color:var(--ink);border-color:var(--accent-2);background:var(--accent-soft);font-weight:700}
+.range-btn:focus-visible,.range-date-wrap input:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
+.range-date-wrap{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-left:auto}
+.range-date-wrap input{font:inherit;font-size:12px;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:5px 8px;color-scheme:light dark}
+.range-ledger{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);min-height:24px}
+.range-detail{overflow-wrap:anywhere}
+.daily-table{min-width:760px}
+.daily-table td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.daily-note{margin:10px 0 0;font-size:11.5px;color:var(--faint);line-height:1.6}
+.glm-compare{margin:14px 0 0;padding:14px;border:1px solid var(--glass-brd);border-radius:16px;background:var(--glass)}
+.glm-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--ink)}
+.glm-note,.glm-empty{margin:6px 0 0;font-size:11.5px;color:var(--faint);line-height:1.6}
+.glm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-top:10px}
+.glm-card{padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);min-width:0}
+.glm-card.is-missing{color:var(--faint)}
+.glm-card b{font-size:13px;color:var(--ink);overflow-wrap:anywhere}
+.glm-card p{margin:6px 0 0;font-size:12px;color:var(--faint)}
+.glm-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 6px}
+.glm-stats dt{font-size:10.5px;color:var(--faint)}
+.glm-stats dd{margin:2px 0 0;font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.glm-card small{font-size:10.5px;color:var(--faint)}
+.glm-table{min-width:640px}
+.glm-table td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.warn{color:var(--accent-2);font-weight:650}
+@media(max-width:640px){
+  .range-date-wrap{margin-left:0;width:100%}
+  .range-date-wrap input{flex:1;min-width:0;min-height:44px}
+  .range-btn{min-height:44px}
+  .view-wrap{min-width:0;flex:0 1 auto}
+  .view-capsule{max-width:100%}
+  #view-label{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .glm-head .scope-tag{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+  .glm-stats{grid-template-columns:minmax(0,1fr)}
+  .daily-table,.glm-table{min-width:0}
+}
+@media(forced-colors:active){
+  .scope-tag,.range-controls,.glm-compare,.glm-card,.range-btn{border:1px solid CanvasText}
+  .range-btn.on{background:Highlight;color:HighlightText}
+  .warn{color:CanvasText;text-decoration:underline}
+}
