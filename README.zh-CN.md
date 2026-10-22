@@ -243,7 +243,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 - Claude 是唯一默认来源；Gemini 与 Codex 必须显式选择。
 - Claude JSONL 文件不再仅因超过 64 MiB 被整份跳过。超长物理行（包括超过 4 MiB 的行）使用有界流式 JSON 校验与用量投影；仍有深度、词法 token、保留数据及数值词元等工程限制，不代表内存无限或历史日志绝对完整。
 - 采集不完整时，不把部分报告发布为成功结果。实时扫描保留最近成功快照；首次扫描失败则没有快照。记录缓存 v7 会重建不兼容的旧条目，不删除旧缓存文件。
-- Windows 缓存设置会处理 `os.fchmod` 缺失，但安全读取的 stat 兼容性仍在合成诊断；Firefox/WebKit 检查也尚未闭合。本地后端测试通过不代表跨平台 CI 已全绿。
+- Windows 缓存设置会处理 `os.fchmod` 缺失。安全读取的 stat 兼容性仍在合成诊断：新增探针匹配写入关闭后只读打开的生命周期，捕获实际比较快照，不放宽生产校验。诊断输出不等于兼容性修复。Firefox/WebKit 检查也尚未闭合，本地后端测试通过不代表跨平台 CI 已全绿。
 - 来源格式提供的字段不同，部分项目、会话或 Context 视图可能不可用。
 - 终端和静态报告支持 `--lang en|zh`，默认跟随系统 locale；交互式 Dashboard 可在页面内切换语言。
 - 离线 Dashboard 是生成时快照。需要持续更新时使用 `./run serve --open`。

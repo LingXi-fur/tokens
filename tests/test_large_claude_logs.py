@@ -13,6 +13,7 @@ from pathlib import Path
 import stat
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -254,6 +255,20 @@ class LargeClaudeLogsTests(unittest.TestCase):
             with self.subTest(limit=name):
                 self.assertEqual(value, getattr(readers, name))
         self.assertEqual(7, readers.CACHE_VERSION)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows-only failure-field capture")
+    def test_capture_stat_fields_at_failing_safe_open(self):
+        # write_bytes closes the writer before the independent cold safe open.
+        # Bind the builtin parser so the real read_all cold chain runs: pre-stat,
+        # SafeReader entry lstat/open/fstat, opened==pre version, then finish.
+        first, last = event("first"), event("last", 23)
+        path = self.write([first, last])
+        with mock.patch.dict(readers.SOURCES, {
+                "claude": (lambda: list(self.paths["claude"]),
+                           readers.claude_parse)}):
+            with _capture_safe_open_stat(str(path)):
+                records = readers.read_all(sources=["claude"], use_cache=False)
+        self.assertEqual([normalized(first), normalized(last)], records)
 
     def test_growth_past_old_file_gate_keeps_old_and_new_usage(self):
         first, second = event("old"), event("new", 17)
@@ -1131,24 +1146,250 @@ class LargeClaudeLogsTests(unittest.TestCase):
 
 
 _STAT_PROBE_PREFIX = "TOKENS_WINDOWS_STAT_PROBE="
+_SAFE_READ_PROBE_PREFIX = "TOKENS_WINDOWS_SAFE_READ_PROBE="
 _STAT_PROBE_LIMIT = 8 * 1024
+_STAT_FIELDS = ("mode", "dev", "ino", "size", "mtime_ns", "ctime_ns", "birthtime_ns")
+_STAT_PAIRS = (("entry", "before", "opened"),
+               ("finish_current", "opened", "current"),
+               ("finish_named", "opened", "named"))
 
 
-def _stat_probe_line(report):
-    """Keep diagnostics extractable even if an unusual runtime adds large values."""
-    bounded = dict(report, phases=list(report.get("phases", ())))
-    omitted = 0
-    while True:
-        line = _STAT_PROBE_PREFIX + json.dumps(
-            bounded, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
-        if len(line.encode("utf-8")) + 1 <= _STAT_PROBE_LIMIT:
-            return line
-        if bounded["phases"]:
-            bounded["phases"].pop()
-            omitted += 1
-            bounded["omitted_phases"] = omitted
+class _StatOSProbe:
+    """Test-local OS forwarding, with five snapshots and seven call slots only."""
+
+    STEPS = (("pre", "stat", "path"), ("before", "lstat", "path"),
+             ("open", "open", "path"), ("opened", "fstat", "fd"),
+             ("fdopen", "fdopen", "fd"), ("current", "fstat", "fd"),
+             ("named", "lstat", "path"))
+    CALL_LIMIT = len(STEPS)
+
+    def __init__(self, original, target):
+        self.original, self.target = original, target
+        self.fd = None
+        self.next = 0
+        self.calls = 0
+        self.incomplete = False
+        self.blocked = False
+        self.events = {name: None for name, _, _ in self.STEPS}
+        self.snapshots = {name: None for name in ("pre", "before", "opened", "current", "named")}
+
+    def __getattr__(self, name):
+        return getattr(self.original, name)
+
+    @staticmethod
+    def _snapshot(result):
+        # No helper calls or fresh stats: every field comes once from this object.
+        missing = object()
+        values, types, available = [], [], []
+        for field in _STAT_FIELDS:
+            value = getattr(result, "st_" + field, missing)
+            present = value is not missing
+            kind = {int: "int", bool: "bool", float: "float", str: "str",
+                    type(None): "none"}.get(type(value), "other") if present else "missing"
+            available.append(present)
+            types.append(kind)
+            values.append(value if type(value) is int and value.bit_length() <= 128 else None)
+        return {"v": values, "t": types, "a": available}
+
+    def _observe(self, api, marker, result=None, failed=False, flags=None):
+        # Saturating counters and fixed slots bound storage even on unexpected calls.
+        self.calls = min(self.calls + 1, self.CALL_LIMIT + 1)
+        if self.blocked or self.calls > self.CALL_LIMIT:
+            self.incomplete = self.blocked = True
+            return
+        if self.next == 0 and api == "lstat":
+            self.next = 1  # Direct _SafeReader use has no read_all pre-stat.
+        if self.next >= len(self.STEPS) or self.STEPS[self.next][1:] != (api, marker):
+            self.incomplete = self.blocked = True
+            return
+        slot = self.STEPS[self.next][0]
+        self.next += 1
+        item = {"api": api, "arg": marker, "order": self.calls,
+                "phase": "finish" if slot in ("current", "named") else (
+                    "pre" if slot == "pre" else "entry"),
+                "status": "api_error" if failed else "returned"}
+        if api == "open":
+            item["readonly"] = (type(flags) is int
+                                and flags & getattr(self.original, "O_ACCMODE", 3)
+                                == getattr(self.original, "O_RDONLY", 0))
+        self.events[slot] = item
+        if not failed and slot in self.snapshots:
+            row = self._snapshot(result)
+            self.snapshots[slot] = row
+            if any(not row["a"][i] or row["t"][i] != "int" or row["v"][i] is None
+                   for i in range(6)):
+                self.incomplete = True
+
+    def _forward(self, api, *args, **kwargs):
+        marker = "fd" if api in ("fstat", "fdopen") else "path"
+        candidate = args[0] if args else kwargs.get(marker)
+        tracked = False
+        try:
+            tracked = (self.fd is not None and candidate == self.fd) if marker == "fd" else (
+                isinstance(candidate, (str, bytes, Path)) and candidate == self.target)
+        except Exception:
+            self.incomplete = True
+        original = getattr(self.original, api)
+        try:
+            result = original(*args, **kwargs)
+        except BaseException:
+            if tracked:
+                try:
+                    self._observe(api, marker, failed=True)
+                except Exception:
+                    self.incomplete = True
+            raise
+        if tracked:
+            if api == "open":
+                self.fd = result
+            try:
+                flags = args[1] if len(args) > 1 else kwargs.get("flags")
+                self._observe(api, marker, result, flags=flags)
+            except Exception:
+                # Instrumentation must not change an original API result/error.
+                self.incomplete = True
+        return result
+
+    def stat(self, *args, **kwargs):
+        return self._forward("stat", *args, **kwargs)
+
+    def lstat(self, *args, **kwargs):
+        return self._forward("lstat", *args, **kwargs)
+
+    def open(self, *args, **kwargs):
+        return self._forward("open", *args, **kwargs)
+
+    def fstat(self, *args, **kwargs):
+        return self._forward("fstat", *args, **kwargs)
+
+    def fdopen(self, *args, **kwargs):
+        return self._forward("fdopen", *args, **kwargs)
+
+    def _pair(self, name, left, right):
+        pair = {"name": name, "left": left, "right": right, "condition": "unknown"}
+        a, b = self.snapshots[left], self.snapshots[right]
+        if a is None or b is None or self.incomplete:
+            return pair
+        # Production compares exact integral fields; optional birthtime is evidence,
+        # not a substitute for ctime and never part of the version comparison.
+        if any(not row["a"][i] or row["t"][i] != "int" or row["v"][i] is None
+               for row in (a, b) for i in range(6)):
+            return pair
+        av, bv = a["v"], b["v"]
+        identity = [field for i, field in enumerate(_STAT_FIELDS[1:3], 1) if av[i] != bv[i]]
+        version = [field for i, field in enumerate(_STAT_FIELDS[1:6], 1) if av[i] != bv[i]]
+        pair["identity_diff"], pair["version_diff"] = identity, version
+        pair["size_branch"] = "shrank" if bv[3] < av[3] else "same" if bv[3] == av[3] else "grew"
+        if not stat.S_ISREG(bv[0]) or (name == "entry" and not stat.S_ISREG(av[0])):
+            pair["condition"] = "unsafe_file"
+        elif identity:
+            pair["condition"] = "identity"
+        elif bv[3] < av[3]:
+            pair["condition"] = "size_shrank"
+        elif bv[3] == av[3] and version:
+            pair["condition"] = "version"
         else:
-            return _STAT_PROBE_PREFIX + '{"status":"size_limited"}'
+            pair["condition"] = "append" if bv[3] > av[3] else "unchanged"
+        return pair
+
+    def report(self, outcome, reason):
+        pairs = [self._pair(*pair) for pair in _STAT_PAIRS]
+        # read_all's cold chain separately compares the pre-stat version to the
+        # opened snapshot; report it, but keep rejection attribution entry/finish.
+        pre = {"left": "pre", "right": "opened", "version_equal": None}
+        before, opened = self.snapshots["pre"], self.snapshots["opened"]
+        if (not self.incomplete and before is not None and opened is not None
+                and all(row["a"][i] and row["t"][i] == "int" and row["v"][i] is not None
+                        for row in (before, opened) for i in range(1, 6))):
+            pre["version_equal"] = before["v"][1:6] == opened["v"][1:6]
+        cause = "unknown"
+        if reason == "file_changed":
+            for pair in pairs:
+                if pair["condition"] in ("unknown", "unsafe_file", "identity", "size_shrank", "version"):
+                    if pair["condition"] != "unknown":
+                        cause = pair["name"] + ":" + pair["condition"]
+                    break
+        # Capture completion is separate from the collection outcome. Missing
+        # finish slots on a real entry failure are expected, not fabricated.
+        return {"runtime": {"python": list(sys.version_info[:2]), "platform": sys.platform},
+                "fields": list(_STAT_FIELDS), "outcome": outcome, "reason": reason,
+                "capture": "incomplete" if self.incomplete else "finished",
+                "cause": cause, "pre_opened": pre,
+                "calls": self.calls, "call_limit": self.CALL_LIMIT,
+                "incomplete": self.incomplete, "events": self.events,
+                "snapshots": self.snapshots, "pairs": pairs}
+
+
+@contextmanager
+def _capture_safe_open_stat(target):
+    probe = _StatOSProbe(readers.os, target)
+    outcome, reason = "error", None
+    try:
+        # Replace only readers' reference, never mutate the shared os module.
+        with mock.patch.object(readers, "os", probe):
+            yield probe
+        outcome = "collected"
+    except readers.CollectionIncompleteError as exc:
+        outcome = "incomplete"
+        reason = exc.reason if exc.reason in readers.CollectionIncompleteError.REASONS else "unknown"
+        raise
+    finally:
+        active_error = outcome != "collected"
+        diagnostic_error = None
+        try:
+            line = _stat_probe_line(probe.report(outcome, reason), prefix=_SAFE_READ_PROBE_PREFIX)
+        except Exception as exc:
+            diagnostic_error = exc
+            line = _SAFE_READ_PROBE_PREFIX + '{"incomplete":true,"status":"diagnostic_error"}'
+        try:
+            print(line, flush=True)
+        except Exception:
+            if not active_error:
+                raise
+        if diagnostic_error is not None and not active_error:
+            raise diagnostic_error
+
+
+def _stat_probe_line(report, prefix=_STAT_PROBE_PREFIX):
+    """Preserve the raw probe contract and budget the complete UTF-8 line."""
+    if prefix not in (_STAT_PROBE_PREFIX, _SAFE_READ_PROBE_PREFIX):
+        raise ValueError("unknown stat probe prefix")
+    bounded = dict(report)
+    if prefix == _STAT_PROBE_PREFIX or "phases" in report:
+        bounded["phases"] = list(report.get("phases", ()))
+    omitted = 0
+
+    def encode(value):
+        return prefix + json.dumps(value, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+
+    def fits(line):
+        return len(line.encode("utf-8")) + 1 <= _STAT_PROBE_LIMIT
+
+    line = encode(bounded)
+    while not fits(line) and bounded.get("phases"):
+        bounded["phases"].pop()
+        omitted += 1
+        bounded["omitted_phases"] = omitted
+        line = encode(bounded)
+    if fits(line):
+        return line
+    if "snapshots" not in bounded or "pairs" not in bounded:
+        return prefix + '{"status":"size_limited"}'
+    # Drop unrelated headers before touching evidence. No first-N truncation.
+    bounded = {key: bounded[key] for key in (
+        "fields", "outcome", "reason", "cause", "pre_opened", "snapshots", "pairs") if key in bounded}
+    bounded.update(incomplete=True, truncated=True)
+    line = encode(bounded)
+    if fits(line):
+        return line
+    # Even oversized evidence retains all critical pair names/references, explicitly
+    # marked unavailable rather than silently discarding finish or inventing a cause.
+    return encode({"incomplete": True, "truncated": True, "status": "size_limited",
+                   "pre_opened": {"left": "pre", "right": "opened", "version_equal": None},
+                   "snapshots": {name: {"status": "omitted"}
+                                 for name in ("before", "opened", "current", "named")},
+                   "pairs": [{"name": name, "left": left, "right": right,
+                              "condition": "unknown"} for name, left, right in _STAT_PAIRS]})
 
 
 class StatProbeOutputTests(unittest.TestCase):
@@ -1171,6 +1412,323 @@ class StatProbeOutputTests(unittest.TestCase):
         oversized_header = _stat_probe_line({"synthetic": "x" * 16384})
         self.assertEqual({"status": "size_limited"},
                          json.loads(oversized_header[len(_STAT_PROBE_PREFIX):]))
+
+
+    def test_probe_line_budgets_prefix_newline_and_non_ascii_without_mutating_evidence(self):
+        # ensure_ascii expands each non-ASCII code point; newline is part of 8 KiB.
+        fixed = len((_SAFE_READ_PROBE_PREFIX + '{"value":""}\n').encode("utf-8"))
+        report = {"value": "x" * (_STAT_PROBE_LIMIT - fixed)}
+        line = _stat_probe_line(report, prefix=_SAFE_READ_PROBE_PREFIX)
+        self.assertEqual(_STAT_PROBE_LIMIT, len((line + "\n").encode("utf-8")))
+        self.assertEqual(report, json.loads(line[len(_SAFE_READ_PROBE_PREFIX):]))
+        unicode_line = _stat_probe_line({"phases": [{"value": "界😀" * 4096}]},
+                                        prefix=_SAFE_READ_PROBE_PREFIX)
+        self.assertLessEqual(len((unicode_line + "\n").encode("utf-8")), _STAT_PROBE_LIMIT)
+        self.assertNotIn("\n", unicode_line)
+
+    def test_probe_line_trims_the_whole_report_but_keeps_entry_and_finish_evidence(self):
+        snapshots = {name: {"v": [1, 2, 3, 4, 5, 6, None]}
+                     for name in ("pre", "before", "opened", "current", "named")}
+        pairs = [{"name": name, "left": left, "right": right, "condition": "version"}
+                 for name, left, right in _STAT_PAIRS]
+        report = {"snapshots": snapshots, "pairs": pairs,
+                  "runtime": {"unexpected": "界" * 16384}, "outcome": "incomplete",
+                  "reason": "file_changed", "cause": "entry:version"}
+        line = _stat_probe_line(report, prefix=_SAFE_READ_PROBE_PREFIX)
+        bounded = json.loads(line[len(_SAFE_READ_PROBE_PREFIX):])
+        self.assertLessEqual(len((line + "\n").encode("utf-8")), _STAT_PROBE_LIMIT)
+        self.assertEqual(snapshots, bounded["snapshots"])
+        self.assertEqual(pairs, bounded["pairs"])
+        self.assertTrue(bounded["incomplete"])
+        self.assertTrue(bounded["truncated"])
+        self.assertEqual(16384, len(report["runtime"]["unexpected"]))
+        huge = {"snapshots": {"before": "x" * 16384}, "pairs": pairs,
+                "calls": "x" * 16384}
+        line = _stat_probe_line(huge, prefix=_SAFE_READ_PROBE_PREFIX)
+        bounded = json.loads(line[len(_SAFE_READ_PROBE_PREFIX):])
+        self.assertLessEqual(len((line + "\n").encode("utf-8")), _STAT_PROBE_LIMIT)
+        self.assertTrue(bounded["incomplete"])
+        self.assertEqual(["entry", "finish_current", "finish_named"],
+                         [pair["name"] for pair in bounded["pairs"]])
+        self.assertTrue(all(pair["condition"] == "unknown" for pair in bounded["pairs"]))
+        self.assertEqual({"before", "opened", "current", "named"}, set(bounded["snapshots"]))
+
+
+class SafeReadStatProbeTests(unittest.TestCase):
+    def test_real_builtin_cold_chain_pairs_pre_entry_and_finish_slots(self):
+        # Full read_all chain with the builtin parser, reusing the standard
+        # LargeClaudeLogsTests isolation; cross-platform contract for the same
+        # slots the Windows-only diagnostic observes.
+        fixture = LargeClaudeLogsTests(
+            methodName="test_default_resource_limits_match_the_contract")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        values = [event("first"), event("last", 23)]
+        path = fixture.write(values)
+        with mock.patch.dict(readers.SOURCES, {
+                "claude": (lambda: list(fixture.paths["claude"]), readers.claude_parse)}):
+            original, probe = readers.os, _StatOSProbe(readers.os, str(path))
+            with mock.patch.object(readers, "os", probe):
+                records = readers.read_all(sources=["claude"], use_cache=False)
+        self.assertEqual([normalized(value) for value in values], records)
+        self.assertFalse(probe.incomplete)
+        report = probe.report("collected", None)
+        self.assertEqual(["pre", "before", "opened", "current", "named"],
+                         [name for name, row in report["snapshots"].items() if row])
+        self.assertTrue(report["pre_opened"]["version_equal"])
+        self.assertEqual(["unchanged"] * 3,
+                         [pair["condition"] for pair in report["pairs"]])
+        self.assertTrue(report["events"]["open"]["readonly"])
+        self.assertIs(original, readers.os)
+
+    def info(self, **changes):
+        values = dict(st_mode=stat.S_IFREG | 0o600, st_dev=11, st_ino=22,
+                      st_size=100, st_mtime_ns=300, st_ctime_ns=400)
+        values.update(changes)
+        return SimpleNamespace(**values)
+
+    def boundary(self, before=None, opened=None, current=None, named=None):
+        before = self.info() if before is None else before
+        opened = self.info() if opened is None else opened
+        current = self.info() if current is None else current
+        named = self.info() if named is None else named
+        file = mock.Mock()
+        file.fileno.return_value = 71
+        return SimpleNamespace(
+            O_RDONLY=os.O_RDONLY, O_ACCMODE=getattr(os, "O_ACCMODE", 3),
+            stat=mock.Mock(return_value=before),
+            lstat=mock.Mock(side_effect=[before, named]),
+            open=mock.Mock(return_value=71),
+            fstat=mock.Mock(side_effect=[opened, current]),
+            fdopen=mock.Mock(return_value=file), close=mock.Mock())
+
+    def decoded(self, output):
+        lines = output.getvalue().splitlines()
+        self.assertEqual(1, len(lines))
+        self.assertTrue(lines[0].startswith(_SAFE_READ_PROBE_PREFIX))
+        self.assertLessEqual(len(output.getvalue().encode("utf-8")), _STAT_PROBE_LIMIT)
+        return json.loads(lines[0][len(_SAFE_READ_PROBE_PREFIX):])
+
+    def test_proxy_forwards_each_api_once_with_original_arguments_and_return_objects(self):
+        target = "synthetic-private-target"
+        original = self.boundary()
+        probe = _StatOSProbe(original, target)
+        results = [probe.stat(path=target, follow_symlinks=False), probe.lstat(path=target),
+                   probe.open(path=target, flags=os.O_RDONLY), probe.fstat(fd=71),
+                   probe.fdopen(fd=71, mode="rb"), probe.fstat(71), probe.lstat(target)]
+        self.assertIs(original.stat.return_value, results[0])
+        self.assertIs(results[0], results[1])
+        self.assertIs(original.open.return_value, results[2])
+        self.assertIs(original.fdopen.return_value, results[4])
+        self.assertEqual([stat.S_IFREG | 0o600, 11, 22, 100, 300, 400, None],
+                         probe.snapshots["opened"]["v"])
+        self.assertEqual(probe.snapshots["opened"], probe.snapshots["current"])
+        self.assertEqual([mock.call(path=target, follow_symlinks=False)], original.stat.call_args_list)
+        self.assertEqual([mock.call(path=target), mock.call(target)], original.lstat.call_args_list)
+        self.assertEqual([mock.call(path=target, flags=os.O_RDONLY)], original.open.call_args_list)
+        self.assertEqual([mock.call(fd=71), mock.call(71)], original.fstat.call_args_list)
+        self.assertEqual([mock.call(fd=71, mode="rb")], original.fdopen.call_args_list)
+        self.assertIs(original.close, probe.close)
+        self.assertEqual(7, probe.calls)
+        self.assertFalse(probe.incomplete)
+        self.assertNotIn(target, json.dumps(probe.report("collected", None)))
+
+    def test_snapshot_reads_each_field_once_from_the_exact_return_object_without_mutation(self):
+        values = vars(self.info(st_birthtime_ns=200)).copy()
+        accesses = {name: 0 for name in values}
+
+        class Snapshot:
+            def __getattr__(self, name):
+                accesses[name] += 1
+                return values[name]
+
+        snapshot = Snapshot()
+        original = SimpleNamespace(stat=mock.Mock(return_value=snapshot))
+        probe = _StatOSProbe(original, "target")
+        self.assertIs(snapshot, probe.stat("target"))
+        original.stat.assert_called_once_with("target")
+        self.assertEqual([1] * len(values), list(accesses.values()))
+        self.assertEqual(list(values.values()), probe.snapshots["pre"]["v"])
+        self.assertEqual(["int"] * 7, probe.snapshots["pre"]["t"])
+        self.assertEqual([True] * 7, probe.snapshots["pre"]["a"])
+        self.assertEqual(vars(self.info(st_birthtime_ns=200)), values)
+
+    def test_proxy_does_not_observe_unrelated_paths_or_descriptors(self):
+        original = self.boundary()
+        probe = _StatOSProbe(original, "target")
+        result = probe.stat("other")
+        self.assertIs(original.stat.return_value, result)
+        self.assertEqual(71, probe.open("other", os.O_RDONLY))
+        result = probe.fstat(71)
+        self.assertEqual(0, probe.calls)
+        self.assertTrue(all(value is None for value in probe.snapshots.values()))
+        original.stat.assert_called_once_with("other")
+        original.fstat.assert_called_once_with(71)
+
+    def test_real_safe_reader_entry_and_finish_use_distinct_correctly_paired_slots(self):
+        original = self.boundary(before=self.info(st_ctime_ns=401),
+                                 opened=self.info(st_size=101, st_ctime_ns=402),
+                                 current=self.info(st_size=102, st_ctime_ns=403),
+                                 named=self.info(st_size=103, st_ctime_ns=404))
+        probe = _StatOSProbe(original, "target")
+        with mock.patch.object(readers, "os", probe):
+            with readers._SafeReader("target") as reader:
+                self.assertFalse(reader.finish())
+        report = probe.report("collected", None)
+        self.assertFalse(report["incomplete"])
+        # No pre-stat in a direct _SafeReader use: the cold-chain field is
+        # explicitly unavailable rather than silently equal or missing.
+        self.assertIsNone(report["pre_opened"]["version_equal"])
+        self.assertEqual([None, 401, 402, 403, 404],
+                         [None if row is None else row["v"][5]
+                          for row in report["snapshots"].values()])
+        self.assertEqual(["entry", "finish_current", "finish_named"],
+                         [pair["name"] for pair in report["pairs"]])
+        self.assertEqual(["append"] * 3, [pair["condition"] for pair in report["pairs"]])
+        self.assertEqual(["before", "opened", "opened"],
+                         [pair["left"] for pair in report["pairs"]])
+        self.assertEqual(["opened", "current", "named"],
+                         [pair["right"] for pair in report["pairs"]])
+        self.assertEqual([1, 2, 3, 4, 5, 6],
+                         [event["order"] for event in report["events"].values() if event])
+        self.assertEqual("lstat", report["events"]["before"]["api"])
+        self.assertEqual("entry", report["events"]["opened"]["phase"])
+        self.assertEqual("finish", report["events"]["current"]["phase"])
+        self.assertEqual("fd", report["events"]["current"]["arg"])
+        self.assertEqual("path", report["events"]["named"]["arg"])
+        self.assertTrue(report["events"]["open"]["readonly"])
+        original.fdopen.return_value.close.assert_called_once_with()
+
+    def test_interpretation_matches_real_entry_and_finish_failure_conditions(self):
+        for slot in ("opened", "current", "named"):
+            for changes, condition in (({"st_ino": 999}, "identity"),
+                                       ({"st_size": 99}, "size_shrank"),
+                                       ({"st_ctime_ns": 401}, "version")):
+                with self.subTest(slot=slot, condition=condition):
+                    original = self.boundary(**{slot: self.info(**changes)})
+                    probe = _StatOSProbe(original, "target")
+                    with mock.patch.object(readers, "os", probe):
+                        with self.assertRaises(readers.CollectionIncompleteError) as caught:
+                            with readers._SafeReader("target") as reader:
+                                reader.finish()
+                    self.assertEqual("file_changed", caught.exception.reason)
+                    report = probe.report("incomplete", caught.exception.reason)
+                    phase = {"opened": "entry", "current": "finish_current",
+                             "named": "finish_named"}[slot]
+                    self.assertEqual(phase + ":" + condition, report["cause"])
+                    self.assertIsNone(report["pre_opened"]["version_equal"])
+                    if slot == "opened":
+                        self.assertIsNone(report["snapshots"]["current"])
+                        original.close.assert_called_once_with(71)
+
+    def test_finally_outputs_once_and_preserves_the_original_collection_exception(self):
+        original = self.boundary()
+        failure = readers.CollectionIncompleteError("claude", "file_changed")
+        output = io.StringIO()
+        with mock.patch.object(readers, "os", original), mock.patch("sys.stdout", output):
+            with self.assertRaises(readers.CollectionIncompleteError) as caught:
+                with _capture_safe_open_stat("target"):
+                    raise failure
+            self.assertIs(original, readers.os)
+        self.assertIs(failure, caught.exception)
+        report = self.decoded(output)
+        self.assertEqual("incomplete", report["outcome"])
+        self.assertEqual("file_changed", report["reason"])
+        self.assertEqual("unknown", report["cause"])
+
+    def test_success_outputs_once_after_restoring_the_original_os_reference(self):
+        original, output = self.boundary(), io.StringIO()
+        with mock.patch.object(readers, "os", original), mock.patch("sys.stdout", output):
+            with _capture_safe_open_stat("target") as probe:
+                with readers._SafeReader("target") as reader:
+                    self.assertTrue(reader.finish())
+                self.assertIs(probe, readers.os)
+            self.assertIs(original, readers.os)
+        self.assertEqual("collected", self.decoded(output)["outcome"])
+
+    def test_diagnostic_reporting_failure_cannot_replace_an_active_business_error(self):
+        failure = ValueError("synthetic-private-failure")
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output), \
+                mock.patch.object(_StatOSProbe, "report", side_effect=RuntimeError("private")):
+            with self.assertRaises(ValueError) as caught:
+                with _capture_safe_open_stat("target"):
+                    raise failure
+        self.assertIs(failure, caught.exception)
+        self.assertEqual({"incomplete": True, "status": "diagnostic_error"}, self.decoded(output))
+        with mock.patch("builtins.print", side_effect=OSError("private")):
+            with self.assertRaises(ValueError) as caught:
+                with _capture_safe_open_stat("target"):
+                    raise failure
+        self.assertIs(failure, caught.exception)
+
+    def test_observation_error_keeps_original_result_and_diagnostic_failure_does_not_pass(self):
+        result = self.info()
+        original = SimpleNamespace(stat=mock.Mock(return_value=result))
+        probe = _StatOSProbe(original, "target")
+        with mock.patch.object(probe, "_snapshot", side_effect=ValueError("private")):
+            self.assertIs(result, probe.stat("target"))
+        original.stat.assert_called_once_with("target")
+        self.assertTrue(probe.incomplete)
+        output, failure = io.StringIO(), RuntimeError("private")
+        with mock.patch("sys.stdout", output), \
+                mock.patch.object(_StatOSProbe, "report", side_effect=failure):
+            with self.assertRaises(RuntimeError) as caught:
+                with _capture_safe_open_stat("target"):
+                    pass
+        self.assertIs(failure, caught.exception)
+        self.assertEqual("diagnostic_error", self.decoded(output)["status"])
+
+    def test_os_failure_is_forwarded_once_without_exception_replacement(self):
+        failure = OSError("synthetic-private-os-detail")
+        original = SimpleNamespace(lstat=mock.Mock(side_effect=failure))
+        probe = _StatOSProbe(original, "target")
+        with self.assertRaises(OSError) as caught:
+            probe.lstat("target")
+        self.assertIs(failure, caught.exception)
+        self.assertEqual("api_error", probe.events["before"]["status"])
+        self.assertIsNone(probe.snapshots["before"])
+        output = io.StringIO()
+        with mock.patch.object(readers, "os", original), mock.patch("sys.stdout", output):
+            with self.assertRaises(readers.CollectionIncompleteError) as caught:
+                with _capture_safe_open_stat("target"):
+                    with readers._SafeReader("target"):
+                        self.fail("failed lstat must prevent opening")
+        self.assertEqual("stat_failed", caught.exception.reason)
+        self.assertEqual("stat_failed", self.decoded(output)["reason"])
+
+    def test_call_overflow_and_wrong_order_preserve_fixed_slots_without_changing_results(self):
+        result = self.info()
+        original = SimpleNamespace(stat=mock.Mock(return_value=result))
+        probe = _StatOSProbe(original, "target")
+        for _ in range(100):
+            self.assertIs(result, probe.stat("target"))
+        self.assertEqual(100, original.stat.call_count)
+        self.assertEqual(probe.CALL_LIMIT + 1, probe.calls)
+        self.assertEqual(7, len(probe.events))
+        self.assertEqual(5, len(probe.snapshots))
+        self.assertEqual(1, sum(value is not None for value in probe.events.values()))
+        self.assertEqual(1, probe.events["pre"]["order"])
+        self.assertTrue(probe.incomplete)
+        self.assertTrue(all(pair["condition"] == "unknown"
+                            for pair in probe.report("incomplete", "file_changed")["pairs"]))
+
+    def test_missing_optional_and_required_fields_have_explicit_availability_and_types(self):
+        before = self.info()
+        opened = self.info()
+        del opened.st_ctime_ns
+        original = self.boundary(before=before, opened=opened)
+        probe = _StatOSProbe(original, "target")
+        probe.lstat("target")
+        probe.open("target", os.O_RDONLY)
+        self.assertIs(opened, probe.fstat(71))
+        self.assertEqual([False, False], probe.snapshots["opened"]["a"][5:])
+        self.assertEqual(["missing", "missing"], probe.snapshots["opened"]["t"][5:])
+        self.assertEqual([None, None], probe.snapshots["opened"]["v"][5:])
+        self.assertFalse(probe.snapshots["before"]["a"][6])
+        self.assertEqual("int", probe.snapshots["before"]["t"][5])
+        self.assertTrue(probe.incomplete)
+        self.assertEqual("unknown", probe.report("incomplete", "file_changed")["cause"])
 
 
 class WindowsStatDiagnosticTests(unittest.TestCase):

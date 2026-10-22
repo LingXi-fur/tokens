@@ -241,7 +241,7 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 - Claude is the only default source. Gemini and Codex must be selected explicitly.
 - Claude JSONL files are no longer skipped merely for exceeding 64 MiB. Long physical lines, including those over 4 MiB, use bounded streaming JSON validation and usage projection. Depth, token, retained-data, and numeric limits still apply; this is not an unlimited-memory or completeness guarantee.
 - An incomplete collection does not publish a partial report as a successful result. Live scans keep the last successful snapshot, or show no snapshot if none exists. Record cache v7 rebuilds incompatible older entries without deleting old cache files.
-- Windows cache setup handles missing `os.fchmod`, but safe-read stat compatibility is still under synthetic diagnosis. Firefox/WebKit checks also remain unresolved; passing local backend tests is not evidence that the full cross-platform CI is green.
+- Windows cache setup handles missing `os.fchmod`. Safe-read stat compatibility is still under synthetic diagnosis: a closed-writer/read-only-open probe captures the actual comparison snapshots without relaxing production checks. Diagnostic output is not a compatibility fix. Firefox/WebKit checks also remain unresolved; passing local backend tests is not evidence that the full cross-platform CI is green.
 - Source formats expose different fields, so some project, session, or context views can be unavailable.
 - Terminal and static reports support English and Chinese via `--lang en|zh`, defaulting to your system locale; the interactive dashboard has its own in-page language switch.
 - An offline dashboard is a generation-time snapshot. Use `./run serve --open` for ongoing updates.
