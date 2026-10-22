@@ -24,6 +24,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- Record cache format is now v7 (`records-v7.json`). Older incompatible caches are treated as misses and left in place; source logs are not modified. Warm entries must pass strict record, billing-component, deduplication-state, and capacity validation before reuse.
 - Live log scans run in a single background worker; page and snapshot requests read published in-memory data without waiting for parsing or aggregation.
 - `--interval` controls background scanning. Browser checks default to at most one minute, check sooner during preparation, and can be changed or paused independently.
 - Token Flow is redesigned as Token destinations: a project/model overview beside readable session cards, with a stacked mobile layout and the existing seven-plus-`Other` palette.
@@ -34,6 +35,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- Claude JSONL files no longer disappear from collection merely because the file grows past 64 MiB. Safe, bounded reads stop at the initially observed file length; truncation, replacement, early EOF, or read failures stop collection instead of returning partial results.
+- Claude physical lines over 4 MiB use the same streaming JSON validator and exact usage projection as smaller lines, rather than failing solely on line length. Discarded fields and trailing syntax are validated before an event is accepted; explicit depth, token, projection, numeric, file, and collection limits remain in force. Per-file first-wins deduplication and billing semantics are preserved, including shared NaN identity and exception-path buffer cleanup.
+- Incomplete collection does not overwrite a report or a valid cache with partial data. Live scans preserve the last successful snapshot, leave the first snapshot absent on failure, and retry failed scans even when the source signature is unchanged. Optional Claude title discovery failures no longer block reports that selected only Gemini or Codex.
+- Added synthetic differential, long-line, resource-boundary, cache, CLI, and live-refresh regressions. These validate collection behavior, not the missing amount in any real usage history; this change does not claim a real-data recount, a service deployment, or a package release.
 - Record caches now bind parsed dates to the reporting timezone. Changing timezone or loading a cache without that marker reparses source records instead of reusing stale calendar dates; an unverifiable system-local timezone conservatively reparses. Historical source files and model attribution are not changed.
 - `glm-5.3` and `glm-5.3-flash`, when present under those exact recorded names, retain separate filter identities even when model capacity overflows. They share the existing seven-identity capacity with the latest backend and usage-ranked models; no historical records are relabeled and no absent Flash usage is inferred.
 - The full session table retains an independent replay button for every row, including sessions outside the current card page.

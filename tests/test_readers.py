@@ -85,13 +85,21 @@ class TimezoneCacheTests(unittest.TestCase):
             path.write_text("synthetic", encoding="utf-8")
             cache_file = Path(tmp) / "records.json"
             parse = mock.Mock(side_effect=lambda _: [{
+                "source": "gemini",
+                "ts": "2026-10-18T20:00:00Z",
                 "date": readers._to_local_date("2026-10-18T20:00:00Z"),
                 "model": "glm-5.3-flash",
+                "input": 1, "output": 2, "cache_read": 0, "cache_write": 0,
+                "total": 3, "session": "synthetic-session",
+                "billing": readers._gemini_billing({
+                    "input": 1, "output": 2, "cached": 0,
+                    "thoughts": 0, "total": 3,
+                }),
             }])
             with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
                     mock.patch.object(readers.config, "CACHE_FILE", str(cache_file)), \
                     mock.patch.object(readers, "_ccr_signature", return_value=None), \
-                    mock.patch.dict(readers.SOURCES, {"synthetic": (lambda: [str(path)], parse)}, clear=True):
+                    mock.patch.dict(readers.SOURCES, {"gemini": (lambda: [str(path)], parse)}, clear=True):
                 with mock.patch.object(readers.config, "TZ", ZoneInfo("UTC")):
                     self.assertEqual("2026-10-18", readers.read_all()[0]["date"])
                     self.assertEqual("2026-10-18", readers.read_all()[0]["date"])

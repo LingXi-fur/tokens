@@ -87,9 +87,8 @@ def _system_timezone():
 
 
 CACHE_DIR = os.path.join(_cache_root(), "ai-cli-tokens")
-# records-v5：record 新增 billing 计费证据（schema 1）。旧 records-v4.json 不删除，
-# 版本不匹配自然作废并重解析。
-CACHE_FILE = os.path.join(CACHE_DIR, "records-v5.json")
+# records-v7：Claude 小/大行统一有界 JSON 投影；旧 v5/v6 文件不删除。
+CACHE_FILE = os.path.join(CACHE_DIR, "records-v7.json")
 OUT_DIR = os.path.abspath(os.path.join(os.getcwd(), "out"))
 SESSION_SUMMARY_FILE = os.path.join(OUT_DIR, "session_summaries.json")
 TZ = _system_timezone()

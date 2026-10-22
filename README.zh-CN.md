@@ -239,6 +239,8 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 
 - 当前公共安装入口是源码检出；在确认存在可用发布版本前，不宣传软件包注册表安装命令。0.3.0 本机候选不改变这一点：它仅离线本机使用，不声称存在已核实的公开 0.3.0 软件包注册表版本。
 - Claude 是唯一默认来源；Gemini 与 Codex 必须显式选择。
+- Claude JSONL 文件不再仅因超过 64 MiB 被整份跳过。超长物理行（包括超过 4 MiB 的行）使用有界流式 JSON 校验与用量投影；仍有深度、词法 token、保留数据及数值词元等工程限制，不代表内存无限或历史日志绝对完整。
+- 采集不完整时，不把部分报告发布为成功结果。实时扫描保留最近成功快照；首次扫描失败则没有快照。记录缓存 v7 会重建不兼容的旧条目，不删除旧缓存文件。
 - 来源格式提供的字段不同，部分项目、会话或 Context 视图可能不可用。
 - 终端和静态报告支持 `--lang en|zh`，默认跟随系统 locale；交互式 Dashboard 可在页面内切换语言。
 - 离线 Dashboard 是生成时快照。需要持续更新时使用 `./run serve --open`。
@@ -248,6 +250,8 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 **没有找到日志？** 运行 `./run doctor`。如果未使用 Claude，尝试 `./run day --source gemini` 或 `./run day --source codex`。完全没有本地日志时可运行 `./run demo --open`；已安装本地命令则使用 `tokens demo --open`。
 
 **Dashboard 数字不更新？** `./run dashboard` 生成离线快照；实时更新请使用 `./run serve --open`。
+
+**采集不完整，或总量看起来偏低？** 先检查日志可读性及采集限制，再重试。刷新失败不代表零用量：实时页面可能仍显示较早的成功快照。`--no-cache` 仅绕过记录缓存，不取消安全限制。不要靠删除日志或旧缓存强行获得成功结果，也不要把原始日志附到公开 Issue。合成回归验证的是解析行为，不证明真实历史漏量已恢复；更新源码也不会自动重启运行中的服务。
 
 **浏览器没有自动打开？** 命令仍会打印生成路径或本机 URL，可手动打开。
 

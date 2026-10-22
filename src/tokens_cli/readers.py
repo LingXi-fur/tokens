@@ -21,13 +21,14 @@ total 口径说明：
 """
 import glob
 import json
+import math
 import os
 import re
 import stat
 import tempfile
 from datetime import datetime
 
-from . import config
+from . import _claude_json, config
 
 # 缓存结构版本：解析口径变更后旧 cache.json 作废、强制重读。
 #   v1 = 初版（含 Claude 重复 message.id 导致总量夸大）
@@ -35,7 +36,9 @@ from . import config
 #   v3 = record 增 cwd 字段（项目维度 Top 榜需要）
 #   v4 = Claude request aliases may resolve through the user's current CCR router
 #   v5 = record 新增 billing 计费证据（schema 1，独立于既有用量统计）
-CACHE_VERSION = 5
+#   v6 = Claude 有界大日志读取、保留预算及安全缓存契约
+#   v7 = Claude 小/大行统一流式 JSON 投影，工程限额失败不再静默漏计
+CACHE_VERSION = 7
 
 # ---------- Billing evidence (schema 1) ----------
 # 独立计费证据：只读源头分量、字段是否实际存在及口径异常原因，绝不改写既有
@@ -227,10 +230,133 @@ def billing_view(record):
         return zero, True
     return checked, uncertain
 
-# 单文件大小上限：防恶意/失控日志吃光内存（OOM）。超出直接跳过。
-MAX_FILE_BYTES = 64 * 1024 * 1024  # 64 MB
-# 单行长度上限（jsonl）：防无换行的巨型行。
-MAX_LINE_BYTES = 4 * 1024 * 1024   # 4 MB
+# Gemini/Codex 及未指定来源沿用整文件上限；Claude 限制读取块与保留状态。
+MAX_FILE_BYTES = 64 * 1024 * 1024
+# Claude 的小行缓冲阈值，不是物理行长度上限；标题/Codex 原行长策略不变。
+MAX_LINE_BYTES = 4 * 1024 * 1024
+CLAUDE_READ_CHUNK_BYTES = 64 * 1024
+MAX_CLAUDE_RECORDS = 100000
+MAX_CLAUDE_RETAINED_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_RECORDS = 500000
+MAX_TOTAL_RETAINED_BYTES = 256 * 1024 * 1024
+MAX_CACHE_BYTES = 64 * 1024 * 1024
+
+
+class CollectionIncompleteError(Exception):
+    """受控失败码；不得把路径、日志内容或底层异常插入公开错误文本。"""
+
+    SOURCES = frozenset(("claude", "gemini", "codex", "all"))
+    REASONS = frozenset((
+        "discovery_failed", "stat_failed", "unsafe_file", "open_failed",
+        "read_failed", "file_changed", "line_too_long", "record_limit",
+        "retained_bytes_limit", "total_record_limit", "total_retained_bytes_limit",
+        "json_depth_limit", "json_token_limit", "json_projection_limit",
+        "json_number_limit",
+    ))
+
+    def __init__(self, source, reason):
+        if source not in self.SOURCES or reason not in self.REASONS:
+            raise ValueError("invalid collection error code")
+        self.source = source
+        self.reason = reason
+        super().__init__(f"Collection incomplete ({source}: {reason})")
+
+
+def _encoded_retained_bytes(value):
+    """逐项计费，不序列化 records 列表；这是工程额度，不是 RSS 上界。"""
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+               .encode("utf-8"))
+
+
+def _record_retained_bytes(record):
+    return _encoded_retained_bytes(record) + 512
+
+
+def _dedup_retained_bytes(key):
+    return _encoded_retained_bytes(key) + 256
+
+
+def _stat_identity(st):
+    return st.st_dev, st.st_ino
+
+
+def _stat_version(st):
+    return (*_stat_identity(st), st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+
+def _safe_open_flags():
+    # 非阻塞防止检查/打开竞态把普通文件换成 FIFO 后挂起。
+    return (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+
+
+class _SafeReader:
+    """安全打开普通文件，并只读打开时的长度；不保证祖先目录无软链。"""
+
+    def __init__(self, path):
+        self.path = path
+        self.fh = None
+        self.initial = None
+        self.remaining = 0
+
+    def __enter__(self):
+        try:
+            before = os.lstat(self.path)
+        except OSError:
+            raise CollectionIncompleteError("claude", "stat_failed") from None
+        if not stat.S_ISREG(before.st_mode):
+            raise CollectionIncompleteError("claude", "unsafe_file")
+        try:
+            fd = os.open(self.path, _safe_open_flags())
+        except OSError:
+            raise CollectionIncompleteError("claude", "open_failed") from None
+        try:
+            opened = os.fstat(fd)
+            if not stat.S_ISREG(opened.st_mode):
+                raise CollectionIncompleteError("claude", "unsafe_file")
+            if _stat_identity(before) != _stat_identity(opened):
+                raise CollectionIncompleteError("claude", "file_changed")
+            if (opened.st_size < before.st_size
+                    or (opened.st_size == before.st_size
+                        and _stat_version(opened) != _stat_version(before))):
+                raise CollectionIncompleteError("claude", "file_changed")
+            self.initial = opened
+            self.remaining = opened.st_size
+            self.fh = os.fdopen(fd, "rb")
+        except BaseException:
+            os.close(fd)
+            raise
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.fh.close()
+        return False
+
+    def read_chunk(self):
+        if not self.remaining:
+            return b""
+        raw = self.fh.read(min(CLAUDE_READ_CHUNK_BYTES, self.remaining))
+        if not raw:
+            raise CollectionIncompleteError("claude", "file_changed")
+        self.remaining -= len(raw)
+        return raw
+
+    def finish(self):
+        current = os.fstat(self.fh.fileno())
+        try:
+            named = os.lstat(self.path)
+        except OSError:
+            raise CollectionIncompleteError("claude", "file_changed") from None
+        for st in (current, named):
+            if (not stat.S_ISREG(st.st_mode)
+                    or _stat_identity(st) != _stat_identity(self.initial)
+                    or st.st_size < self.initial.st_size
+                    or (st.st_size == self.initial.st_size
+                        and _stat_version(st) != _stat_version(self.initial))):
+                raise CollectionIncompleteError("claude", "file_changed")
+        # 正常 append 不失败；下轮再读增量，不能缓存为新的完整版本。
+        return (_stat_version(current) == _stat_version(self.initial)
+                and _stat_version(named) == _stat_version(self.initial))
 
 # 标题解析：可读标题上限；无标题日志的有界扫描（先到者为准，避免无限扫描）。
 TITLE_MAX_LEN = 60
@@ -478,78 +604,199 @@ def _resolve_model(model):
 # ---------- Claude ----------
 
 def claude_files():
-    if not os.path.isdir(config.CLAUDE_PROJECTS):
+    try:
+        root = os.stat(config.CLAUDE_PROJECTS)
+    except FileNotFoundError:
         return []
-    return glob.glob(os.path.join(config.CLAUDE_PROJECTS, "**", "*.jsonl"), recursive=True)
+    except OSError:
+        raise CollectionIncompleteError("claude", "discovery_failed") from None
+    if not stat.S_ISDIR(root.st_mode):
+        raise CollectionIncompleteError("claude", "discovery_failed")
+
+    files = []
+    # 原 glob 会跟随目录软链；不因无关目录软链扩大拒绝范围。
+    # 每条分支保留祖先身份，检测实际递归环后明确失败，而非悄悄漏扫。
+    # 根目录/祖先软链可被跟随；安全 open 只保证匹配文件本身的身份与类型。
+    pending = [(config.CLAUDE_PROJECTS, ())]
+    try:
+        while pending:
+            directory, ancestors = pending.pop()
+            directory_stat = os.stat(directory)
+            identity = _stat_identity(directory_stat)
+            if not stat.S_ISDIR(directory_stat.st_mode) or identity in ancestors:
+                raise CollectionIncompleteError("claude", "discovery_failed")
+            descendants = []
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if entry.name.startswith("."):
+                        continue
+                    if entry.name.endswith(".jsonl"):
+                        # 也保留匹配名称的非普通对象，由来源资格检查明确拒绝。
+                        files.append(entry.path)
+                    if entry.is_dir(follow_symlinks=True):
+                        descendants.append((entry.path, (*ancestors, identity)))
+            pending.extend(reversed(descendants))
+    except OSError:
+        raise CollectionIncompleteError("claude", "discovery_failed") from None
+    return files
+
+
+def _claude_event_record(o):
+    """一个 usage 事件归一化；坏 JSON/无效事件仍按既有口径跳过。"""
+    if not isinstance(o, dict) or o.get("type") != "assistant":
+        return None
+    msg = o.get("message")
+    if not isinstance(msg, dict):
+        return None
+    model = msg.get("model")
+    if not isinstance(model, str) or not model or model == "<synthetic>":
+        return None
+    usage = msg.get("usage") or {}
+    if not isinstance(usage, dict):
+        return None
+    ts = o.get("timestamp")
+    date = _to_local_date(ts)
+    if not date:
+        return None
+    model = _resolve_model(model)
+    inp = usage.get("input_tokens", 0)
+    outp = usage.get("output_tokens", 0)
+    cread = usage.get("cache_read_input_tokens", 0)
+    cwrite = usage.get("cache_creation_input_tokens", 0)
+    # first wins，不跨文件去重；保留完整 ID，缺失则退化为完整 usage tuple。
+    mid = msg.get("id")
+    dkey = mid if mid else (ts, model, inp, outp, cread, cwrite)
+    hash(dkey)  # 非法非 hashable ID/分量只是坏事件，不能导致整文件空成功。
+    record = {
+        "source": "claude", "ts": ts, "date": date, "model": model,
+        "input": inp, "output": outp, "cache_read": cread, "cache_write": cwrite,
+        "total": inp + outp + cread + cwrite,
+        "session": o.get("sessionId"), "cwd": o.get("cwd"),
+        "billing": _claude_billing(usage),
+    }
+    return record, dkey, ["id", mid] if mid else ["fallback", list(dkey)]
+
+
+def _claude_line_chunks(reader):
+    """按原始 LF 分隔，最多保留一个固定读取块；末行无 LF 也只结束一次。"""
+    unfinished = False
+    while reader.remaining:
+        chunk = reader.read_chunk()
+        start = 0
+        while True:
+            end = chunk.find(b"\n", start)
+            if end < 0:
+                if start < len(chunk):
+                    yield chunk[start:], False
+                    unfinished = True
+                break
+            yield chunk[start:end], True
+            unfinished = False
+            start = end + 1
+    if unfinished:
+        yield b"", True
+
+
+def _claude_projected_lines(reader):
+    """大小行同一投影器；坏语法只 drain 当前行，工程限额立即整轮失败。"""
+    prefix = bytearray()
+    parser = None
+    bad = False
+
+    def start_parser():
+        candidate = _claude_json.ProjectionParser()
+        # 不复制/重读完整前缀，decoder 的临时文本也保持在一个固定块内。
+        for start in range(0, len(prefix), CLAUDE_READ_CHUNK_BYTES):
+            with memoryview(prefix)[start:start + CLAUDE_READ_CHUNK_BYTES] as part:
+                candidate.feed(part)
+        prefix.clear()
+        return candidate
+
+    for piece, finished in _claude_line_chunks(reader):
+        if not bad:
+            try:
+                if parser is None and len(prefix) + len(piece) <= MAX_LINE_BYTES:
+                    prefix.extend(piece)
+                else:
+                    if parser is None:
+                        parser = start_parser()
+                    parser.feed(piece)
+                if finished:
+                    if parser is None:
+                        parser = start_parser()
+                    projected = parser.finish_line()
+            except _claude_json.ProjectionLimit as exc:
+                prefix.clear()
+                raise CollectionIncompleteError("claude", exc.reason) from None
+            except _claude_json.BadJSON:
+                # 已知语法错误后不再调用此行 parser，但仍有界消费到原始 LF。
+                bad = True
+                parser = None
+                prefix.clear()
+            else:
+                if finished:
+                    yield projected
+        if finished:
+            parser = None
+            prefix.clear()
+            bad = False
+
+
+def _claude_parse_state(path):
+    out, keys, seen_ids = [], [], set()
+    retained = 0
+    try:
+        with _SafeReader(path) as reader:
+            for o in _claude_projected_lines(reader):
+                try:
+                    result = _claude_event_record(o)
+                    if result is None:
+                        continue
+                    record, dkey, saved_key = result
+                    if dkey in seen_ids:
+                        continue
+                    record_bytes = _record_retained_bytes(record)
+                    key_bytes = _dedup_retained_bytes(dkey)
+                except (TypeError, ValueError, RecursionError, OverflowError):
+                    # 局部坏事件不会抹掉此前/此后合法 usage。
+                    continue
+                if len(out) >= MAX_CLAUDE_RECORDS:
+                    raise CollectionIncompleteError("claude", "record_limit")
+                if retained + record_bytes + key_bytes > MAX_CLAUDE_RETAINED_BYTES:
+                    raise CollectionIncompleteError("claude", "retained_bytes_limit")
+                retained += record_bytes + key_bytes
+                seen_ids.add(dkey)
+                keys.append(saved_key)
+                out.append(record)
+            stable = reader.finish()
+            return out, keys, reader.initial, stable
+    except CollectionIncompleteError:
+        raise
+    except OSError:
+        raise CollectionIncompleteError("claude", "read_failed") from None
 
 
 def claude_parse(path):
-    out = []
-    # 同一 assistant turn（message.id）会被 jsonl 重复写入数十次（router/重试产物）。
-    # 按 message.id 去重，否则单日总量被夸大数倍。
-    seen_ids = set()
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line or len(line) > MAX_LINE_BYTES:
-                    continue
-                try:
-                    o = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(o, dict) or o.get("type") != "assistant":
-                    continue
-                msg = o.get("message")
-                if not isinstance(msg, dict):
-                    continue
-                model = msg.get("model")
-                if not model or model == "<synthetic>":
-                    continue
-                usage = msg.get("usage") or {}
-                ts = o.get("timestamp")
-                date = _to_local_date(ts)
-                if not date:
-                    continue
-                # Resolve only Claude request aliases matched by this user's router.
-                model = _resolve_model(model)
-                inp = usage.get("input_tokens", 0)
-                outp = usage.get("output_tokens", 0)
-                cread = usage.get("cache_read_input_tokens", 0)
-                cwrite = usage.get("cache_creation_input_tokens", 0)
-                # 去重键：优先 message.id；缺失则退化为 (ts, model, 用量) 元组。
-                mid = msg.get("id")
-                dkey = mid if mid else (ts, model, inp, outp, cread, cwrite)
-                if dkey in seen_ids:
-                    continue
-                seen_ids.add(dkey)
-                out.append({
-                    "source": "claude",
-                    "ts": ts,
-                    "date": date,
-                    "model": model,
-                    "input": inp,
-                    "output": outp,
-                    "cache_read": cread,
-                    "cache_write": cwrite,
-                    "total": inp + outp + cread + cwrite,
-                    "session": o.get("sessionId"),
-                    "cwd": o.get("cwd"),
-                    "billing": _claude_billing(usage),
-                })
-    except OSError:
-        pass
-    return out
+    """返回 records list；安全/I/O/容量故障专用异常穿透，不返回 partial。"""
+    return _claude_parse_state(path)[0]
+
+
+# 保留 SOURCES 的可替换 parser 接口；仅内置实现有可验证的 cache dedup 状态。
+_BUILTIN_CLAUDE_PARSE = claude_parse
 
 
 def build_session_index():
     """一次扫描 Claude 日志目录，返回 session id → 文件路径。"""
     if not os.path.isdir(config.CLAUDE_PROJECTS):
         return {}
-    return {
-        os.path.splitext(os.path.basename(path))[0]: path
-        for path in claude_files()
-    }
+    try:
+        return {
+            os.path.splitext(os.path.basename(path))[0]: path
+            for path in claude_files()
+        }
+    except CollectionIncompleteError:
+        # 标题是可选增强；采集入口 read_all 仍严格传播同一发现故障。
+        return {}
 
 
 def session_file(session_id, session_index=None):
@@ -743,59 +990,245 @@ def _file_key(path):
     return f"{st.st_mtime_ns}|{st.st_size}"
 
 
-def _safe_to_parse(path, st):
-    """只解析真实普通文件：拒软链 / FIFO / 设备文件 / 超大文件。"""
-    if os.path.islink(path):
+def _safe_to_parse(path, st, source=None):
+    """默认沿用旧资格规则；只有明确 Claude 来源免整文件大小上限。"""
+    if os.path.islink(path) or not stat.S_ISREG(st.st_mode):
         return False
-    if not stat.S_ISREG(st.st_mode):
-        return False
-    if st.st_size > MAX_FILE_BYTES:
+    if source != "claude" and st.st_size > MAX_FILE_BYTES:
         return False
     return True
 
 
 def _load_cache():
+    """不先 json.load 无界读；不安全/过大/损坏 cache 均只意味着 miss。"""
+    fd = None
     try:
-        with open(config.CACHE_FILE, "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, json.JSONDecodeError):
+        before = os.lstat(config.CACHE_FILE)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_CACHE_BYTES:
+            return {}
+        fd = os.open(config.CACHE_FILE, _safe_open_flags())
+        opened = os.fstat(fd)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_size > MAX_CACHE_BYTES
+                or _stat_version(opened) != _stat_version(before)):
+            return {}
+        with os.fdopen(fd, "rb") as fh:
+            fd = None
+            raw = fh.read(MAX_CACHE_BYTES + 1)
+            if (len(raw) > MAX_CACHE_BYTES
+                    or _stat_version(os.fstat(fh.fileno())) != _stat_version(opened)
+                    or _stat_version(os.lstat(config.CACHE_FILE)) != _stat_version(opened)):
+                return {}
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, RecursionError):
         return {}
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def _save_cache(cache):
-    os.makedirs(config.CACHE_DIR, exist_ok=True)
-    cache["_v"] = CACHE_VERSION
-    fd, tmp = tempfile.mkstemp(prefix=".records-", dir=config.CACHE_DIR)
+    """逐块编码，超预算放弃新 temp、保留旧 cache；合法 records 不受影响。"""
+    fd, tmp = None, None
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(cache, fh, separators=(",", ":"))
-        os.chmod(tmp, 0o600)
+        os.makedirs(config.CACHE_DIR, exist_ok=True)
+        cache["_v"] = CACHE_VERSION
+        fd, tmp = tempfile.mkstemp(prefix=".records-", dir=config.CACHE_DIR)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fd = None
+            written = 0
+            encoder = json.JSONEncoder(ensure_ascii=False, separators=(",", ":"),
+                                       allow_nan=False)
+            for chunk in encoder.iterencode(cache):
+                raw = chunk.encode("utf-8")
+                if written + len(raw) > MAX_CACHE_BYTES:
+                    return False
+                fh.write(raw)
+                written += len(raw)
         os.replace(tmp, config.CACHE_FILE)
+        return True
+    except (OSError, ValueError, RecursionError):
+        return False
     finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+        if fd is not None:
+            os.close(fd)
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+_RECORD_FIELDS = frozenset((
+    "source", "ts", "date", "model", "input", "output", "cache_read",
+    "cache_write", "total", "session", "billing",
+))
+
+# billing helper 产出的 schema 1 顶层键；来源规范复用同一 helper，不另造口径。
+_BILLING_DICT_KEYS = frozenset(
+    ("v", "present", "raw", "parts", "uncertain", "reasons"))
+_BILLING_VALIDATORS = {
+    "claude": (_CLAUDE_BILLING_KEYS, _claude_billing),
+    "gemini": (_GEMINI_BILLING_KEYS, _gemini_billing),
+    "codex": (_CODEX_BILLING_KEYS, _codex_billing),
+}
+
+
+def _cached_tokens_valid(record, source):
+    """只验冷解析保留的数值类型，不改既有 token 口径。
+
+    bool/有限 float/负数会被冷解析透传；Gemini/Codex 的 input/cache_read 还可能
+    为 None（显式 total 可短路求和，Codex 的 cached 本就不参与求和）。
+    容器/字符串/非有限 float 不作为有效 token cache；Claude 的五字段不接受 None。
+    """
+    for key in ("input", "output", "cache_read", "cache_write", "total"):
+        value = record[key]
+        if value is None and source in ("gemini", "codex") \
+                and key in ("input", "cache_read"):
+            continue
+        if not isinstance(value, (int, float)):
+            return False
+        if isinstance(value, float) and not math.isfinite(value):
+            return False
+    return True
+
+
+def _cached_billing_valid(billing, source):
+    """精确校验 helper 可生成的 v1 证据；不验证源日志真实性或推断账单。"""
+    validator = _BILLING_VALIDATORS.get(source)
+    if validator is None or not isinstance(billing, dict):
+        return False
+    if set(billing) != _BILLING_DICT_KEYS:
+        return False
+    if type(billing["v"]) is not int or billing["v"] != BILLING_SCHEMA:
+        return False
+    spec, build_billing = validator
+    present = billing["present"]
+    raw = billing["raw"]
+    if (not isinstance(present, dict) or set(present) != set(spec)
+            or not all(isinstance(flag, bool) for flag in present.values())
+            or not isinstance(raw, dict) or set(raw) != set(spec)):
+        return False
+    evidence = {}
+    for name, key in spec.items():
+        value = raw[name]
+        if value is not None and _safe_tokens(value) is None:
+            return False
+        if present[name]:
+            # None 既可表示显式 null，也可表示被 _safe_tokens 拒绝的值。
+            evidence[key] = value
+        elif value is not None:
+            return False
+    parts = billing["parts"]
+    reasons = billing["reasons"]
+    if (not isinstance(parts, list) or len(parts) != len(BILLING_COMPONENTS)
+            or any(_safe_tokens(part) is None for part in parts)
+            or not isinstance(billing["uncertain"], bool)
+            or not isinstance(reasons, list)
+            or not all(isinstance(reason, str) for reason in reasons)):
+        return False
+    # presence/raw 已保留 helper 的全部输入语义；重建校验 parts/reasons 等，
+    # 也保留合法 uncertain/raw=None，不能拿 billing_view 的降级值冒充有效。
+    return billing == build_billing(evidence)
+
+
+def _cached_records_valid(records, source):
+    if not isinstance(records, list):
+        return False
+    fields = _RECORD_FIELDS | {"cwd"} if source == "claude" else _RECORD_FIELDS
+    for record in records:
+        if (not isinstance(record, dict) or set(record) != fields
+                or record.get("source") != source
+                or not all(isinstance(record.get(k), str) for k in ("ts", "date", "model"))
+                or not isinstance(record.get("billing"), dict)):
+            return False
+        # token/billing 形态坏 cache 一律 miss 重析，不吞采集失败、不改口径。
+        if not _cached_tokens_valid(record, source) or not _cached_billing_valid(
+                record["billing"], source):
+            return False
+        # 类型/编码坏 cache 重新解析，不把畸形 cache 当作源头采集失败。
+        try:
+            _record_retained_bytes(record)
+        except (TypeError, ValueError, RecursionError, OverflowError):
+            return False
+    return True
+
+
+def _cached_claude_keys_valid(records, keys):
+    """验证实际完整 key，而非相信缓存自报预算。fallback 必须对应 record。"""
+    if not isinstance(keys, list) or len(keys) != len(records):
+        return False
+    seen = set()
+    for record, entry in zip(records, keys):
+        if not isinstance(entry, list) or len(entry) != 2:
+            return False
+        kind, value = entry
+        if kind == "id":
+            if not isinstance(value, (str, int, float)) or not value:
+                return False
+            dkey = value
+        elif kind == "fallback":
+            if not isinstance(value, list) or len(value) != 6:
+                return False
+            if value != [record[k] for k in (
+                    "ts", "model", "input", "output", "cache_read", "cache_write")]:
+                return False
+            dkey = tuple(value)
+        else:
+            return False
+        try:
+            if dkey in seen:
+                return False
+            _dedup_retained_bytes(dkey)
+            seen.add(dkey)
+        except (TypeError, ValueError, RecursionError, OverflowError):
+            return False
+    return True
+
+
+def _check_claude_budget(records, keys=None):
+    retained = 0
+    for index, record in enumerate(records):
+        if index >= MAX_CLAUDE_RECORDS:
+            raise CollectionIncompleteError("claude", "record_limit")
+        retained += _record_retained_bytes(record)
+        if keys is not None:
+            kind, value = keys[index]
+            retained += _dedup_retained_bytes(tuple(value) if kind == "fallback" else value)
+        if retained > MAX_CLAUDE_RETAINED_BYTES:
+            raise CollectionIncompleteError("claude", "retained_bytes_limit")
+
+
+def _extend_records(out, records, retained):
+    """cold / warm 同一路径逐项检查，在保留下一条之前阻止超预算。"""
+    for record in records:
+        if len(out) >= MAX_TOTAL_RECORDS:
+            raise CollectionIncompleteError("all", "total_record_limit")
+        cost = _record_retained_bytes(record)
+        if retained + cost > MAX_TOTAL_RETAINED_BYTES:
+            raise CollectionIncompleteError("all", "total_retained_bytes_limit")
+        out.append(record)
+        retained += cost
+    return retained
 
 
 def read_all(sources=None, use_cache=True):
-    """读所有源，返回 record 列表。按统计时区及文件 mtime+size 缓存。"""
+    """所有来源成功才返回/存缓存；Claude 不完整异常不可降级为空成功。"""
     sources = sources or list(SOURCES)
     cache = _load_cache() if use_cache else {}
     seen_keys = set()
     out = []
+    retained = 0
     changed = False
 
-    # 缓存结构版本：解析口径变更（如 Claude 按 message.id 去重）后旧缓存作废。
     if use_cache and cache.get("_v") != CACHE_VERSION:
         cache = {}
         changed = True
-
-    # Cached dates depend on the reporting timezone, not just file contents.
     timezone_key = config.timezone_name()
     if use_cache and (timezone_key == "system local time" or cache.get("_timezone") != timezone_key):
         cache = {}
         changed = True
-
-    # A local CCR router change can alter alias resolution, so rebuild records.
     router_sig = _ccr_signature()
     if use_cache and cache.get("_router") != router_sig:
         cache = {}
@@ -807,37 +1240,92 @@ def read_all(sources=None, use_cache=True):
         files_fn, parse_fn = SOURCES[src]
         try:
             files = files_fn()
+        except CollectionIncompleteError:
+            raise
         except OSError:
+            if src == "claude":
+                raise CollectionIncompleteError(src, "discovery_failed") from None
             files = []
-        for path in files:
-            try:
-                st = os.stat(path)
-            except OSError:
-                continue
-            if not _safe_to_parse(path, st):
-                continue
-            key = f"{st.st_mtime_ns}|{st.st_size}"
-            ckey = src + "::" + path
-            seen_keys.add(ckey)
-            cached = cache.get(ckey)
-            if use_cache and cached and cached.get("key") == key:
-                out.extend(cached["records"])
-            else:
-                # 单文件解析异常（恶意/畸形）不拖垮整次运行。
+        try:
+            for path in files:
                 try:
-                    recs = parse_fn(path)
-                except Exception:
-                    recs = []
-                cache[ckey] = {"key": key, "records": recs}
-                changed = True
-                out.extend(recs)
+                    st = os.stat(path)
+                except OSError:
+                    if src == "claude":
+                        raise CollectionIncompleteError(src, "stat_failed") from None
+                    continue
+                if not _safe_to_parse(path, st, source=src):
+                    if src == "claude":
+                        raise CollectionIncompleteError(src, "unsafe_file")
+                    continue
+                key = f"{st.st_mtime_ns}|{st.st_size}"
+                ckey = src + "::" + path
+                seen_keys.add(ckey)
+                cached = cache.get(ckey)
+                warm = (use_cache and isinstance(cached, dict) and cached.get("key") == key
+                        and _cached_records_valid(cached.get("records"), src))
+                if warm and src == "claude":
+                    warm = (cached.get("identity") == list(_stat_identity(st))
+                            and cached.get("version") == list(_stat_version(st))
+                            and _cached_claude_keys_valid(cached["records"], cached.get("dedup")))
+                if warm:
+                    recs = cached["records"]
+                    if src == "claude":
+                        _check_claude_budget(recs, cached["dedup"])
+                        try:
+                            # Warm path 仍安全 open/fstat/identity，不能只信 path.stat。
+                            with _SafeReader(path) as reader:
+                                if _stat_version(reader.initial) != _stat_version(st):
+                                    warm = False
+                                else:
+                                    warm = reader.finish()
+                        except CollectionIncompleteError:
+                            raise
+                        except OSError:
+                            raise CollectionIncompleteError(src, "read_failed") from None
+                if not warm:
+                    stable, dedup = True, None
+                    try:
+                        if src == "claude" and parse_fn is _BUILTIN_CLAUDE_PARSE:
+                            recs, dedup, opened, stable = _claude_parse_state(path)
+                            # pre-stat 到 open 的追加也不能缓存为 pre-stat 版本。
+                            stable = stable and _stat_version(opened) == _stat_version(st)
+                        else:
+                            recs = parse_fn(path)
+                            if src == "claude":
+                                _check_claude_budget(recs)
+                                stable = False  # 可替换 parser 没有可验证 key，不写 warm 项。
+                    except CollectionIncompleteError:
+                        raise
+                    except OSError:
+                        if src == "claude":
+                            raise CollectionIncompleteError(src, "read_failed") from None
+                        recs = []
+                    except Exception:
+                        if src == "claude":
+                            raise CollectionIncompleteError(src, "read_failed") from None
+                        recs = []
+                    if stable:
+                        entry = {"key": key, "records": recs}
+                        if src == "claude":
+                            entry.update(identity=list(_stat_identity(st)),
+                                         version=list(_stat_version(st)), dedup=dedup)
+                        cache[ckey] = entry
+                    else:
+                        cache.pop(ckey, None)
+                    changed = True
+                retained = _extend_records(out, recs, retained)
+        except CollectionIncompleteError:
+            raise
+        except OSError:
+            if src == "claude":
+                raise CollectionIncompleteError(src, "discovery_failed") from None
+            raise
 
-    # 清理已消失文件的缓存条目
     stale = [k for k in cache if k.split("::", 1)[0] in sources and k not in seen_keys]
     for k in stale:
         cache.pop(k, None)
         changed = True
-
     if changed and use_cache:
         cache["_router"] = router_sig
         cache["_timezone"] = timezone_key

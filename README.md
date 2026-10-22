@@ -237,6 +237,8 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 
 - Public setup currently starts from a source checkout; registry install commands are intentionally not advertised until a verified release exists. The 0.3.0 local candidate does not change this: it is offline and local-only, and no verified public 0.3.0 package-index release is claimed.
 - Claude is the only default source. Gemini and Codex must be selected explicitly.
+- Claude JSONL files are no longer skipped merely for exceeding 64 MiB. Long physical lines, including those over 4 MiB, use bounded streaming JSON validation and usage projection. Depth, token, retained-data, and numeric limits still apply; this is not an unlimited-memory or completeness guarantee.
+- An incomplete collection does not publish a partial report as a successful result. Live scans keep the last successful snapshot, or show no snapshot if none exists. Record cache v7 rebuilds incompatible older entries without deleting old cache files.
 - Source formats expose different fields, so some project, session, or context views can be unavailable.
 - Terminal and static reports support English and Chinese via `--lang en|zh`, defaulting to your system locale; the interactive dashboard has its own in-page language switch.
 - An offline dashboard is a generation-time snapshot. Use `./run serve --open` for ongoing updates.
@@ -246,6 +248,8 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 **No logs found?** Run `./run doctor`. If Claude is not your tool, try `./run day --source gemini` or `./run day --source codex`. To explore without any local logs, run `./run demo --open`; an installed checkout can use `tokens demo --open`.
 
 **Dashboard numbers do not change?** `./run dashboard` creates an offline snapshot. Use `./run serve --open` for live updates.
+
+**Collection is incomplete, or totals seem too low?** Check log readability and the collection limits before retrying. A failed refresh is not proof of zero usage: live mode can still show an older successful snapshot. `--no-cache` bypasses the record cache but does not remove safety limits. Do not delete logs or old caches to force a successful result, and never attach raw logs to a public issue. Synthetic regression tests verify parser behavior, not the amount missing from any real history; updating source code also does not restart a running service.
 
 **Browser did not open?** Command still prints generated path or local URL. Open it manually.
 

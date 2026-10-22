@@ -279,7 +279,7 @@ class LiveDashboardTests(unittest.TestCase):
         self.assertRegex(response["checked_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$")
 
     @mock.patch("tokens_cli.live_dashboard.readers.read_all")
-    def test_failure_then_recovery_and_unchanged_check_clears_error(self, read_all):
+    def test_failure_then_recovery_retries_even_when_signature_is_unchanged(self, read_all):
         read_all.side_effect = [[], RuntimeError("boom"), []]
         dashboard = live_dashboard.LiveDashboard(["claude"])
         with mock.patch.object(
@@ -295,11 +295,11 @@ class LiveDashboardTests(unittest.TestCase):
             self.assertFalse(dashboard.refresh())
             failed = dashboard.response()
             self.assertIn("local log scan failed", failed["error"])
-            # Files revert to the last successful signature: the unchanged skip
-            # must clear the stale error, not keep it while claiming success.
+            # Reverting to the last successful signature is not recovery proof:
+            # a pending scan failure must retry collection before clearing error.
             self.assertFalse(dashboard.refresh())
             recovered = dashboard.response()
-        self.assertEqual(2, read_all.call_count)
+        self.assertEqual(3, read_all.call_count)
         self.assertIsNone(recovered["error"])
         self.assertTrue(recovered["has_snapshot"])
         self.assertIsNotNone(recovered["checked_at"])

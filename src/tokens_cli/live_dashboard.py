@@ -109,13 +109,28 @@ class LiveDashboard:
             try:
                 paths = files_fn()
             except OSError:
+                if source == "claude":
+                    raise readers.CollectionIncompleteError(source, "discovery_failed") from None
                 paths = []
             for path in paths:
+                if source == "claude":
+                    try:
+                        stat_result = os.lstat(path)
+                    except OSError:
+                        raise readers.CollectionIncompleteError(source, "stat_failed") from None
+                    # Include rejected Claude objects too: their replacement or
+                    # removal must invalidate the last successful scan.
+                    entries.append((source, path, stat_result.st_mtime_ns,
+                                    stat_result.st_size, stat_result.st_dev,
+                                    stat_result.st_ino, stat_result.st_mode,
+                                    stat_result.st_ctime_ns,
+                                    readers._safe_to_parse(path, stat_result, source=source)))
+                    continue
                 try:
                     stat_result = os.stat(path)
                 except OSError:
                     continue
-                if not readers._safe_to_parse(path, stat_result):
+                if not readers._safe_to_parse(path, stat_result, source=source):
                     continue
                 entries.append((source, path, stat_result.st_mtime_ns, stat_result.st_size))
         return tuple(sorted(entries))
@@ -139,7 +154,8 @@ class LiveDashboard:
                 # the background loop can never die on a bad signature.
                 signature = self._file_signature()
                 with self._lock:
-                    if not force and signature == self._signature and self._wire is not None:
+                    if (not force and self._error is None
+                            and signature == self._signature and self._wire is not None):
                         # Unchanged files are still a successful check: clear
                         # any stale error and advance the time and revision.
                         self._error = None
