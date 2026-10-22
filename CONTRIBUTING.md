@@ -23,9 +23,17 @@ python -m unittest discover -s tests
 Check the JavaScript assets when changing either interface (requires Node.js 22 or newer):
 
 ```bash
+node --check src/tokens_cli/dashboard_assets/cost_core.js
 node --check src/tokens_cli/dashboard_assets/dashboard.js
 node --check docs/assets/site.js
 ```
+
+## Local artifacts and cleanup
+
+- Keep generated reports in ignored output directories and use only synthetic data for previews, tests, and screenshots. Keep temporary test evidence outside the checkout; never include private output in a package or site build.
+- Python bytecode, `build/`, and packaging metadata are rebuildable, but check that no running service or editable installation depends on a target before removing it. Set `PYTHONDONTWRITEBYTECODE=1` for maintenance checks that should not recreate bytecode.
+- Remove registered Git worktrees only after checking tracked and untracked changes, commit ancestry, locks, and active ownership. Use `git worktree remove` without `--force`; keep branches and uncertain worktrees.
+- Do not delete real `out/` reports, backups, or historical evidence based on age or filenames. Use a reviewed, exact cleanup list and stop when permissions or ownership are unclear.
 
 ## Pull requests
 

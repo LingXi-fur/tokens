@@ -20,9 +20,18 @@ DARK_PALETTE = [
     "#d55181", "#008300", "#9085e9", "#e66767",
 ]
 MODEL_IDENTITY_CAPACITY = 7
+# Keep explicitly compared GLM variants independently filterable when present.
+COMPARISON_MODELS = ("glm-5.3", "glm-5.3-flash")
 OTHER_MODEL = "other"
 SNAPSHOT_SCHEMA = 1
 METRIC_SCHEMA = 1
+# 费用账本（cost block）contract：schema 1，分量顺序固定，与 readers 计费证据一致。
+COST_SCHEMA = 1
+COST_COMPONENTS = ("input", "output", "cache_read", "cache_write", "thoughts")
+# JS Number 安全整数上限：单条记录分量已由 readers.billing_view 校验；聚合桶
+# 累加若将超出该上限，结束当前 row、另起同 key row，保证每个 row 的 parts/
+# reportedTotal/calls 仍是安全整数（不截断、不降级、不改字符串）。
+COST_MAX_SAFE = 2 ** 53 - 1
 
 
 def _record_model(record):
@@ -71,9 +80,10 @@ def _model_last_seen_key(record):
 
 
 def _model_registry(records):
-    """Assign fixed identity slots before range filtering or token ranking."""
+    """Select major identities from all records, then assign first-seen color slots."""
     first_seen = {}
     last_seen = {}
+    token_totals = defaultdict(int)
     saw_other = False
     for record in records:
         model = _record_model(record)
@@ -86,19 +96,24 @@ def _model_registry(records):
         last_key = _model_last_seen_key(record)
         if model not in last_seen or last_key > last_seen[model]:
             last_seen[model] = last_key
+        token_totals[model] += record.get("total", 0) or 0
 
-    ordered = sorted(first_seen, key=lambda model: (first_seen[model], model))
-    if len(ordered) <= MODEL_IDENTITY_CAPACITY:
-        retained = ordered
-        overflow = []
-    else:
-        # Keep early identities stable unless the most recently active backend
-        # would otherwise be folded into Other.
-        recent = max(ordered, key=lambda model: (last_seen[model], model))
-        retained = ordered[:MODEL_IDENTITY_CAPACITY]
-        if recent not in retained:
-            retained[-1] = recent
-        overflow = [model for model in ordered if model not in retained]
+    # Stable passes keep activity and first-seen order as usage tie-breakers.
+    ranked = sorted(first_seen, key=lambda model: (first_seen[model], model))
+    ranked.sort(key=lambda model: last_seen[model], reverse=True)
+    ranked.sort(key=lambda model: token_totals[model], reverse=True)
+    retained = ranked[:MODEL_IDENTITY_CAPACITY]
+    if len(ranked) > MODEL_IDENTITY_CAPACITY:
+        # Reserve comparison identities and the latest backend, then fill by usage.
+        recent = max(ranked, key=lambda model: (last_seen[model], model))
+        required = {model for model in COMPARISON_MODELS if model in first_seen}
+        required.add(recent)
+        retained = [model for model in ranked if model in required]
+        retained += [model for model in ranked if model not in required][
+            :MODEL_IDENTITY_CAPACITY - len(retained)
+        ]
+    retained.sort(key=lambda model: (first_seen[model], model))
+    overflow = [model for model in ranked if model not in retained]
     aliases = {model: model for model in retained}
     aliases.update({model: OTHER_MODEL for model in overflow})
     if saw_other:
@@ -257,7 +272,7 @@ def _new_day():
 def _flow_payload(project_model, model_session, title_for_session):
     session_ids = {sid for _, sid in model_session}
     labels = {
-        sid: title_for_session(sid) or str(sid)[:8]
+        sid: title_for_session(sid) or ""
         for sid in session_ids
     }
     return {
@@ -295,7 +310,7 @@ def _top_cwds(buckets):
 def _top_sessions(buckets, title_for_session):
     return _entity_payload(
         dict(_top_entities(buckets)),
-        lambda sid: title_for_session(sid) or str(sid)[:8],
+        lambda sid: title_for_session(sid) or "",
     )
 
 
@@ -314,6 +329,11 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
                   aliases=None, generated_at=None, session_titles=None):
     records = tuple(records)
     model_registry, model_slots = _model_registry(records)
+    overflow_names = {
+        name for name, canonical in model_registry.items()
+        if canonical == OTHER_MODEL and name != OTHER_MODEL
+    }
+    other_model_days = defaultdict(lambda: defaultdict(int))
     generated_at = generated_at or datetime.now(config.TZ)
     aliases = aliases or (_ReportAliases() if anonymize else None)
     model_totals = {}
@@ -327,6 +347,10 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
     replay_heaps = defaultdict(list)
     session_counts = defaultdict(int)
     session_totals = defaultdict(int)
+    # 会话背景（报告范围内聚合）：主导项目 Token 贡献、来源类别、首末活动日。
+    session_project_tokens = defaultdict(lambda: defaultdict(int))
+    session_sources = defaultdict(set)
+    session_days = defaultdict(lambda: [None, None])
     cwd_totals = defaultdict(int)
     source_totals = defaultdict(int)
     model_stats = {}
@@ -357,6 +381,11 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
     latest_backend = None
     latest_backend_key = None
     latest_backend_grouped = False
+    # 费用账本：桶按 日期 × source × 未折叠模型 聚合；source 是日志来源而非渠道；
+    # 目录条目只有 source/model/identity/hidden，不含 session/cwd。
+    cost_catalog = {}
+    cost_groups = {}
+    cost_total_incomplete = False
 
     for record in records:
         day = record["date"]
@@ -366,13 +395,91 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             continue
 
         total = record.get("total", 0) or 0
+        raw_model = _record_model(record)
         model = _canonical_model(record, model_registry)
-        latest_key = (_model_last_seen_key(record), _record_model(record))
+        if not anonymize and raw_model in overflow_names:
+            other_model_days[day][raw_model] += total
+        latest_key = (_model_last_seen_key(record), raw_model)
         if latest_backend_key is None or latest_key > latest_backend_key:
             latest_backend_key = latest_key
             latest_backend = model
             latest_backend_grouped = model != _record_model(record)
         source = record.get("source") or "unknown"
+        # 费用账本聚合（schema 1）：不可信记录整条排除计费分量（全 0），
+        # uncertain=true，原 total/calls 仍保留；不复用 _reuse_parts 截断。
+        if anonymize and (raw_model in overflow_names or raw_model == OTHER_MODEL):
+            # 匿名 overflow / 字面 other：按 source 合并成隐藏 'other'，不暴露原名，
+            # 无法定价 → 整条 uncertain 且分量全 0（不得用统一 Other 单价强行合计）。
+            cost_model = OTHER_MODEL
+            catalog_key = (source, cost_model)
+            if catalog_key not in cost_catalog:
+                cost_catalog[catalog_key] = {
+                    "source": source,
+                    "model": OTHER_MODEL,
+                    "identity": OTHER_MODEL,
+                    "hidden": True,
+                }
+            cost_parts = [0] * len(COST_COMPONENTS)
+            cost_uncertain = True
+        else:
+            cost_model = raw_model
+            catalog_key = (source, cost_model)
+            if catalog_key not in cost_catalog:
+                cost_catalog[catalog_key] = {
+                    "source": source,
+                    "model": cost_model,
+                    "identity": model_registry.get(cost_model, OTHER_MODEL),
+                    "hidden": False,
+                }
+            cost_parts, cost_uncertain = readers.billing_view(record)
+        # 源 reportedTotal 检测读原始 record.get("total")（不经过上面
+        # `or 0` 的 legacy 变量，避免 None/False 被吞成合法 0）。
+        # 异常（缺失/None/bool/负数/非 int）：保守 0 + 整条 uncertain 并置
+        # total_incomplete；超 MAX_SAFE 且 ≤ 64 个安全整数 chunk：拆 chunk row
+        # （parts 全 0、calls 只计首 chunk），sum 精确保留原 total，绝不把超界
+        # 无损 JSON 数字直接送 JS Number；超出 64 chunk：不再截断冒充数值，
+        # 置 total_incomplete 并按 unknown 计 0。旧 token 统计不受影响。
+        raw_total = record.get("total")
+        chunk_cap = 64  # 防恶意天文数字撑爆 payload；正常数据 1-2 个 chunk。
+        if (
+            isinstance(raw_total, bool)
+            or not isinstance(raw_total, int)
+            or raw_total < 0
+        ):
+            cost_totals = (0,)
+            cost_uncertain = True
+            cost_total_incomplete = True
+        elif raw_total <= COST_MAX_SAFE:
+            cost_totals = (raw_total,)
+        elif raw_total <= chunk_cap * COST_MAX_SAFE:
+            full, rest = divmod(raw_total, COST_MAX_SAFE)
+            cost_totals = [COST_MAX_SAFE] * full
+            if rest:
+                cost_totals.append(rest)
+            cost_uncertain = True
+        else:
+            cost_totals = (0,)
+            cost_uncertain = True
+            cost_total_incomplete = True
+        cost_mask = 0
+        for part_index, part_value in enumerate(cost_parts):
+            if part_value:
+                cost_mask |= 1 << part_index
+        cost_group_key = (day, source, cost_model, cost_uncertain, cost_mask)
+        cost_rows = cost_groups.setdefault(cost_group_key, [])
+        for chunk_index, cost_total in enumerate(cost_totals):
+            row = cost_rows[-1] if cost_rows else None
+            if row is None or any(
+                row[0][i] + cost_parts[i] > COST_MAX_SAFE
+                for i in range(len(cost_parts))
+            ) or row[1] + cost_total > COST_MAX_SAFE or row[2] + 1 > COST_MAX_SAFE:
+                # 累加将超出安全整数：结束当前 row，本 chunk 另起同 key row。
+                row = [[0] * len(COST_COMPONENTS), 0, 0]
+                cost_rows.append(row)
+            for part_index, part_value in enumerate(cost_parts):
+                row[0][part_index] += part_value
+            row[1] += cost_total
+            row[2] += 1 if chunk_index == 0 else 0
         raw_cwd = record.get("cwd")
         raw_sid = record.get("session")
         cwd = raw_cwd
@@ -485,6 +592,14 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         if sid:
             session_counts[sid] += 1
             session_totals[sid] += total
+            if cwd:
+                session_project_tokens[sid][_short_cwd(cwd)] += total
+            session_sources[sid].add(source)
+            span = session_days[sid]
+            if span[0] is None or day < span[0]:
+                span[0] = day
+            if span[1] is None or day > span[1]:
+                span[1] = day
             replay_item = (record.get("ts") or "", record_counter, total)
             heap = replay_heaps[sid]
             if len(heap) < 200:
@@ -514,12 +629,14 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         },
     }
 
-    if session_titles is not None:
-        def title_for_session(sid):
-            return session_titles.get(sid, "")
-    elif anonymize:
+    if anonymize:
+        # 匿名优先：只回显会话别名，绝不读取/清洗真实标题。
         def title_for_session(sid):
             return sid or ""
+    elif session_titles is not None:
+        # 显式注入路径：只清洗给定标题，不再读取日志（离线安全重建契约）。
+        def title_for_session(sid):
+            return readers.sanitize_session_title(session_titles.get(sid, ""))
     else:
         summaries = readers.load_session_summaries()
         session_index = readers.build_session_index()
@@ -528,7 +645,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         def title_for_session(sid):
             if sid not in title_cache:
                 title_cache[sid] = (
-                    summaries.get(sid)
+                    readers.sanitize_session_title(summaries.get(sid) or "")
                     or readers.session_title(sid, session_index=session_index)
                     or ""
                 )
@@ -557,7 +674,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             "cwds": _entity_payload(detail["cwds"], _short_cwd),
             "sessions": _entity_payload(
                 detail["sessions"],
-                lambda sid: title_for_session(sid) or str(sid)[:8],
+                lambda sid: title_for_session(sid) or "",
             ),
             "top_cwds": _top_cwds(detail["cwds"]),
             "top_sessions": _top_sessions(detail["sessions"], title_for_session),
@@ -593,6 +710,61 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "last_day": last_day,
     }
 
+    session_context = {}
+    for sid, span in session_days.items():
+        projects = session_project_tokens.get(sid) or {}
+        # 主导项目：Token 贡献最大；平局按显示名稳定排序。
+        dominant = ""
+        multi = False
+        if projects:
+            ranked = sorted(projects.items(), key=lambda item: (-item[1], item[0]))
+            dominant = ranked[0][0]
+            multi = len(ranked) > 1
+        session_source_list = sorted(session_sources.get(sid, ()))
+        session_context[sid] = {
+            "p": dominant,
+            "pm": multi,
+            "s": session_source_list,
+            "d0": span[0],
+            "d1": span[1],
+        }
+
+    # 费用账本收尾：目录按 (source, model) 确定性排序、索引稳定；rows 按
+    # (day, modelIndex, uncertain, 非零分量 bitmask) 聚合并确定性排序，
+    # 前端可据此精确判断各组 calls 的全部活跃分量是否均已定价。
+    cost_models_list = [
+        entry for _, entry in sorted(
+            cost_catalog.items(),
+            key=lambda item: (item[1]["source"], item[1]["model"]),
+        )
+    ]
+    cost_model_index = {
+        (entry["source"], entry["model"]): index
+        for index, entry in enumerate(cost_models_list)
+    }
+    cost_sorted_groups = sorted(
+        (
+            (day, cost_model_index[(source, cost_model)], uncertain, cost_mask, row)
+            for (day, source, cost_model, uncertain, cost_mask), rows
+            in cost_groups.items()
+            for row in rows
+        ),
+        key=lambda group: (group[0], group[1], group[2], group[3]),
+    )
+    cost = {
+        "schema": COST_SCHEMA,
+        # 可选 bool：存在异常/超界 total（无法安全精确表示）时 true，前端应
+        # 禁用 Token 覆盖百分比类派生指标，只保留 calls 口径说明。
+        "total_incomplete": cost_total_incomplete,
+        "components": list(COST_COMPONENTS),
+        "models": cost_models_list,
+        "rows": [
+            [day, model_index, parts, reported_total, calls, uncertain]
+            for day, model_index, uncertain, _cost_mask, (parts, reported_total, calls)
+            in cost_sorted_groups
+        ],
+    }
+
     dashboard_data = {
         "anonymized": anonymize,
         "source": sources or [],
@@ -603,6 +775,10 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             "latest_backend_folded": latest_backend_grouped,
         },
         "models": models,
+        "other_models": [
+            {"day": day, "models": dict(sorted(values.items()))}
+            for day, values in sorted(other_model_days.items())
+        ],
         "pretty": pretty,
         "colors": colors,
         "cache_read": cache_read,
@@ -611,6 +787,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "block": {"total": sum(item["total"] for item in buckets), "buckets": buckets},
         "top_cwds": _top_cwds(global_cwds),
         "session_series": session_series,
+        "session_context": session_context,
         "n_cwds": len(global_cwds),
         "n_sessions": len(session_counts),
         "max_turns": max(session_counts.values(), default=0),
@@ -625,6 +802,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "day": _pack_periods(day_periods),
         "week": _pack_periods(week_periods),
         "month": _pack_periods(month_periods),
+        "cost": cost,
     }
     snapshot_data = {
         "snapshot_schema": SNAPSHOT_SCHEMA,
@@ -642,6 +820,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
 
     return {
         "generated": generated_at.strftime("%Y-%m-%d %H:%M"),
+        "calendar_day": generated_at.date().isoformat(),
         "snapshot": snapshot,
         **dashboard_data,
     }

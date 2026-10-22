@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import json
 import os
 import re
 import stat
@@ -18,7 +19,7 @@ SRC = ROOT / "src"
 import sys
 sys.path.insert(0, str(SRC))
 
-from tokens_cli import config, report_dashboard
+from tokens_cli import config, dashboard_wire, report_dashboard
 
 
 def _load_builder():
@@ -102,6 +103,35 @@ class DocsDemoTests(unittest.TestCase):
             html,
             re.IGNORECASE,
         ))
+
+    def test_docs_demo_publishes_folded_other_detail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp) / "docs"
+            html = self.builder.build_docs_demo("demo/index.html", docs).read_text(
+                encoding="utf-8"
+            )
+
+        match = re.search(r"^const WIRE = (.*);$", html, re.MULTILINE)
+        self.assertIsNotNone(match)
+        payload = dashboard_wire.decode_payload(json.loads(match.group(1)))
+        self.assertFalse(payload["anonymized"])
+        self.assertIn("other", payload["models"])
+        self.assertEqual("Other", payload["pretty"]["other"])
+        self.assertTrue(payload["other_models"])
+        folded = {
+            name for row in payload["other_models"] for name in row["models"]
+        }
+        self.assertTrue(folded)
+        self.assertTrue(folded.isdisjoint(payload["models"]))
+        days = {row["period"]: row for row in payload["day"]}
+        for row in payload["other_models"]:
+            with self.subTest(day=row["day"]):
+                self.assertIn(row["day"], days)
+                self.assertGreater(sum(row["models"].values()), 0)
+                self.assertEqual(
+                    sum(row["models"].values()),
+                    days[row["day"]]["models"].get("other", 0),
+                )
 
     def test_builder_confines_output_and_publishes_readable_file(self):
         with tempfile.TemporaryDirectory() as tmp:

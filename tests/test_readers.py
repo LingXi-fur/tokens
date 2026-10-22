@@ -72,8 +72,182 @@ class ReadersTests(unittest.TestCase):
             self.assertNotIn(": ", text)
             self.assertNotIn(", ", text)
             self.assertEqual(readers.CACHE_VERSION, json.loads(text)["_v"])
-            if os.name != "nt":
+            if os.name == "posix":
                 self.assertEqual(0o600, stat.S_IMODE(cache_file.stat().st_mode))
+            self.assertEqual([cache_file], list(Path(tmp).iterdir()))
+
+
+class CacheWriterCapabilityTests(unittest.TestCase):
+    def assert_cache_write(self, capability, *, failure=None):
+        """Exercise real temp/replace/cleanup with only OS capabilities mocked."""
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "records.json"
+            old = b'{"old":true}'
+            cache.write_bytes(old)
+            created = []
+            real_mkstemp, real_replace = tempfile.mkstemp, os.replace
+
+            def mkstemp(*args, **kwargs):
+                result = real_mkstemp(*args, **kwargs)
+                created.append(result)
+                return result
+
+            def replace(source, destination):
+                self.assertEqual(old, cache.read_bytes(), "replace must be atomic")
+                if failure == "replace":
+                    raise OSError("synthetic-replace-failure")
+                real_replace(source, destination)
+
+            chmod = mock.Mock(side_effect=OSError("synthetic-fchmod-failure")
+                              if failure == "fchmod" else None)
+
+            class CapabilityOS:
+                def __getattr__(self, name):
+                    if name == "fchmod":
+                        if capability == "missing":
+                            raise AttributeError(name)
+                        return chmod if capability == "callable" else None
+                    return getattr(os, name)
+
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(cache)), \
+                    mock.patch.object(readers.tempfile, "mkstemp", side_effect=mkstemp), \
+                    mock.patch.object(os, "replace", side_effect=replace) as replacing, \
+                    mock.patch.object(readers, "MAX_CACHE_BYTES", 1 if failure == "budget"
+                                      else readers.MAX_CACHE_BYTES), \
+                    mock.patch.object(readers, "os", CapabilityOS()):
+                result = readers._save_cache({"synthetic": {"records": []}})
+            self.assertEqual(1, len(created))
+            fd, temporary = created[0]
+            if capability == "callable":
+                chmod.assert_called_once_with(fd, 0o600)
+            else:
+                chmod.assert_not_called()
+            self.assertFalse(Path(temporary).exists())
+            with self.assertRaises(OSError):
+                os.fstat(fd)
+            self.assertEqual([cache], list(Path(tmp).iterdir()))
+            if failure:
+                self.assertIs(result, False)
+                self.assertEqual(old, cache.read_bytes())
+                if failure in ("fchmod", "budget"):
+                    replacing.assert_not_called()
+            else:
+                self.assertIs(result, True)
+                replacing.assert_called_once()
+                self.assertEqual({"synthetic": {"records": []}, "_v": readers.CACHE_VERSION},
+                                 json.loads(cache.read_text(encoding="utf-8")))
+
+    def test_cache_writer_calls_available_fchmod(self):
+        self.assert_cache_write("callable")
+
+    def test_cache_writer_succeeds_without_fchmod(self):
+        self.assert_cache_write("missing")
+
+    def test_cache_writer_ignores_noncallable_fchmod(self):
+        self.assert_cache_write("noncallable")
+
+    def test_fchmod_oserror_preserves_old_cache_and_closes_and_removes_temp(self):
+        self.assert_cache_write("callable", failure="fchmod")
+
+    def test_replace_oserror_preserves_old_cache_and_closes_and_removes_temp(self):
+        self.assert_cache_write("missing", failure="replace")
+
+    def test_budget_failure_without_fchmod_preserves_old_cache_and_cleans_up(self):
+        self.assert_cache_write("missing", failure="budget")
+
+
+class TimezoneCacheTests(unittest.TestCase):
+    def test_cache_reparses_for_timezone_and_preserves_hits_within_zone(self):
+        from zoneinfo import ZoneInfo
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "synthetic.log"
+            path.write_text("synthetic", encoding="utf-8")
+            cache_file = Path(tmp) / "records.json"
+            parse = mock.Mock(side_effect=lambda _: [{
+                "source": "gemini",
+                "ts": "2026-10-18T20:00:00Z",
+                "date": readers._to_local_date("2026-10-18T20:00:00Z"),
+                "model": "glm-5.3-flash",
+                "input": 1, "output": 2, "cache_read": 0, "cache_write": 0,
+                "total": 3, "session": "synthetic-session",
+                "billing": readers._gemini_billing({
+                    "input": 1, "output": 2, "cached": 0,
+                    "thoughts": 0, "total": 3,
+                }),
+            }])
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(cache_file)), \
+                    mock.patch.object(readers, "_ccr_signature", return_value=None), \
+                    mock.patch.dict(readers.SOURCES, {"gemini": (lambda: [str(path)], parse)}, clear=True):
+                with mock.patch.object(readers.config, "TZ", ZoneInfo("UTC")):
+                    self.assertEqual("2026-10-18", readers.read_all()[0]["date"])
+                    self.assertEqual("2026-10-18", readers.read_all()[0]["date"])
+                    self.assertEqual(1, parse.call_count)
+                with mock.patch.object(readers.config, "TZ", ZoneInfo("Asia/Shanghai")):
+                    self.assertEqual("2026-10-19", readers.read_all()[0]["date"])
+                    self.assertEqual("2026-10-19", readers.read_all()[0]["date"])
+                    self.assertEqual(2, parse.call_count)
+                    cache = json.loads(cache_file.read_text(encoding="utf-8"))
+                    self.assertEqual("Asia/Shanghai", cache["_timezone"])
+                    del cache["_timezone"]
+                    cache_file.write_text(json.dumps(cache), encoding="utf-8")
+                    self.assertEqual("2026-10-19", readers.read_all()[0]["date"])
+                    self.assertEqual(3, parse.call_count)
+
+                with mock.patch.object(readers.config, "TZ", readers.config._SYSTEM_LOCAL_TIMEZONE):
+                    readers.read_all()
+                    readers.read_all()
+                    self.assertEqual(5, parse.call_count)
+
+    def test_uncached_read_never_loads_or_writes_cache(self):
+        with mock.patch.object(readers, "_load_cache") as load, \
+                mock.patch.object(readers, "_save_cache") as save, \
+                mock.patch.object(readers, "_ccr_signature", return_value=None), \
+                mock.patch.dict(readers.SOURCES, {"synthetic": (lambda: [], mock.Mock())}, clear=True):
+            self.assertEqual([], readers.read_all(use_cache=False))
+            load.assert_not_called()
+            save.assert_not_called()
+
+    def test_timezone_rebuild_does_not_reuse_other_source_dates(self):
+        from zoneinfo import ZoneInfo
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = {source: Path(tmp) / (source + ".log") for source in ("first", "second")}
+            for path in paths.values():
+                path.write_text("synthetic", encoding="utf-8")
+            parses = {
+                source: mock.Mock(side_effect=lambda _, model=source: [{
+                    "date": readers._to_local_date("2026-10-18T20:00:00Z"), "model": model,
+                }]) for source in paths
+            }
+            sources = {source: (lambda path=path: [str(path)], parses[source])
+                       for source, path in paths.items()}
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(Path(tmp) / "records.json")), \
+                    mock.patch.object(readers, "_ccr_signature", return_value=None), \
+                    mock.patch.dict(readers.SOURCES, sources, clear=True):
+                with mock.patch.object(readers.config, "TZ", ZoneInfo("UTC")):
+                    self.assertEqual(2, len(readers.read_all()))
+                with mock.patch.object(readers.config, "TZ", ZoneInfo("Asia/Shanghai")):
+                    self.assertEqual("2026-10-19", readers.read_all(sources=["first"])[0]["date"])
+                    self.assertEqual("2026-10-19", readers.read_all(sources=["second"])[0]["date"])
+                    self.assertEqual([2, 2], [parse.call_count for parse in parses.values()])
+
+    def test_system_local_fallback_never_reuses_unverifiable_dates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "synthetic.log"
+            path.write_text("synthetic", encoding="utf-8")
+            parse = mock.Mock(return_value=[{"date": "2026-10-19"}])
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(Path(tmp) / "records.json")), \
+                    mock.patch.object(readers.config, "TZ", readers.config._SYSTEM_LOCAL_TIMEZONE), \
+                    mock.patch.object(readers, "_ccr_signature", return_value=None), \
+                    mock.patch.dict(readers.SOURCES, {"synthetic": (lambda: [str(path)], parse)}, clear=True):
+                readers.read_all()
+                readers.read_all()
+                self.assertEqual(2, parse.call_count)
 
 
 class CcrModelResolutionTests(unittest.TestCase):
@@ -253,6 +427,208 @@ if (model.includes('opus')) { return 'provider-b,backend-large'; }
                 cache = json.loads(cache_file.read_text(encoding="utf-8"))
                 self.assertEqual(readers.CACHE_VERSION, cache["_v"])
                 self.assertEqual(readers._ccr_signature(), cache["_router"])
+
+
+class SessionTitleSanitizeTests(unittest.TestCase):
+    def test_keeps_normal_chinese_and_english_titles(self):
+        cases = (
+            "请优化这个性能热点",
+            "Fix the flaky login test",
+            "重构 dashboard_payload 聚合逻辑",
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(raw, readers.sanitize_session_title(raw))
+
+    def test_rejects_continuation_summary_and_system_envelopes(self):
+        cases = (
+            "This session is being continued from a previous conversation that ran out of context.",
+            "以下是对话的摘要\n用户想要重构模块",
+            "会话摘要如下：…",
+            "<system-reminder>ignore</system-reminder>",
+            "<task-notification>do something</task-notification>",
+            "{{command output}}",
+            "Caveat: The messages below were generated by the user",
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual("", readers.sanitize_session_title(raw))
+
+    def test_rejects_pure_path_id_and_code_block(self):
+        cases = (
+            "/synthetic/project/src/parser.py",
+            "C:\\synthetic\\project\\main.py",
+            "~/code/tokens",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "deadbeefdeadbeef1",
+            "```python\nprint(1)\n```",
+            "$ git status",
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual("", readers.sanitize_session_title(raw))
+
+    def test_rejects_short_filler_instructions(self):
+        cases = ("继续", "好的", "嗯", "next", "continue", "ok", "thanks")
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual("", readers.sanitize_session_title(raw))
+
+    def test_uses_first_line_only_and_caps_length(self):
+        self.assertEqual("优化性能", readers.sanitize_session_title("优化性能\n第二行无关内容"))
+        long_title = "重构" + "模" * 200
+        self.assertEqual(readers.TITLE_MAX_LEN, len(readers.sanitize_session_title(long_title)))
+
+    def test_empty_and_none_input(self):
+        self.assertEqual("", readers.sanitize_session_title(""))
+        self.assertEqual("", readers.sanitize_session_title(None))
+
+    def test_non_string_input_is_safe(self):
+        for raw in (42, 3.14, True, ["x"], {"a": 1}):
+            with self.subTest(raw=raw):
+                self.assertEqual("", readers.sanitize_session_title(raw))
+
+    def test_keeps_path_prefixed_task_description(self):
+        cases = (
+            "/synthetic/project/app.py 这个函数为什么报错",
+            "C:\\proj\\app.py 为什么崩溃",
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(raw, readers.sanitize_session_title(raw))
+
+    def test_pure_path_without_description_still_rejected(self):
+        for raw in ("/synthetic/project/app.py", "~/code/tokens"):
+            with self.subTest(raw=raw):
+                self.assertEqual("", readers.sanitize_session_title(raw))
+
+    def test_keeps_short_task_bearing_titles(self):
+        cases = ("修复登录", "Fix login", "查崩溃", "登录", "deploy")
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(raw, readers.sanitize_session_title(raw))
+
+    def test_rejects_system_notification_envelope_and_meta(self):
+        cases = (
+            "Today's date is 2026-10-09. / Environment: / [SYSTEM NOTIFICATION - NOT USER INPUT] / "
+            "'This session is being continued from a previous conversation...'",
+            "Today's date is 2026-10-09.",
+            "[SYSTEM NOTIFICATION - NOT USER INPUT] do x",
+            "Environment: darwin 27.0",
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual("", readers.sanitize_session_title(raw))
+
+    def test_rejects_short_injected_uuid(self):
+        cases = ("a3a851048eaed47cb", "deadbeef", "550e8400-e29b-41d4-a716-446655440000")
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual("", readers.sanitize_session_title(raw))
+
+
+class SessionTitleReadTests(unittest.TestCase):
+    def _write(self, tmp, lines):
+        path = Path(tmp) / "session-a.jsonl"
+        path.write_text("\n".join(json.dumps(o) for o in lines) + "\n", encoding="utf-8")
+        return {"session-a": str(path)}
+
+    def test_checks_multiple_text_blocks_not_only_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index = self._write(tmp, [{
+                "type": "user",
+                "message": {"content": [
+                    {"type": "text", "text": "继续"},
+                    {"type": "text", "text": "请修复支付回调超时的 bug"},
+                ]},
+            }])
+            self.assertEqual(
+                "请修复支付回调超时的 bug",
+                readers.session_title("session-a", session_index=index),
+            )
+
+    def test_scans_multiple_messages_and_skips_pollution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index = self._write(tmp, [
+                {"type": "user", "message": {"content": "好的"}},
+                {"type": "user", "message": {"content": "/synthetic/project"}},
+                {"type": "user", "message": {"content": "设计新的导入向导"}},
+            ])
+            self.assertEqual("设计新的导入向导", readers.session_title("session-a", session_index=index))
+
+    def test_returns_empty_when_no_reliable_title(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index = self._write(tmp, [
+                {"type": "user", "message": {"content": "<system-reminder>x</system-reminder>"}},
+                {"type": "user", "message": {"content": "继续"}},
+            ])
+            self.assertEqual("", readers.session_title("session-a", session_index=index))
+
+    def test_bounded_scan_stops_on_line_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            filler = {"type": "user", "message": {"content": "继续"}}
+            lines = [filler] * (readers.TITLE_SCAN_MAX_LINES + 5)
+            lines.append({"type": "user", "message": {"content": "不该被读到的标题"}})
+            index = self._write(tmp, lines)
+            with mock.patch("tokens_cli.readers.TITLE_SCAN_MAX_LINES", 10):
+                self.assertEqual("", readers.session_title("session-a", session_index=index))
+
+    def test_bounded_scan_stops_on_byte_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            big = {"type": "user", "message": {"content": "x" * 500}}
+            lines = [big] * 40 + [{"type": "user", "message": {"content": "超出字节上限的标题"}}]
+            index = self._write(tmp, lines)
+            with mock.patch("tokens_cli.readers.TITLE_SCAN_MAX_BYTES", 100):
+                self.assertEqual("", readers.session_title("session-a", session_index=index))
+
+    def test_byte_limit_counts_utf8_bytes_not_characters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session-a.jsonl"
+            first = json.dumps(
+                {"type": "user", "message": {"content": "继续" + "模" * 20}},
+                ensure_ascii=False,
+            )
+            second = json.dumps(
+                {"type": "user", "message": {"content": "真实任务标题"}},
+                ensure_ascii=False,
+            )
+            path.write_text(first + "\n" + second + "\n", encoding="utf-8")
+            index = {"session-a": str(path)}
+            char_len = len(first + "\n")
+            byte_len = len((first + "\n").encode("utf-8"))
+            limit = char_len + 5  # 介于字符数与 UTF-8 字节数之间
+            self.assertLess(limit, byte_len)
+            with mock.patch("tokens_cli.readers.TITLE_SCAN_MAX_BYTES", limit):
+                self.assertEqual("", readers.session_title("session-a", session_index=index))
+
+    def test_long_line_read_in_bounded_chunks_not_fully(self):
+        # 单行上限生效：整行被 readline 上限切块后无法解析成 JSON 记录，
+        # 因此得不到标题——证明未把整行一次性读入。
+        with tempfile.TemporaryDirectory() as tmp:
+            line = json.dumps({"type": "user", "message": {"content": "有界读取测试标题"}})
+            index = self._write(tmp, [json.loads(line)])
+            self.assertEqual("有界读取测试标题", readers.session_title("session-a", session_index=index))
+            with mock.patch("tokens_cli.readers.MAX_LINE_BYTES", len(line) // 2):
+                self.assertEqual("", readers.session_title("session-a", session_index=index))
+
+    def test_giant_line_exhausts_budget_returns_unnamed_without_full_read(self):
+        # 巨行无换行：首个分块即耗尽总预算，返回「未命名」，不读满整行。
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session-a.jsonl"
+            path.write_text("x" * 50000, encoding="utf-8")  # 无换行巨行
+            index = {"session-a": str(path)}
+            with mock.patch("tokens_cli.readers.MAX_LINE_BYTES", 128), \
+                 mock.patch("tokens_cli.readers.TITLE_SCAN_MAX_BYTES", 64):
+                self.assertEqual("", readers.session_title("session-a", session_index=index))
+
+    def test_giant_single_line_under_real_constants_returns_unnamed(self):
+        # 真实常量下超 4MB 无换行行：有界读取耗尽预算即停，返回未命名。
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session-a.jsonl"
+            fill = "x" * (readers.TITLE_SCAN_MAX_BYTES + 4096)
+            path.write_text(fill, encoding="utf-8")
+            index = {"session-a": str(path)}
+            self.assertEqual("", readers.session_title("session-a", session_index=index))
 
 
 if __name__ == "__main__":

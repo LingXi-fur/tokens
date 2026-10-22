@@ -40,9 +40,14 @@ def _read_asset(name):
 
 
 def _dashboard_template():
+    # cost_core.js（共享费用纯核心，classic-script IIFE 暴露 globalThis.CostCore）
+    # 必须先于 dashboard.js 拼接进同一个 <script>；资产内不得出现闭合标签。
+    script = _read_asset("cost_core.js") + "\n" + _read_asset("dashboard.js")
+    if "</script" in script:
+        raise ValueError("dashboard script assets must not contain '</script'")
     return (_read_asset("template.html")
             .replace("__STYLE__", _read_asset("dashboard.css"))
-            .replace("__SCRIPT__", _read_asset("dashboard.js")))
+            .replace("__SCRIPT__", script))
 
 _TEMPLATE = _dashboard_template()
 _LANGUAGE_TAGS = {

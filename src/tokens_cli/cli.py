@@ -214,7 +214,15 @@ def main(argv=None):
 
     now = datetime.now(config.TZ).date()
     mode = args.range
-    records = readers.read_all(sources=sources, use_cache=not args.no_cache)
+    try:
+        records = readers.read_all(sources=sources, use_cache=not args.no_cache)
+    except readers.CollectionIncompleteError:
+        print(
+            "Local log collection is incomplete; no report was written. "
+            "Check log readability and collection limits, then retry.",
+            file=sys.stderr,
+        )
+        return 1
     if not records:
         _no_records_message(sources)
         return 1
