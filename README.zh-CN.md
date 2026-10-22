@@ -216,6 +216,8 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 
 `tokens` 在本机读取和分析文件。离线快照不发起网络请求；实时模式只与同源的 `127.0.0.1` 服务通信，并且没有局域网绑定选项。可选的 `~/.claude-code-router/custom-router.js` 仅在本机按文本读取，不执行、不上传；Router 规则只用于解释普通 Claude 请求别名，不会改写 Gemini 或 Codex 模型名。
 
+记录缓存通过缓存目录内的临时文件写入，再原子替换；`os.fchmod` 可用时按文件描述符设置权限，POSIX 使用 `0600`。Windows 权限位不等同于 POSIX 访问控制，这不构成“仅当前用户可访问”的 Windows ACL 保证。请把缓存目录放在访问权限合适的位置。
+
 普通 Dashboard 仍可能包含：
 
 - 项目路径和工作目录
@@ -241,6 +243,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 - Claude 是唯一默认来源；Gemini 与 Codex 必须显式选择。
 - Claude JSONL 文件不再仅因超过 64 MiB 被整份跳过。超长物理行（包括超过 4 MiB 的行）使用有界流式 JSON 校验与用量投影；仍有深度、词法 token、保留数据及数值词元等工程限制，不代表内存无限或历史日志绝对完整。
 - 采集不完整时，不把部分报告发布为成功结果。实时扫描保留最近成功快照；首次扫描失败则没有快照。记录缓存 v7 会重建不兼容的旧条目，不删除旧缓存文件。
+- Windows 缓存设置会处理 `os.fchmod` 缺失，但安全读取的 stat 兼容性仍在合成诊断；Firefox/WebKit 检查也尚未闭合。本地后端测试通过不代表跨平台 CI 已全绿。
 - 来源格式提供的字段不同，部分项目、会话或 Context 视图可能不可用。
 - 终端和静态报告支持 `--lang en|zh`，默认跟随系统 locale；交互式 Dashboard 可在页面内切换语言。
 - 离线 Dashboard 是生成时快照。需要持续更新时使用 `./run serve --open`。

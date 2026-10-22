@@ -698,7 +698,8 @@ class LargeClaudeLogsTests(unittest.TestCase):
             self.assertEqual(cold, self.collect())
         self.assertEqual(0, sum(file.calls for file in opened),
                          "warm cache may open/fstat the source but must not read it")
-        self.assertEqual(0o600, stat.S_IMODE(self.cache.stat().st_mode))
+        if os.name == "posix":
+            self.assertEqual(0o600, stat.S_IMODE(self.cache.stat().st_mode))
 
     def test_old_cache_version_is_a_miss(self):
         value = event()
@@ -789,10 +790,17 @@ class LargeClaudeLogsTests(unittest.TestCase):
         self.assertFalse(self.cache.exists())
         self.assertEqual(1, len(self.collect()))
 
-    def test_direct_parser_rejects_symlink_directory_and_fifo(self):
+    def test_direct_parser_rejects_symlink_and_directory(self):
         target = self.write([event()])
         link = self.projects / "link.jsonl"
         link.symlink_to(target)
+        for path in (link, self.projects):
+            with self.subTest(kind=path.name):
+                error = self.assert_incomplete(lambda: readers.claude_parse(str(path)))
+                self.assertEqual("unsafe_file", error.reason)
+
+    @unittest.skipUnless(callable(getattr(os, "mkfifo", None)), "requires mkfifo")
+    def test_direct_parser_rejects_fifo_without_blocking(self):
         fifo = self.projects / "pipe.jsonl"
         os.mkfifo(fifo)
         real_open, real_os_open = builtins.open, os.open
@@ -806,9 +814,20 @@ class LargeClaudeLogsTests(unittest.TestCase):
             return real_os_open(candidate, flags, *args, **kwargs)
         with mock.patch("builtins.open", side_effect=safe_open), \
                 mock.patch.object(os, "open", side_effect=safe_os_open):
-            for path in (link, self.projects, fifo):
-                with self.subTest(kind=path.name):
-                    self.assert_incomplete(lambda: readers.claude_parse(str(path)))
+            error = self.assert_incomplete(lambda: readers.claude_parse(str(fifo)))
+        self.assertEqual("unsafe_file", error.reason)
+
+    def test_direct_parser_rejects_mock_nonregular_lstat_before_open(self):
+        path = self.projects / "synthetic-nonregular.jsonl"
+        for mode in (stat.S_IFDIR, stat.S_IFIFO, stat.S_IFLNK):
+            with self.subTest(mode=mode), \
+                    mock.patch.object(os, "lstat", return_value=mock.Mock(st_mode=mode)), \
+                    mock.patch.object(os, "open") as opening, \
+                    mock.patch("builtins.open") as builtin_open:
+                error = self.assert_incomplete(lambda: readers.claude_parse(str(path)))
+                self.assertEqual("unsafe_file", error.reason)
+                opening.assert_not_called()
+                builtin_open.assert_not_called()
 
     def test_discovered_unsafe_claude_object_is_failure_not_an_empty_source(self):
         target = self.write([event()])
@@ -1052,6 +1071,7 @@ class LargeClaudeLogsTests(unittest.TestCase):
     def test_discovery_does_not_drop_jsonl_named_directory(self):
         self.assert_discovered_nonregular_is_rejected("directory")
 
+    @unittest.skipUnless(callable(getattr(os, "mkfifo", None)), "requires mkfifo")
     def test_discovery_does_not_drop_jsonl_named_fifo(self):
         self.assert_discovered_nonregular_is_rejected("fifo")
 
@@ -1108,6 +1128,144 @@ class LargeClaudeLogsTests(unittest.TestCase):
         self.assertEqual(initial.st_mtime_ns, path.stat().st_mtime_ns)
         self.assertTrue(opened)
         self.assertTrue(all(file.closed for file in opened))
+
+
+_STAT_PROBE_PREFIX = "TOKENS_WINDOWS_STAT_PROBE="
+_STAT_PROBE_LIMIT = 8 * 1024
+
+
+def _stat_probe_line(report):
+    """Keep diagnostics extractable even if an unusual runtime adds large values."""
+    bounded = dict(report, phases=list(report.get("phases", ())))
+    omitted = 0
+    while True:
+        line = _STAT_PROBE_PREFIX + json.dumps(
+            bounded, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+        if len(line.encode("utf-8")) + 1 <= _STAT_PROBE_LIMIT:
+            return line
+        if bounded["phases"]:
+            bounded["phases"].pop()
+            omitted += 1
+            bounded["omitted_phases"] = omitted
+        else:
+            return _STAT_PROBE_PREFIX + '{"status":"size_limited"}'
+
+
+class StatProbeOutputTests(unittest.TestCase):
+    def test_probe_line_preserves_small_report_as_one_prefixed_json_line(self):
+        report = {"runtime": {"python": [3, 13], "platform": "win32"},
+                  "phases": [{"name": "original", "status": "ok"}]}
+        line = _stat_probe_line(report)
+        self.assertTrue(line.startswith(_STAT_PROBE_PREFIX))
+        self.assertEqual(report, json.loads(line[len(_STAT_PROBE_PREFIX):]))
+        self.assertNotIn("\n", line)
+        self.assertLessEqual(len(line.encode("utf-8")), _STAT_PROBE_LIMIT)
+
+    def test_probe_line_bounds_oversized_diagnostics_without_mutating_report(self):
+        report = {"phases": [{"name": "synthetic", "value": "x" * 16384}]}
+        line = _stat_probe_line(report)
+        self.assertLessEqual(len(line.encode("utf-8")), _STAT_PROBE_LIMIT)
+        self.assertEqual({"phases": [], "omitted_phases": 1},
+                         json.loads(line[len(_STAT_PROBE_PREFIX):]))
+        self.assertEqual(1, len(report["phases"]))
+        oversized_header = _stat_probe_line({"synthetic": "x" * 16384})
+        self.assertEqual({"status": "size_limited"},
+                         json.loads(oversized_header[len(_STAT_PROBE_PREFIX):]))
+
+
+class WindowsStatDiagnosticTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "Windows-only raw stat diagnostic")
+    def test_raw_stat_diagnostic(self):
+        # No SafeReader, business config, or LargeClaudeLogsTests fixture is used.
+        # v rows follow apis/fields; t indexes shared type rows. diff contains
+        # differing field names for each pair named in diff_pairs.
+        fields = ["mode", "dev", "ino", "size", "mtime_ns", "ctime_ns"]
+        report = {
+            "runtime": {"python": list(sys.version_info[:2]), "platform": sys.platform,
+                        "fchmod": callable(getattr(os, "fchmod", None)),
+                        "mkfifo": callable(getattr(os, "mkfifo", None))},
+            "fields": fields, "apis": ["stat", "lstat", "fstat"], "types": [],
+            "diff_pairs": ["stat:lstat", "stat:fstat", "lstat:fstat"], "phases": [],
+        }
+
+        def capture(name, path, fd):
+            phase = {"name": name, "samples": []}
+            report["phases"].append(phase)
+            try:
+                for _ in range(2):
+                    snapshots = [os.stat(path), os.lstat(path), os.fstat(fd)]
+                    values, types = [], []
+                    for snapshot in snapshots:
+                        row = [getattr(snapshot, "st_" + field, None) for field in fields]
+                        type_row = [type(value).__name__ for value in row]
+                        if type_row not in report["types"]:
+                            report["types"].append(type_row)
+                        values.append(row)
+                        types.append(report["types"].index(type_row))
+                    phase["samples"].append({
+                        "v": values, "t": types,
+                        "diff": [[field for i, field in enumerate(fields)
+                                  if values[left][i] != values[right][i]
+                                  or type(values[left][i]) is not type(values[right][i])]
+                                 for left, right in ((0, 1), (0, 2), (1, 2))],
+                    })
+                phase["status"] = "ok"
+            except OSError:
+                phase["status"] = "os_error"
+
+        def mutate(name, path, file, operation):
+            try:
+                operation()
+                file.flush()
+            except OSError:
+                report["phases"].append({"name": name, "status": "os_error"})
+            else:
+                capture(name, path, file.fileno())
+
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "synthetic.bin"
+                path.write_bytes(b"abcdefgh")
+                if hasattr(os.stat(path), "st_birthtime_ns"):
+                    fields.append("birthtime_ns")
+                with path.open("r+b") as file:
+                    capture("original", path, file.fileno())
+
+                    def append():
+                        file.seek(0, os.SEEK_END)
+                        file.write(b"ijkl")
+
+                    mutate("append", path, file, append)
+                    mutate("truncate", path, file, lambda: file.truncate(4))
+
+                    def rewrite():
+                        before = os.stat(path)
+                        file.seek(0)
+                        file.write(b"wxyz")
+                        file.flush()
+                        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+                    mutate("same_length_rewrite_restore_mtime", path, file, rewrite)
+                # Replacement is an independent stage: Windows may deny replacing
+                # an open file, which must not suppress the mutation observations.
+                try:
+                    original = Path(tmp) / "replacement-target.bin"
+                    replacement = Path(tmp) / "replacement-source.bin"
+                    original.write_bytes(b"abcd")
+                    replacement.write_bytes(b"wxyz")
+                    with original.open("rb") as file:
+                        capture("replacement_before", original, file.fileno())
+                        try:
+                            os.replace(replacement, original)
+                        except OSError:
+                            report["phases"].append({"name": "replacement", "status": "os_error"})
+                        else:
+                            capture("replacement_after_old_fd", original, file.fileno())
+                except OSError:
+                    report["phases"].append({"name": "replacement_setup", "status": "os_error"})
+        except OSError:
+            report["status"] = "os_error"
+        print(_stat_probe_line(report), flush=True)
 
 
 if __name__ == "__main__":

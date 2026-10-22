@@ -214,6 +214,8 @@ See the [complete CLI reference](https://lingxi-fur.github.io/tokens/cli.html).
 
 `tokens` reads local files and performs analysis locally. Offline snapshots make no network requests. Live mode talks only to its same-origin service on `127.0.0.1` and provides no LAN binding option. When present, `~/.claude-code-router/custom-router.js` is read locally as text only; it is never executed or uploaded. Router rules are used only to interpret plain Claude request aliases and never rewrite Gemini or Codex model names.
 
+Record-cache writes use a temporary file in the cache directory and atomic replacement. Descriptor-based permission setup is applied when `os.fchmod` is available; POSIX uses mode `0600`. On Windows, permission bits are not equivalent to POSIX access controls, and this does not promise a user-only Windows ACL. Keep the cache directory in a location with appropriate access permissions.
+
 A normal dashboard may still contain:
 
 - project paths and working directories
@@ -239,6 +241,7 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 - Claude is the only default source. Gemini and Codex must be selected explicitly.
 - Claude JSONL files are no longer skipped merely for exceeding 64 MiB. Long physical lines, including those over 4 MiB, use bounded streaming JSON validation and usage projection. Depth, token, retained-data, and numeric limits still apply; this is not an unlimited-memory or completeness guarantee.
 - An incomplete collection does not publish a partial report as a successful result. Live scans keep the last successful snapshot, or show no snapshot if none exists. Record cache v7 rebuilds incompatible older entries without deleting old cache files.
+- Windows cache setup handles missing `os.fchmod`, but safe-read stat compatibility is still under synthetic diagnosis. Firefox/WebKit checks also remain unresolved; passing local backend tests is not evidence that the full cross-platform CI is green.
 - Source formats expose different fields, so some project, session, or context views can be unavailable.
 - Terminal and static reports support English and Chinese via `--lang en|zh`, defaulting to your system locale; the interactive dashboard has its own in-page language switch.
 - An offline dashboard is a generation-time snapshot. Use `./run serve --open` for ongoing updates.

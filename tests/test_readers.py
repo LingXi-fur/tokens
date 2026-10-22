@@ -72,8 +72,89 @@ class ReadersTests(unittest.TestCase):
             self.assertNotIn(": ", text)
             self.assertNotIn(", ", text)
             self.assertEqual(readers.CACHE_VERSION, json.loads(text)["_v"])
-            if os.name != "nt":
+            if os.name == "posix":
                 self.assertEqual(0o600, stat.S_IMODE(cache_file.stat().st_mode))
+            self.assertEqual([cache_file], list(Path(tmp).iterdir()))
+
+
+class CacheWriterCapabilityTests(unittest.TestCase):
+    def assert_cache_write(self, capability, *, failure=None):
+        """Exercise real temp/replace/cleanup with only OS capabilities mocked."""
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "records.json"
+            old = b'{"old":true}'
+            cache.write_bytes(old)
+            created = []
+            real_mkstemp, real_replace = tempfile.mkstemp, os.replace
+
+            def mkstemp(*args, **kwargs):
+                result = real_mkstemp(*args, **kwargs)
+                created.append(result)
+                return result
+
+            def replace(source, destination):
+                self.assertEqual(old, cache.read_bytes(), "replace must be atomic")
+                if failure == "replace":
+                    raise OSError("synthetic-replace-failure")
+                real_replace(source, destination)
+
+            chmod = mock.Mock(side_effect=OSError("synthetic-fchmod-failure")
+                              if failure == "fchmod" else None)
+
+            class CapabilityOS:
+                def __getattr__(self, name):
+                    if name == "fchmod":
+                        if capability == "missing":
+                            raise AttributeError(name)
+                        return chmod if capability == "callable" else None
+                    return getattr(os, name)
+
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(cache)), \
+                    mock.patch.object(readers.tempfile, "mkstemp", side_effect=mkstemp), \
+                    mock.patch.object(os, "replace", side_effect=replace) as replacing, \
+                    mock.patch.object(readers, "MAX_CACHE_BYTES", 1 if failure == "budget"
+                                      else readers.MAX_CACHE_BYTES), \
+                    mock.patch.object(readers, "os", CapabilityOS()):
+                result = readers._save_cache({"synthetic": {"records": []}})
+            self.assertEqual(1, len(created))
+            fd, temporary = created[0]
+            if capability == "callable":
+                chmod.assert_called_once_with(fd, 0o600)
+            else:
+                chmod.assert_not_called()
+            self.assertFalse(Path(temporary).exists())
+            with self.assertRaises(OSError):
+                os.fstat(fd)
+            self.assertEqual([cache], list(Path(tmp).iterdir()))
+            if failure:
+                self.assertIs(result, False)
+                self.assertEqual(old, cache.read_bytes())
+                if failure in ("fchmod", "budget"):
+                    replacing.assert_not_called()
+            else:
+                self.assertIs(result, True)
+                replacing.assert_called_once()
+                self.assertEqual({"synthetic": {"records": []}, "_v": readers.CACHE_VERSION},
+                                 json.loads(cache.read_text(encoding="utf-8")))
+
+    def test_cache_writer_calls_available_fchmod(self):
+        self.assert_cache_write("callable")
+
+    def test_cache_writer_succeeds_without_fchmod(self):
+        self.assert_cache_write("missing")
+
+    def test_cache_writer_ignores_noncallable_fchmod(self):
+        self.assert_cache_write("noncallable")
+
+    def test_fchmod_oserror_preserves_old_cache_and_closes_and_removes_temp(self):
+        self.assert_cache_write("callable", failure="fchmod")
+
+    def test_replace_oserror_preserves_old_cache_and_closes_and_removes_temp(self):
+        self.assert_cache_write("missing", failure="replace")
+
+    def test_budget_failure_without_fchmod_preserves_old_cache_and_cleans_up(self):
+        self.assert_cache_write("missing", failure="budget")
 
 
 class TimezoneCacheTests(unittest.TestCase):
@@ -375,8 +456,8 @@ class SessionTitleSanitizeTests(unittest.TestCase):
 
     def test_rejects_pure_path_id_and_code_block(self):
         cases = (
-            "/Users/example/synthetic-project/src/parser.py",
-            "C:\\Users\\example\\synthetic-project\\main.py",
+            "/synthetic/project/src/parser.py",
+            "C:\\synthetic\\project\\main.py",
             "~/code/tokens",
             "550e8400-e29b-41d4-a716-446655440000",
             "deadbeefdeadbeef1",
@@ -409,7 +490,7 @@ class SessionTitleSanitizeTests(unittest.TestCase):
 
     def test_keeps_path_prefixed_task_description(self):
         cases = (
-            "/Users/x/proj/app.py 这个函数为什么报错",
+            "/synthetic/project/app.py 这个函数为什么报错",
             "C:\\proj\\app.py 为什么崩溃",
         )
         for raw in cases:
@@ -417,7 +498,7 @@ class SessionTitleSanitizeTests(unittest.TestCase):
                 self.assertEqual(raw, readers.sanitize_session_title(raw))
 
     def test_pure_path_without_description_still_rejected(self):
-        for raw in ("/Users/x/proj/app.py", "~/code/tokens"):
+        for raw in ("/synthetic/project/app.py", "~/code/tokens"):
             with self.subTest(raw=raw):
                 self.assertEqual("", readers.sanitize_session_title(raw))
 
@@ -470,7 +551,7 @@ class SessionTitleReadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             index = self._write(tmp, [
                 {"type": "user", "message": {"content": "好的"}},
-                {"type": "user", "message": {"content": "/Users/x/y"}},
+                {"type": "user", "message": {"content": "/synthetic/project"}},
                 {"type": "user", "message": {"content": "设计新的导入向导"}},
             ])
             self.assertEqual("设计新的导入向导", readers.session_title("session-a", session_index=index))

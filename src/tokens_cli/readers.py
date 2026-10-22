@@ -426,7 +426,7 @@ def _looks_like_path_or_id(text):
     """纯路径 / 纯 ID / 纯 hex 判定（清洗时丢弃）。
 
     绝对路径只在整行是「单个无空白 token」时才判为纯路径；带任务描述的
-    行（如 "/Users/x/app.py 这个函数为什么报错"）保留。
+    行（如 "/synthetic/project/app.py 这个函数为什么报错"）保留。
     """
     if not text:
         return True
@@ -1034,7 +1034,9 @@ def _save_cache(cache):
         os.makedirs(config.CACHE_DIR, exist_ok=True)
         cache["_v"] = CACHE_VERSION
         fd, tmp = tempfile.mkstemp(prefix=".records-", dir=config.CACHE_DIR)
-        os.fchmod(fd, 0o600)
+        fchmod = getattr(os, "fchmod", None)
+        if callable(fchmod):
+            fchmod(fd, 0o600)
         with os.fdopen(fd, "wb") as fh:
             fd = None
             written = 0

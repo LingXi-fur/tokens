@@ -270,7 +270,7 @@ class CostCoreContractTests(unittest.TestCase):
         runner_path.write_text(NODE_RUNNER, encoding="utf-8")
         proc = subprocess.run(
             ["node", str(runner_path), str(CORE), str(cases_path)],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, encoding="utf-8", check=True,
         )
         cls.result = json.loads(proc.stdout)
 
