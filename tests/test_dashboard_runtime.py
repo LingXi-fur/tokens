@@ -462,6 +462,18 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_view_summary_copy_button_produces_text(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            summary = page.evaluate("viewSummaryText()")
+            self.assertIn("总", summary)
+            self.assertIn("主力", summary)
+            self.assertIn("model-a", summary)
+            self.assertEqual(1, page.locator("#view-summary-copy").count())
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
     def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
         context, page, page_errors, console_errors = self.new_page()
         try:
