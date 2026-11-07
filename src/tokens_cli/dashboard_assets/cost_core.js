@@ -12,27 +12,48 @@
 const COST_PARTS=['input','output','cache_read','cache_write','thoughts'];
 const COST_SAFE_MAX=9007199254740991; // 2^53-1，单行 parts/total/calls 必须是 JS 安全整数；多行总和用 BigInt 精确累加
 const COST_VERSION=1,COST_MAX_ENTRIES=4000;
-/* 官方公开参考价（USD／百万 Token，2026-10-12 核对）：只读叠加层，非渠道实际扣费。
+/* 官方公开参考价（USD／百万 Token，2026-11-06 核对）：只读叠加层，非渠道实际扣费。
    key=精确模型名整串匹配；rates 顺序同 COST_PARTS；''=官网未公布不得填 0；
-   tier/limit 仅溯源展示。页面不主动请求 vendor URL。 */
+   tier/limit 仅溯源展示。全部条目一律取官方价，缓存写取 5 分钟档。
+   页面不主动请求 vendor URL。 */
 const COST_REFERENCE={
-  date:'2026-10-12',currency:'USD',
+  date:'2026-11-06',currency:'USD',
   vendors:{
-    openai:{label:'OpenAI',url:'https://developers.openai.com/api/docs/pricing'},
-    deepseek:{label:'DeepSeek',url:'https://api-docs.deepseek.com/quick_start/pricing'},
-    zai:{label:'Z.ai',url:'https://docs.z.ai/guides/overview/pricing'}
+    anthropic:{label:'Anthropic',date:'2026-11-06',url:'https://platform.claude.com/docs/en/about-claude/pricing'},
+    openai:{label:'OpenAI',date:'2026-11-06',url:'https://developers.openai.com/api/docs/pricing'},
+    deepseek:{label:'DeepSeek',date:'2026-11-06',url:'https://api-docs.deepseek.com/quick_start/pricing'},
+    zai:{label:'Z.ai',date:'2026-11-06',url:'https://docs.z.ai/guides/overview/pricing'},
+    moonshot:{label:'Moonshot AI',date:'2026-11-06',url:'https://platform.kimi.ai/docs/pricing'}
   },
   prices:{
     'gpt-6.1-sol':{vendor:'openai',rates:['2','10','0.10','2.50',''],tier:'Standard 短上下文档 ≤272K'},
+    'gpt-6.1-terra':{vendor:'openai',date:'2026-11-06',rates:['1','5','0.05','1.25',''],tier:'Standard 短上下文档 ≤272K'},
     'gpt-6-sol':{vendor:'openai',rates:['2','10','0.20','2.50',''],tier:'Standard 短上下文档 ≤272K'},
+    'gpt-6-astra':{vendor:'openai',date:'2026-11-06',rates:['10','50','1.00','12.50',''],tier:'Standard 短上下文档 ≤272K'},
+    'gpt-5.5':{vendor:'openai',date:'2026-11-06',rates:['5','30','0.50','7.50',''],tier:'Standard 短上下文档 ≤272K'},
     'gpt-5.6-sol':{vendor:'openai',rates:['4','20','0.40','5',''],tier:'Standard 短上下文档 ≤272K'},
     'gpt-5.6-luna':{vendor:'openai',rates:['0.20','1.20','0.02','0.25',''],tier:'Standard 短上下文档 ≤272K'},
     'gpt-5.6-terra':{vendor:'openai',rates:['2','12','0.20','2.50',''],tier:'Standard 短上下文档 ≤272K'},
+    'gpt-6-luna':{vendor:'openai',date:'2026-11-06',rates:['0.10','0.50','0.01','0.125',''],tier:'Standard 短上下文档 ≤272K'},
     'deepseek-flash':{vendor:'deepseek',rates:['0.30','1.20','0.006','',''],tier:'峰时基准（off-peak 五折）'},
     'deepseek-v4-flash':{vendor:'deepseek',rates:['0.30','1.20','0.006','',''],tier:'峰时基准（off-peak 五折；官网注明由 V4.1-Flash 按同价服务）'},
     'deepseek-v4-pro':{vendor:'deepseek',rates:['1.32','3.96','0.044','',''],tier:'峰时基准（off-peak 五折）'},
-    'glm-5.2':{vendor:'zai',rates:['1.40','4.40','0.26','',''],tier:'Z.ai 国际美元参考，非国内智谱同价'},
-    'glm-5.3':{vendor:'zai',rates:['1.40','4.40','0.26','',''],tier:'Z.ai 国际美元参考，非国内智谱同价'}
+    'deepseek-v4.1-flash':{vendor:'deepseek',date:'2026-11-06',rates:['0.30','1.20','0.006','',''],tier:'峰时基准（即 deepseek-flash，DeepSeek-V4.1-Flash-1017；off-peak 五折）'},
+    'glm-5.2':{vendor:'zai',rates:['1.40','4.40','0.26','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
+    'glm-5.3':{vendor:'zai',rates:['1.40','4.40','0.26','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
+    'glm-5.3-flash':{vendor:'zai',date:'2026-11-06',rates:['0.15','0.50','0.03','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
+    /* 直写 provider 前缀的记录（非 CCR hex 别名）：同后端同价，精确名单独入表。 */
+    'zhipu/glm-5.3-flash':{vendor:'zai',date:'2026-11-06',rates:['0.15','0.50','0.03','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
+    'claude-opus-5.5':{vendor:'anthropic',date:'2026-11-06',rates:['4','20','0.20','5',''],tier:'官方价，缓存读 0.05×基础输入；缓存写取 5 分钟档'},
+    'claude-sonnet-5.5':{vendor:'anthropic',date:'2026-11-06',rates:['2','10','0.10','2.50',''],tier:'官方价，缓存读 0.05×基础输入；缓存写取 5 分钟档'},
+    'claude-haiku-5.5':{vendor:'anthropic',date:'2026-11-06',rates:['0.10','0.50','0.01','0.125',''],tier:'官方价 ≤100K 上下文档；>100K 为 $0.50/$2.50；缓存写取 5 分钟档'},
+    'claude-opus-5':{vendor:'anthropic',date:'2026-11-06',rates:['5','25','0.50','6.25',''],tier:'官方价；缓存写取 5 分钟档'},
+    'claude-sonnet-5':{vendor:'anthropic',date:'2026-11-06',rates:['2','10','0.20','2.50',''],tier:'官方价（原促销价已转正式）；缓存写取 5 分钟档'},
+    'claude-opus-4.8':{vendor:'anthropic',date:'2026-11-06',rates:['5','25','0.50','6.25',''],tier:'官方价；缓存写取 5 分钟档'},
+    'claude-opus-4.7':{vendor:'anthropic',date:'2026-11-06',rates:['5','25','0.50','6.25',''],tier:'官方价；缓存写取 5 分钟档'},
+    'claude-sonnet-4.6':{vendor:'anthropic',date:'2026-11-06',rates:['3','15','0.30','3.75',''],tier:'官方价；缓存写取 5 分钟档'},
+    'claude-haiku-4.5':{vendor:'anthropic',date:'2026-11-06',rates:['1','5','0.10','1.25',''],tier:'官方价；缓存写取 5 分钟档'},
+    'kimi-k3':{vendor:'moonshot',date:'2026-11-06',rates:['3','15','0.30','3',''],tier:'官方价；缓存写取 5 分钟档'}
   }
 };
 function costCurrencySymbol(currency){return currency==='USD'?'$':'¥';}

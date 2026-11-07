@@ -2,9 +2,9 @@
 
 Independent of ``tests/test_dashboard_runtime.py`` (no inheritance): it builds
 its own fixtures, serves a live page from a loopback HTTP server that scripts the
-fixed ``/api/snapshot`` protocol (wire / snapshot / error / has_snapshot /
-refreshing / checked_at / revision plus the ``ETag`` response header), then
-drives it in Chromium.
+fixed lightweight ``/api/status`` protocol and conditional ``/api/snapshot``
+protocol, then drives it in Chromium. Old-backend scenarios default status to
+404, while status scenarios queue independent responses and count both paths.
 
 Only synthetic records are used. Nothing here opens port 8765, the private
 cache, raw session logs, or any upload path.
@@ -38,6 +38,20 @@ except ImportError:
 _CHECKED_AT = "2026-07-02T05:00:00+00:00"
 _SCAN_ERROR = (
     "The local log scan failed; the last successful snapshot is still shown."
+)
+_CONFLICT_GUIDANCE = (
+    ("modern_response_mismatch",
+     "同一现代 response 的用量、模型或计费信息不一致。",
+     "Usage, model, or billing information is inconsistent for the same modern response."),
+    ("legacy_cumulative_rollback",
+     "旧格式累计 total_tokens 回退。",
+     "Legacy cumulative total_tokens decreased."),
+    ("legacy_anchor_mismatch",
+     "同一旧累计锚点的用量、模型或计费信息不一致。",
+     "Usage, model, or billing information is inconsistent for the same legacy cumulative anchor."),
+    ("cross_file_identity_mismatch",
+     "同一用量身份在跨文件记录中的用量、模型或计费信息不一致。",
+     "Usage, model, or billing information is inconsistent for the same usage identity across files."),
 )
 
 
@@ -86,7 +100,7 @@ def _records(extra=None):
     return base + list(extra or [])
 
 
-def _build_wire(records):
+def _build_wire(records, since="2026-07-01", until="2026-07-02"):
     # No raw-title entry point: every payload build here is synthetic.
     with mock.patch(
         "tokens_cli.dashboard_payload.readers.build_session_index",
@@ -100,8 +114,8 @@ def _build_wire(records):
     ):
         payload = report_dashboard.build_payload(
             records,
-            since="2026-07-01",
-            until="2026-07-02",
+            since=since,
+            until=until,
             sources=["claude"],
             generated_at=datetime(2026, 7, 3, 0, 0),
         )
@@ -149,22 +163,64 @@ def _legacy(wire, snapshot):
     return {"body": {"wire": wire, "snapshot": snapshot, "error": None}, "etag": None}
 
 
+def _scan(**changes):
+    scan = {
+        "id": 7, "stage": "collection", "outcome": "running",
+        "started_at": "2026-07-02T04:59:55+00:00",
+        "updated_at": _CHECKED_AT, "elapsed_seconds": 5.25,
+        "stage_seconds": {"discovery": 1.25, "collection": 4.0,
+                          "payload": 0.0, "encoding": 0.0},
+        "discovered": 12, "processed": 8, "cache_hits": 5,
+        "parsed": 3, "skipped": 1,
+    }
+    scan.update(changes)
+    return scan
+
+
+def _status(snapshot, *, refreshing=False, scan=None, **changes):
+    body = {
+        "snapshot": snapshot, "error": None, "error_details": None,
+        "has_snapshot": snapshot is not None, "refreshing": refreshing,
+        "checked_at": _CHECKED_AT, "revision": 1, "restored": False,
+        "storage_warning": None, "scan": scan,
+    }
+    body.update(changes)
+    return {"body": body}
+
+
 class _SnapshotState:
     def __init__(self, html):
         self.html = html.encode("utf-8")
         self.queue = []
         self.default = None
         self.count = 0
+        self.status_queue = []
+        self.status_default = None  # Existing tests exercise the session 404 fallback.
+        self.status_count = 0
+        self.status_if_none_match = []
         self.force_hangup = False
         self.if_none_match = []
         self._lock = threading.Lock()
 
-    def take(self):
+    def take(self, status=False):
         with self._lock:
+            if status:
+                self.status_count += 1
+                if self.status_queue:
+                    return self.status_queue.pop(0)
+                return self.status_default
             self.count += 1
             if self.queue:
                 return self.queue.pop(0)
             return self.default
+
+    def push_status(self, *responses):
+        with self._lock:
+            self.status_queue.extend(responses)
+
+    def status_requests(self):
+        with self._lock:
+            return self.status_count
 
     def push(self, *responses):
         with self._lock:
@@ -191,8 +247,9 @@ def _start_server(html):
             return
 
         def do_GET(self):
-            if self.path.split("?")[0] == "/api/snapshot":
-                self._snapshot()
+            path = self.path.split("?")[0]
+            if path in ("/api/snapshot", "/api/status"):
+                self._snapshot(status=path == "/api/status")
                 return
             body = state.html
             self.send_response(200)
@@ -213,13 +270,13 @@ def _start_server(html):
             self.close_connection = True
             self.connection.close()
 
-        def _snapshot(self):
+        def _snapshot(self, status=False):
             if state.force_hangup:
                 return self._drop()
             conditional = self.headers.get("If-None-Match")
-            response = state.take()
+            response = state.take(status=status)
             with state._lock:
-                state.if_none_match.append(conditional)
+                (state.status_if_none_match if status else state.if_none_match).append(conditional)
             if response is None:
                 self.send_response(404)
                 self.send_header("Content-Length", "0")
@@ -237,9 +294,10 @@ def _start_server(html):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            payload = json.dumps(response["body"], ensure_ascii=False).encode("utf-8")
+            payload = json.dumps(response.get("body"), ensure_ascii=False).encode("utf-8")
             try:
-                self.send_response(200)
+                self.send_response(response.get("status", 200))
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(payload)))
                 if etag:
@@ -346,9 +404,10 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         cls._tmp.cleanup()
 
     # -- harness --------------------------------------------------------------
-    def _open(self, html, default, viewport=None, clock=False):
+    def _open(self, html, default, viewport=None, clock=False, status_default=None):
         state, httpd = _start_server(html)
         state.default = default
+        state.status_default = status_default
         self._httpd = httpd
         self.addCleanup(httpd.shutdown)
         self.addCleanup(httpd.server_close)
@@ -367,6 +426,8 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             "console",
             lambda message: console.append(message.text)
             if message.type == "error"
+            and not (message.location.get("url", "").split("?")[0].endswith("/api/status")
+                     and "404" in message.text)
             else None,
         )
         page.goto(
@@ -421,6 +482,272 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             "()=>document.querySelectorAll('#tbody tr[data-period]').length>0",
             timeout=timeout,
         )
+
+    def _wait_status(self, page, state, count):
+        deadline = time.monotonic() + 6
+        while state.status_requests() < count and time.monotonic() < deadline:
+            page.wait_for_timeout(20)
+        self.assertGreaterEqual(state.status_requests(), count)
+
+    def test_status_same_identity_is_lightweight_and_preserves_chart_nodes(self):
+        state, page, errors, console = self._open(
+            self._ready_html, None,
+            status_default=_status(self._snap1_id, refreshing=True, scan=_scan()),
+        )
+        self._wait_status(page, state, 1)
+        page.wait_for_function("()=>document.getElementById('live-progress')?.hidden===false")
+        self.assertEqual(0, state.requests())
+        page.evaluate("window.__heldRow=document.querySelector('#tbody tr[data-period]')")
+        self._force_check(page)
+        self._wait_status(page, state, 2)
+        self.assertEqual(0, state.requests())
+        self.assertTrue(page.evaluate("window.__heldRow===document.querySelector('#tbody tr[data-period]')"))
+        self.assertTrue(all(value is None for value in state.status_if_none_match))
+        self.assertEqual([], errors + console)
+
+    def test_status_initial_wire_fetch_uses_actual_snapshot_identity_in_race(self):
+        state, page, errors, console = self._open(
+            self._prepare_html,
+            _ready(self._snap2_wire, self._snap2_id, etag='"actual-b"', revision=3),
+            status_default=_status(self._snap1_id),
+        )
+        self._wait_rows(page)
+        self.assertEqual(self._snap2_id, page.evaluate("DATA.snapshot.id"))
+        self.assertEqual(1, state.requests())
+        state.status_default = _status(self._snap2_id, revision=3)
+        before = state.status_requests()
+        self._force_check(page)
+        self._wait_status(page, state, before + 1)
+        self.assertEqual(1, state.requests())
+        self.assertEqual([], errors + console)
+
+    def test_status_same_identity_updates_restored_checked_and_storage_without_redraw(self):
+        state, page, errors, console = self._open(
+            self._ready_html, None, status_default=_status(self._snap1_id),
+        )
+        self._wait_status(page, state, 1)
+        self._wait_kind(page, "live")
+        page.evaluate("window.__heldRow=document.querySelector('#tbody tr[data-period]')")
+        state.push_status(_status(
+            self._snap1_id, restored=True, storage_warning="write_failed",
+            checked_at="2026-07-02T05:01:02+00:00", refreshing=True, scan=_scan(),
+        ))
+        self._force_check(page)
+        page.wait_for_function("()=>document.getElementById('live-checked').textContent.includes('05:01:02')")
+        self.assertIn("上次成功快照，正在重新验证", page.locator("#live-restored").inner_text())
+        self.assertTrue(page.locator("#live-storage-warning").is_visible())
+        self.assertTrue(page.evaluate("window.__heldRow===document.querySelector('#tbody tr[data-period]')"))
+        page.evaluate("applyLanguage('en',false)")
+        self.assertIn("Last successful snapshot, revalidating", page.locator("#live-restored").inner_text())
+        self.assertIn("could not be saved", page.locator("#live-storage-warning").inner_text())
+        state.push_status(_status(self._snap1_id))
+        self._force_check(page)
+        page.wait_for_function("()=>document.getElementById('live-restored').hidden")
+        self.assertFalse(page.locator("#live-storage-warning").is_visible())
+        self.assertEqual(0, state.requests())
+        self.assertEqual([], errors + console)
+
+    def test_progress_is_aggregate_quiet_bilingual_and_mobile_safe(self):
+        state, page, errors, console = self._open(
+            self._prepare_html, None,
+            viewport={"width": 390, "height": 844}, clock=True,
+            status_default=_status(None, refreshing=True, scan=_scan()),
+        )
+        self._wait_status(page, state, 1)
+        progress = page.locator("#live-progress")
+        page.wait_for_function("()=>document.getElementById('live-progress')?.hidden===false")
+        self.assertEqual("off", progress.get_attribute("aria-live"))
+        self.assertFalse(progress.evaluate("e=>!!e.parentElement.closest('[role=status],[aria-live=polite]')"))
+        self.assertIn("已成功处理 8", progress.inner_text())
+        self.assertIn("截至当前发现 12", progress.inner_text())
+        self.assertIn("UTC", progress.inner_text())
+        self.assertNotRegex(progress.inner_text(), r"%|ETA|预计|百分比")
+        before = progress.inner_text()
+        page.select_option("#live-refresh", "0")
+        page.clock.run_for(6000)
+        self.assertEqual(before, progress.inner_text())  # no invented local timer
+        self.assertFalse(page.locator("#section-overview").is_visible())
+        page.locator("#live-progress-details summary").click()
+        self.assertIn("warm", progress.inner_text())
+        self.assertIn("cold", progress.inner_text())
+        self.assertIn("skip", progress.inner_text())
+        for language in ("zh", "en"):
+            page.evaluate("l=>applyLanguage(l,false)", language)
+            for theme in ("light", "dark"):
+                page.evaluate("t=>document.documentElement.dataset.theme=t", theme)
+                self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth-innerWidth"), 1)
+                self.assertTrue(progress.is_visible())
+        self.assertIn("Successfully processed 8", progress.inner_text())
+        self.assertIn("Discovered so far 12", progress.inner_text())
+        self.assertEqual(0, state.requests())
+        self.assertEqual([], errors + console)
+
+    def test_error_retry_keeps_error_and_updates_scan_stage_without_reannouncing_counts(self):
+        status = _status(self._snap1_id, error=_SCAN_ERROR,
+                         refreshing=True, scan=_scan(stage="collection"))
+        state, page, errors, console = self._open(self._ready_html, None, status_default=status)
+        self._wait_kind(page, "error")
+        self.assertIn("上次成功快照", page.locator("#live-prepare").inner_text())
+        self.assertIn("采集", page.locator("#live-progress-stage").inner_text())
+        page.evaluate("""() => {
+            window.__stageChanges=0;
+            new MutationObserver(m=>window.__stageChanges+=m.length).observe(
+                document.getElementById('live-progress-stage'), {childList:true,subtree:true,characterData:true});
+        }""")
+        state.push_status(_status(self._snap1_id, error=_SCAN_ERROR, refreshing=True,
+                                  scan=_scan(processed=9, elapsed_seconds=6.0)))
+        self._force_check(page)
+        page.wait_for_function("()=>document.getElementById('live-progress').textContent.includes('已成功处理 9')")
+        self.assertEqual("error", self._kind(page))
+        self.assertEqual(0, page.evaluate("window.__stageChanges"))
+        state.push_status(_status(self._snap1_id, error=_SCAN_ERROR, refreshing=True,
+                                  scan=_scan(stage="encoding")))
+        self._force_check(page)
+        page.wait_for_function("()=>document.getElementById('live-progress-stage').textContent.includes('编码')")
+        self.assertEqual(0, state.requests())
+        self.assertEqual([], errors + console)
+
+    def test_status_404_falls_back_once_for_the_session(self):
+        state, page, errors, console = self._open(
+            self._ready_html,
+            _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1),
+        )
+        self._wait_requests(page, state, 1)
+        self.assertEqual(1, state.status_requests())
+        self._force_check(page)
+        self._wait_requests(page, state, 2)
+        self.assertEqual(1, state.status_requests())
+        self.assertFalse(page.locator("#live-progress").is_visible())
+        self.assertEqual([], errors)
+
+    def test_status_server_error_does_not_enable_legacy_snapshot_polling(self):
+        state, page, errors, console = self._open(
+            self._ready_html, None, status_default={"status": 503, "body": {}},
+        )
+        self._wait_kind(page, "offline")
+        self.assertEqual(0, state.requests())
+        state.status_default = _status(self._snap1_id)
+        self._force_check(page)
+        self._wait_kind(page, "live")
+        self.assertEqual(2, state.status_requests())
+        self.assertEqual(0, state.requests())
+        self.assertEqual([], errors)
+
+    def test_status_bad_snapshot_wire_rejects_etag_and_retries_actual_wire(self):
+        state, page, errors, console = self._open(
+            self._ready_html,
+            _ready("not-a-wire", self._snap2_id, etag='"bad"', revision=2),
+            status_default=_status(self._snap2_id),
+        )
+        self._wait_kind(page, "error")
+        self.assertEqual(self._snap1_id, page.evaluate("DATA.snapshot.id"))
+        state.default = _ready(self._snap2_wire, self._snap2_id, etag='"good"', revision=2)
+        self._force_check(page)
+        page.wait_for_function("id=>DATA.snapshot.id===id", arg=self._snap2_id)
+        self.assertEqual('"live-1"', state.last_if_none_match())
+        state.status_default = _status(self._snap1_id)
+        state.default = _ready(self._snap1_wire, self._snap1_id, etag='"next"', revision=3)
+        self._force_check(page)
+        page.wait_for_function("id=>DATA.snapshot.id===id", arg=self._snap1_id)
+        self.assertEqual('"good"', state.last_if_none_match())
+        self.assertEqual([], errors + console)
+
+    def test_status_timeout_never_enables_snapshot_fallback(self):
+        state, page, errors, console = self._open(
+            self._ready_html, None, clock=True,
+            status_default={"delay": 30, **_status(self._snap1_id)},
+        )
+        self._wait_status(page, state, 1)
+        page.clock.run_for(10000)
+        self._wait_kind(page, "offline")
+        self.assertEqual(0, state.requests())
+        state.status_default = _status(self._snap1_id)
+        self._force_check(page)
+        self._wait_kind(page, "live")
+        self.assertEqual(2, state.status_requests())
+        self.assertEqual(0, state.requests())
+        self.assertEqual([], errors)
+
+    def test_status_pause_and_hidden_cancel_before_snapshot_or_metadata_commit(self):
+        state, page, errors, console = self._open(
+            self._ready_html,
+            _ready(self._snap2_wire, self._snap2_id, etag='"new"', revision=2),
+            status_default={"delay": 0.3, **_status(self._snap2_id, restored=True)},
+        )
+        self._wait_status(page, state, 1)
+        page.select_option("#live-refresh", "0")
+        page.wait_for_timeout(450)
+        self.assertEqual(0, state.requests())
+        self.assertEqual(self._snap1_id, page.evaluate("DATA.snapshot.id"))
+        self.assertFalse(page.locator("#live-restored").is_visible())
+        self.assertEqual("paused", self._kind(page))
+        page.select_option("#live-refresh", "60")
+        self._wait_status(page, state, 2)
+        page.evaluate("""() => {
+            Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+            document.dispatchEvent(new Event('visibilitychange'));
+        }""")
+        page.wait_for_timeout(450)
+        self.assertEqual(0, state.requests())
+        self.assertEqual(self._snap1_id, page.evaluate("DATA.snapshot.id"))
+        state.status_default = _status(self._snap2_id)
+        page.evaluate("""() => {
+            Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});
+            document.dispatchEvent(new Event('visibilitychange'));
+        }""")
+        page.wait_for_function("id=>DATA.snapshot.id===id", arg=self._snap2_id)
+        self.assertEqual(1, state.requests())
+        self.assertEqual([], errors + console)
+
+    def test_initial_live_scan_and_restored_metadata_render_before_status_response(self):
+        live = {"enabled": True, "has_snapshot": True, "refreshing": True,
+                "snapshot": self._snap1_id, "restored": True,
+                "storage_warning": "write_failed", "scan": _scan()}
+        html = report_dashboard.render_dashboard(self._snap1_wire, live=live)
+        state, page, errors, console = self._open(
+            html, None, status_default={"delay": 30, **_status(self._snap1_id)},
+        )
+        page.select_option("#live-refresh", "0")
+        self.assertIn("上次成功快照，正在重新验证", page.locator("#live-restored").inner_text())
+        self.assertIn("已成功处理 8", page.locator("#live-progress").inner_text())
+        self.assertTrue(page.locator("#live-storage-warning").is_visible())
+        self.assertEqual(0, state.requests())
+        self.assertEqual([], errors + console)
+
+    def test_restored_without_successful_snapshot_never_manufactures_usage(self):
+        state, page, errors, console = self._open(
+            self._prepare_html, None,
+            status_default=_status(None, restored=True, scan=_scan(), refreshing=True),
+        )
+        self._wait_status(page, state, 1)
+        page.wait_for_function("()=>document.getElementById('live-progress')?.hidden===false")
+        self.assertFalse(page.locator("#live-restored").is_visible())
+        self.assertFalse(page.locator("#section-overview").is_visible())
+        self.assertNotRegex(page.text_content("#k-total").strip(), r"\d")
+        self.assertEqual(0, state.requests())
+        self.assertEqual([], errors + console)
+
+    def test_status_fast_polling_never_refetches_unchanged_wire(self):
+        state, page, errors, console = self._open(
+            self._ready_html, None, clock=True,
+            status_default=_status(self._snap1_id, refreshing=True, scan=_scan()),
+        )
+        self._wait_status(page, state, 1)
+        self._wait_kind(page, "scanning")
+        page.evaluate("""() => {
+            window.__liveAnnouncements=0;
+            new MutationObserver(m=>window.__liveAnnouncements+=m.length).observe(
+                document.getElementById('live-beacon'), {childList:true,subtree:true,characterData:true});
+        }""")
+        page.clock.run_for(1000)
+        self._wait_status(page, state, 2)
+        self._wait_kind(page, "scanning")
+        page.clock.run_for(1000)
+        self._wait_status(page, state, 3)
+        self._wait_kind(page, "scanning")
+        self.assertEqual(0, page.evaluate("window.__liveAnnouncements"))
+        self.assertEqual(0, state.requests())
+        self.assertEqual([], errors + console)
 
     # -- 1. first round: shell, then the real snapshot ------------------------
     def test_first_round_prepare_shell_then_live_snapshot(self):
@@ -489,6 +816,328 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual([], console)
 
+    def test_first_scan_failure_shows_actionable_notice_without_fake_usage(self):
+        failed = _prepare()
+        failed["body"].update(error=_SCAN_ERROR, refreshing=False,
+                               error_details={"stage": "collection", "source": "codex", "reason": "usage_conflict"})
+        state, page, errors, console = self._open(self._prepare_html, failed)
+        self._wait_kind(page, "error")
+        self.assertIn("尚无可用快照", page.locator("#live-prepare").inner_text())
+        self.assertIn("codex", page.locator("#live-prepare").inner_text())
+        self.assertIn("usage_conflict", page.locator("#live-prepare").inner_text())
+        self.assertIsNone(page.eval_on_selector("#section-overview", "e=>e.offsetParent"))
+        page.evaluate("applyLanguage('en',false)")
+        self.assertIn("No snapshot available", page.locator("#live-prepare").inner_text())
+        self.assertEqual([], errors + console)
+
+    def _assert_conflict_notice(self, page, kind, zh, en):
+        notice = page.locator("#live-prepare")
+        self.assertTrue(notice.is_visible())
+        for language, explanation in (("zh", zh), ("en", en)):
+            page.evaluate("l=>applyLanguage(l,false)", language)
+            text = notice.inner_text()
+            self.assertIn("collection · codex · usage_conflict · " + kind, text)
+            self.assertIn(explanation, text)
+            for other_kind, other_zh, other_en in _CONFLICT_GUIDANCE:
+                if other_kind != kind:
+                    self.assertNotIn(other_kind, text)
+                    self.assertNotIn(other_zh if language == "zh" else other_en, text)
+            self.assertNotIn("synthetic-private-sentinel", page.locator("body").inner_text())
+            self.assertNotIn("tokens doctor --source codex", text)
+            self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth-innerWidth"), 1)
+
+    def test_anchor_mismatch_groups_initial_live_and_safe_fallbacks(self):
+        groups = (
+            ("usage", "用量", "usage"), ("model", "模型", "model"),
+            ("billing", "计费", "billing"), ("usage_model", "用量、模型", "usage, model"),
+            ("usage_billing", "用量、计费", "usage, billing"),
+            ("model_billing", "模型、计费", "model, billing"),
+            ("usage_model_billing", "用量、模型、计费", "usage, model, billing"),
+        )
+        base = {"stage": "collection", "source": "codex", "reason": "usage_conflict",
+                "conflict_kind": "legacy_anchor_mismatch"}
+        for kind, zh, en in groups:
+            with self.subTest(kind=kind):
+                details = dict(base, mismatch_kind=kind)
+                live = {"enabled": True, "has_snapshot": False, "refreshing": False,
+                        "error": _SCAN_ERROR, "error_details": details}
+                html = report_dashboard.render_dashboard(_build_wire([])[1], live=live)
+                state, page, errors, console = self._open(
+                    html, None, viewport={"width": 390, "height": 844},
+                    status_default={"delay": 30, **_status(None)})
+                for language, expected in (("zh", "差异组别：" + zh + "。"),
+                                           ("en", "Differing groups: " + en + ".")):
+                    page.evaluate("l=>applyLanguage(l,false)", language)
+                    self.assertIn(expected, page.locator("#live-prepare").inner_text())
+                self.assertFalse(page.locator("#section-overview").is_visible())
+                self.assertNotRegex(page.text_content("#k-total").strip(), r"\d")
+                self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth-innerWidth"), 1)
+                self.assertEqual([], errors + console)
+        # Exercise non-JSON values directly; protocol JSON cannot carry prototypes or boxed strings.
+        results = page.evaluate("""base => {
+          const original=liveDiagnostic(base);
+          const values=[undefined,null,'','private-mismatch-sentinel <img src=x>',
+            '__proto__','constructor',7,true,['model'],{kind:'model'},new String('model')];
+          const invalid=values.every(value=>liveDiagnostic({...base,mismatch_kind:value})===original);
+          const inherited=Object.keys({...base,mismatch_kind:'model'}).every(key=>{
+            const fields={...base,mismatch_kind:'model'};const value=fields[key];delete fields[key];
+            const details=Object.assign(Object.create({[key]:value}),fields);
+            return !liveDiagnostic(details).includes('Differing groups:');
+          });
+          const containers=[null,undefined,[],7,true,'collection'].every(value=>liveDiagnostic(value)==='');
+          const wrong=[{conflict_kind:'modern_response_mismatch'},
+            {conflict_kind:'legacy_cumulative_rollback'},{conflict_kind:'cross_file_identity_mismatch'},
+            {stage:'payload'},{source:'claude'},{reason:'read_failed'}]
+            .every(fields=>!liveDiagnostic({...base,...fields,mismatch_kind:'model'}).includes('Differing groups:'));
+          return {invalid,inherited,containers,wrong};
+        }""", base)
+        self.assertEqual({"invalid": True, "inherited": True, "containers": True, "wrong": True}, results)
+
+    def test_anchor_mismatch_groups_status_and_fallback_preserve_then_clear(self):
+        kinds = ("usage", "model", "billing", "usage_model", "usage_billing",
+                 "model_billing", "usage_model_billing")
+        for entry in ("status", "snapshot"):
+            with self.subTest(entry=entry):
+                state, page, errors, console = self._open(
+                    self._ready_html,
+                    _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1),
+                    status_default=_status(self._snap1_id) if entry == "status" else None)
+                self._wait_kind(page, "live")
+                before = (self._rows(page), self._total(page), page.evaluate("liveUi.checkedAt"))
+                page.evaluate("window.__mismatchRow=document.querySelector('#tbody tr[data-period]')")
+                for revision, kind in enumerate(kinds, 2):
+                    details = {"stage": "collection", "source": "codex", "reason": "usage_conflict",
+                               "conflict_kind": "legacy_anchor_mismatch", "mismatch_kind": kind}
+                    if entry == "status":
+                        state.push_status(_status(self._snap1_id, error=_SCAN_ERROR,
+                                                  error_details=details, revision=revision))
+                    else:
+                        reply = _error(self._snap1_wire, self._snap1_id,
+                                       etag='"mismatch-%s"' % revision, revision=revision)
+                        reply["body"]["error_details"] = details
+                        state.push(reply)
+                    self._force_check(page)
+                    page.wait_for_function("d=>JSON.stringify(liveUi.errorDetails)===d",
+                                           arg=json.dumps(details, separators=(",", ":")), polling=50)
+                    for language, expected in (("zh", "差异组别："), ("en", "Differing groups:")):
+                        page.evaluate("l=>applyLanguage(l,false)", language)
+                        self.assertIn(expected, page.locator("#live-prepare").inner_text())
+                    self.assertEqual(before, (self._rows(page), self._total(page),
+                                              page.evaluate("liveUi.checkedAt")))
+                    self.assertEqual(self._snap1_id, page.evaluate("DATA.snapshot.id"))
+                    self.assertTrue(page.evaluate("window.__mismatchRow===document.querySelector('#tbody tr[data-period]')"))
+                if entry == "status":
+                    self.assertEqual(0, state.requests())
+                    state.push_status(_status(self._snap1_id, revision=9))
+                else:
+                    state.push(_ready(self._snap1_wire, self._snap1_id, etag='"live-9"', revision=9))
+                self._force_check(page)
+                self._wait_kind(page, "live")
+                self.assertIsNone(page.evaluate("liveUi.errorDetails"))
+                self.assertNotIn("Differing groups:", page.locator("#live-prepare").text_content())
+                self.assertEqual([], errors + console)
+
+    def test_usage_conflict_initial_live_is_bilingual_without_fake_usage(self):
+        for kind, zh, en in _CONFLICT_GUIDANCE:
+            with self.subTest(kind=kind):
+                details = {"stage": "collection", "source": "codex", "reason": "usage_conflict",
+                           "conflict_kind": kind, "path": "/synthetic-private-sentinel/log.jsonl",
+                           "identity": "synthetic-private-sentinel-response"}
+                live = {"enabled": True, "has_snapshot": False, "refreshing": False,
+                        "error": _SCAN_ERROR, "error_details": details}
+                html = report_dashboard.render_dashboard(_build_wire([])[1], live=live)
+                state, page, errors, console = self._open(
+                    html, None, viewport={"width": 390, "height": 844},
+                    status_default={"delay": 30, **_status(None)},
+                )
+                # The first status reply is held: these details must come from initial LIVE.
+                self.assertEqual("error", self._kind(page))
+                self.assertEqual(details, page.evaluate("liveUi.errorDetails"))
+                self._assert_conflict_notice(page, kind, zh, en)
+                self.assertFalse(page.locator("#section-overview").is_visible())
+                self.assertNotRegex(page.text_content("#k-total").strip(), r"\d")
+                self.assertEqual(0, self._rows(page))
+                self.assertEqual(0, state.requests())
+                self.assertEqual([], errors + console)
+
+    def test_usage_conflict_status_and_snapshot_fallback_preserve_then_clear(self):
+        for entry in ("status", "snapshot"):
+            with self.subTest(entry=entry):
+                state, page, errors, console = self._open(
+                    self._ready_html,
+                    _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1),
+                    viewport={"width": 390, "height": 844},
+                    status_default=_status(self._snap1_id) if entry == "status" else None,
+                )
+                self._wait_kind(page, "live")
+                before = (self._rows(page), self._total(page), page.evaluate("liveUi.checkedAt"))
+                page.evaluate("window.__conflictRow=document.querySelector('#tbody tr[data-period]')")
+                for revision, (kind, zh, en) in enumerate(_CONFLICT_GUIDANCE, 2):
+                    with self.subTest(kind=kind):
+                        details = {"stage": "collection", "source": "codex", "reason": "usage_conflict",
+                                   "conflict_kind": kind, "hash": "synthetic-private-sentinel-hash",
+                                   "token": "synthetic-private-sentinel-token"}
+                        if entry == "status":
+                            state.push_status(_status(self._snap1_id, error=_SCAN_ERROR,
+                                                      error_details=details, revision=revision))
+                        else:
+                            failed = _error(self._snap1_wire, self._snap1_id,
+                                            etag='"live-%s"' % revision, revision=revision)
+                            failed["body"]["error_details"] = details
+                            state.push(failed)
+                        self._force_check(page)
+                        page.wait_for_function("d=>JSON.stringify(liveUi.errorDetails)===d",
+                                               arg=json.dumps(details, separators=(",", ":")), polling=50)
+                        self._wait_kind(page, "error")
+                        self._assert_conflict_notice(page, kind, zh, en)
+                        self.assertEqual(before, (self._rows(page), self._total(page),
+                                                  page.evaluate("liveUi.checkedAt")))
+                        self.assertEqual(self._snap1_id, page.evaluate("DATA.snapshot.id"))
+                        self.assertTrue(page.evaluate(
+                            "window.__conflictRow===document.querySelector('#tbody tr[data-period]')"))
+                        self.assertIn("last successful snapshot", page.locator("#live-prepare").inner_text())
+                if entry == "status":
+                    self.assertEqual(0, state.requests())
+                    state.push_status(_status(self._snap1_id, revision=6))
+                else:
+                    self.assertEqual(1, state.status_requests())  # The original harness defaults status to 404.
+                    state.push(_ready(self._snap1_wire, self._snap1_id, etag='"live-6"', revision=6))
+                self._force_check(page)
+                self._wait_kind(page, "live")
+                self.assertIsNone(page.evaluate("liveUi.errorDetails"))
+                self.assertFalse(page.locator("#live-prepare").is_visible())
+                for kind, zh, en in _CONFLICT_GUIDANCE:
+                    self.assertNotIn(kind, page.locator("body").inner_text())
+                    self.assertNotIn(en, page.locator("#live-prepare").text_content())
+                self.assertEqual([], errors + console)
+
+    def test_usage_conflict_unknown_types_and_wrong_combinations_are_generic(self):
+        base = {"stage": "collection", "source": "codex", "reason": "usage_conflict"}
+        unknown = "synthetic-private-sentinel <img src=x onerror=alert(1)>"
+        invalid = [None, "", unknown, "__proto__", "constructor", "prototype", "toString",
+                   "valueOf", "hasOwnProperty", "__defineGetter__", 7, True,
+                   ["modern_response_mismatch"], {"modern_response_mismatch": True}]
+        cases = [dict(base), *(dict(base, conflict_kind=value) for value in invalid)]
+        cases.extend(dict(base, conflict_kind=kind, **changes)
+                     for kind, _, _ in _CONFLICT_GUIDANCE
+                     for changes in ({"stage": "payload"}, {"source": "claude"},
+                                     {"reason": "decompression_failed"}))
+        for entry in ("status", "snapshot"):
+            with self.subTest(entry=entry):
+                state, page, errors, console = self._open(
+                    self._ready_html,
+                    _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1),
+                    status_default=_status(self._snap1_id) if entry == "status" else None,
+                )
+                self._wait_kind(page, "live")
+                for revision, details in enumerate(cases, 2):
+                    with self.subTest(details=details):
+                        if entry == "status":
+                            state.push_status(_status(self._snap1_id, error=_SCAN_ERROR,
+                                                      error_details=details, revision=revision))
+                        else:
+                            failed = _error(self._snap1_wire, self._snap1_id,
+                                            etag='"generic-%s"' % revision, revision=revision)
+                            failed["body"]["error_details"] = details
+                            state.push(failed)
+                        self._force_check(page)
+                        page.wait_for_function("d=>JSON.stringify(liveUi.errorDetails)===d",
+                                               arg=json.dumps(details, separators=(",", ":")), polling=50)
+                        expected = " · ".join(details[key] for key in ("stage", "source", "reason"))
+                        for language in ("zh", "en"):
+                            page.evaluate("l=>applyLanguage(l,false)", language)
+                            self.assertEqual(expected, page.evaluate("d=>liveDiagnostic(d)", details))
+                            text = page.locator("#live-prepare").inner_text()
+                            self.assertTrue(text.endswith(expected))
+                            self.assertNotIn("synthetic-private-sentinel", page.locator("body").inner_text())
+                            self.assertEqual(0, page.locator('#live-prepare img').count())
+                # Boxed strings must not be coerced to a fixed code, either.
+                self.assertEqual("collection · codex · usage_conflict", page.evaluate("""() =>
+                    liveDiagnostic({stage:'collection',source:'codex',reason:'usage_conflict',
+                                    conflict_kind:new String('modern_response_mismatch')})"""))
+                self.assertEqual([], errors + console)
+
+    def test_usage_conflict_unknown_initial_live_stays_generic(self):
+        base = {"stage": "collection", "source": "codex", "reason": "usage_conflict"}
+        cases = [dict(base), *(dict(base, conflict_kind=value) for value in (
+            "synthetic-private-sentinel <img src=x onerror=alert(1)>", "__proto__", "constructor",
+            ["modern_response_mismatch"], {"modern_response_mismatch": True},
+        )), dict(base, conflict_kind="modern_response_mismatch", source="claude"),
+            dict(base, conflict_kind="legacy_anchor_mismatch", stage="payload"),
+            dict(base, conflict_kind="cross_file_identity_mismatch", reason="decompression_failed")]
+        for details in cases:
+            with self.subTest(details=details):
+                live = {"enabled": True, "has_snapshot": False, "refreshing": False,
+                        "error": _SCAN_ERROR, "error_details": details}
+                html = report_dashboard.render_dashboard(_build_wire([])[1], live=live)
+                state, page, errors, console = self._open(
+                    html, None, status_default={"delay": 30, **_status(None)},
+                )
+                expected = " · ".join(details[key] for key in ("stage", "source", "reason"))
+                for language in ("zh", "en"):
+                    page.evaluate("l=>applyLanguage(l,false)", language)
+                    self.assertTrue(page.locator("#live-prepare").inner_text().endswith(expected))
+                    self.assertNotIn("synthetic-private-sentinel", page.locator("body").inner_text())
+                    self.assertEqual(0, page.locator('#live-prepare img').count())
+                self.assertEqual("error", self._kind(page))
+                self.assertEqual(0, state.requests())
+                self.assertEqual([], errors + console)
+
+    def test_codex_decompressor_notice_is_bilingual_and_clears_on_recovery(self):
+        failed = _prepare()
+        failed["body"].update(error=_SCAN_ERROR, refreshing=False,
+                               error_details={"stage": "collection", "source": "codex",
+                                              "reason": "decompressor_unavailable"})
+        state, page, errors, console = self._open(
+            self._prepare_html, failed, viewport={"width": 390, "height": 844}
+        )
+        self._wait_kind(page, "error")
+        notice = page.locator("#live-prepare")
+        self.assertIn("运行环境未找到 zstd", notice.inner_text())
+        self.assertIn("tokens doctor --source codex", notice.inner_text())
+        self.assertIn("不代表常驻服务", notice.inner_text())
+        self.assertIsNone(page.eval_on_selector("#section-overview", "e=>e.offsetParent"))
+        page.evaluate("applyLanguage('en',false)")
+        self.assertIn("cannot find zstd", notice.inner_text())
+        self.assertIn("not necessarily the background service", notice.inner_text())
+        self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth-innerWidth"), 1)
+        state.push(_ready(self._snap1_wire, self._snap1_id, etag='"live-2"', revision=2))
+        self._force_check(page)
+        self._wait_rows(page)
+        self.assertFalse(notice.is_visible())
+        self.assertNotIn("cannot find zstd", notice.inner_text())
+        self.assertEqual([], errors + console)
+
+    def test_decompressor_guidance_requires_exact_codes_and_keeps_old_snapshot(self):
+        state, page, errors, console = self._open(
+            self._ready_html,
+            _ready(self._snap1_wire, self._snap1_id, etag='"live-1"', revision=1),
+        )
+        self._wait_rows(page)
+        before = self._rows(page)
+        for revision, details in enumerate((
+            {"stage": "collection", "source": "codex", "reason": "decompressor_unavailable"},
+            {"stage": "collection", "source": "codex", "reason": "decompression_failed"},
+            {"stage": "payload", "source": "codex", "reason": "decompressor_unavailable"},
+            {"stage": "collection", "source": "claude", "reason": "decompressor_unavailable"},
+        ), 2):
+            with self.subTest(details=details):
+                failed = _error(self._snap1_wire, self._snap1_id,
+                                etag='"live-%s"' % revision, revision=revision)
+                failed["body"]["error_details"] = details
+                state.push(failed)
+                self._force_check(page)
+                self._wait_kind(page, "error")
+                page.wait_for_function(
+                    "d=>liveUi.errorDetails?.stage===d.stage&&liveUi.errorDetails?.source===d.source"
+                    "&&liveUi.errorDetails?.reason===d.reason", arg=details
+                )
+                text = page.locator("#live-prepare").inner_text()
+                self.assertIn("上次成功快照", text)
+                self.assertEqual(revision == 2, "tokens doctor --source codex" in text)
+                self.assertEqual(before, self._rows(page))
+        self.assertEqual([], errors + console)
+
     def test_scan_error_keeps_last_snapshot_then_recovers(self):
         state, page, errors, console = self._open(
             self._ready_html,
@@ -506,6 +1155,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         self.assertEqual("同步错误", page.text_content("#live-text").strip())
         self.assertEqual(before, self._rows(page))  # last snapshot still shown
         self.assertNotEqual("prepare", self._body_live(page))
+        self.assertIn("上次成功快照", page.locator("#live-prepare").inner_text())
 
         state.push(
             _ready(self._snap2_wire, self._snap2_id, etag='"live-4"', revision=4)
@@ -624,6 +1274,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         page.clock.set_fixed_time(datetime(2026, 7, 2, 23, 59, tzinfo=timezone.utc))
         page.locator('#range-presets [data-range="today"]').click()
         page.wait_for_function("()=>state.range==='today'&&rangeInfo().since==='2026-07-02'")
+        page.evaluate("document.getElementById('daily-table-details').open=true")
         self.assertIn("2026-07-02", page.locator("#daily-tbody").inner_text())
         self.assertNotIn("2026-07-01", page.locator("#daily-tbody").inner_text())
         models_before = page.evaluate("[...state.models]")
@@ -918,5 +1569,408 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         self.assertEqual([], errors)
 
 
+    @staticmethod
+    def _force_check_without_focus(page):
+        # Same poll trigger as _force_check, but without focusing the select,
+        # so a live re-render can be checked for in-calendar focus restoration.
+        page.evaluate(
+            """() => {
+              const select=document.getElementById('live-refresh');
+              select.value = select.value === '60' ? '300' : '60';
+              select.dispatchEvent(new Event('change', {bubbles: true}));
+            }"""
+        )
+
+    @staticmethod
+    def _calendar_record(day, model, total, session):
+        quarter = total // 4
+        return {
+            "source": "claude",
+            "ts": day + "T09:00:00+08:00",
+            "date": day,
+            "model": model,
+            "input": total - 2 * quarter,
+            "output": quarter,
+            "cache_read": quarter,
+            "cache_write": 0,
+            "total": total,
+            "session": session,
+            "cwd": "/synthetic/calendar-fixture",
+        }
+
+    def test_calendar_live_snapshot_updates_visible_month_without_jumping(self):
+        records = [
+            self._calendar_record("2026-05-05", "model-a", 7, "synthetic-cal-may"),
+            self._calendar_record("2026-05-05", "model-b", 3, "synthetic-cal-may-b"),
+            self._calendar_record("2026-06-02", "model-a", 100, "synthetic-cal-june"),
+            self._calendar_record("2026-06-02", "model-b", 5, "synthetic-cal-june-b"),
+            self._calendar_record("2026-06-10", "model-a", 50, "synthetic-cal-focus"),
+            self._calendar_record("2026-06-10", "model-b", 4, "synthetic-cal-focus-b"),
+        ]
+        payload, wire = _build_wire(records, since="2026-05-01", until="2026-06-30")
+        snapshot_id = payload["snapshot"]["id"]
+        html = report_dashboard.render_dashboard(
+            wire,
+            live={
+                "enabled": True, "interval": 300, "poll_interval": 60,
+                "has_snapshot": True, "refreshing": False,
+                "checked_at": _CHECKED_AT, "error": None,
+                "snapshot": snapshot_id, "revision": 1, "etag": '"cal-1"',
+            },
+        )
+        state, page, errors, console = self._open(
+            html,
+            _ready(wire, snapshot_id, etag='"cal-1"', revision=1),
+        )
+        page.wait_for_function(
+            "()=>typeof calendarState!=='undefined'&&"
+            "calendarState.month==='2026-06'&&"
+            "calendarState.stripEnd==='2026-06-10'&&"
+            "document.querySelectorAll('#daily-date-strip [data-strip-day]')"
+            ".length===7"
+        )
+        self.assertFalse(
+            page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+        )
+        initial_strip = page.evaluate(
+            "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+            "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+        )
+        self.assertEqual(
+            ["2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07",
+             "2026-06-08", "2026-06-09", "2026-06-10"],
+            initial_strip["days"],
+        )
+        page.evaluate("setModels(new Set(['model-a']))")
+        page.wait_for_function(
+            "()=>state.models.size===1&&state.models.has('model-a')"
+        )
+        self.assertEqual(
+            initial_strip,
+            page.evaluate(
+                "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+            ),
+            "model filtering must not re-anchor the strip",
+        )
+        page.locator("#daily-calendar-toggle").click()
+        page.wait_for_function(
+            "()=>document.querySelector('#daily-calendar-picker').open&&"
+            "calendarState.renderedMonth==='2026-06'"
+        )
+        before = page.evaluate(
+            "()=>{const data=calendarMonthData(DATA.day,[...state.models],"
+            "'2026-06',DATA.snapshot.coverage,rangeInfo());"
+            "return {selectedModels:data.selectedModels,"
+            "cell:data.cells.find(item=>item.day==='2026-06-10')};}"
+        )
+        self.assertEqual(["model-a"], before["selectedModels"])
+        self.assertEqual("50", before["cell"]["tokens"])
+        self.assertTrue(before["cell"]["tokensExact"])
+        self.assertEqual("known", before["cell"]["tokenStatus"])
+        page.evaluate(
+            "window.__liveCalendarPickerForTest="
+            "document.querySelector('#daily-calendar-picker')"
+        )
+        page.locator('[data-calendar-day="2026-06-10"]').focus()
+        scope = page.evaluate(
+            "({range:state.range,date:state.rangeDate,"
+            "models:[...state.models].sort()})"
+        )
+
+        updated = records + [
+            self._calendar_record(
+                "2026-06-10", "model-a", 25, "synthetic-cal-focus"
+            ),
+            self._calendar_record(
+                "2026-06-20", "model-a", 20, "synthetic-cal-late"
+            ),
+            self._calendar_record(
+                "2026-06-20", "model-b", 30, "synthetic-cal-late-b"
+            ),
+        ]
+        payload2, wire2 = _build_wire(
+            updated, since="2026-05-01", until="2026-06-30"
+        )
+        snapshot_id2 = payload2["snapshot"]["id"]
+        state.push(
+            _ready(wire2, snapshot_id2, etag='"cal-2"', revision=2)
+        )
+        self._force_check_without_focus(page)
+        page.wait_for_function(
+            "id=>DATA.snapshot&&DATA.snapshot.id===id", arg=snapshot_id2
+        )
+        page.wait_for_function(
+            "()=>{const cell=document.querySelector("
+            "'[data-calendar-day=\"2026-06-10\"]');return cell&&"
+            "((cell.getAttribute('aria-label')||'')+' '+"
+            "(cell.getAttribute('title')||'')+' '+cell.textContent)"
+            ".includes('75');}"
+        )
+        self.assertEqual("2026-06", page.evaluate("calendarState.month"))
+        self.assertEqual("2026-06", page.evaluate("calendarState.renderedMonth"))
+        self.assertFalse(page.evaluate("calendarState.manual"))
+        self.assertEqual(
+            initial_strip,
+            page.evaluate(
+                "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+            ),
+            "newer live records must not move an initialized strip",
+        )
+        self.assertTrue(
+            page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+        )
+        self.assertTrue(page.evaluate(
+            "window.__liveCalendarPickerForTest==="
+            "document.querySelector('#daily-calendar-picker')"
+        ), "live redraw must retain the same native details node")
+        self.assertIn("75", page.locator(
+            '#daily-date-strip [data-strip-day="2026-06-10"]'
+        ).get_attribute("aria-label"))
+        self.assertEqual(
+            "2026-06-10",
+            page.evaluate("document.activeElement.dataset.calendarDay"),
+            "live update must restore focus inside the visible month",
+        )
+        self.assertEqual(
+            scope,
+            page.evaluate(
+                "({range:state.range,date:state.rangeDate,"
+                "models:[...state.models].sort()})"
+            ),
+            "live data must not change range or model selection",
+        )
+        coverage = page.evaluate(
+            "()=>({first:DATA.snapshot.coverage.first_day,"
+            "last:DATA.snapshot.coverage.last_day})"
+        )
+        self.assertEqual("2026-05-05", coverage["first"])
+        self.assertEqual("2026-06-20", coverage["last"])
+        after = page.evaluate(
+            "()=>{const data=calendarMonthData(DATA.day,[...state.models],"
+            "'2026-06',DATA.snapshot.coverage,rangeInfo());"
+            "return {selectedModels:data.selectedModels,"
+            "cell:data.cells.find(item=>item.day==='2026-06-20')};}"
+        )
+        cell = after["cell"]
+        self.assertEqual(["model-a"], after["selectedModels"])
+        self.assertTrue(cell["hasRecord"])
+        self.assertTrue(cell["inCoverage"])
+        self.assertEqual("known", cell["tokenStatus"])
+        self.assertTrue(cell["tokensExact"])
+        self.assertEqual("20", cell["tokens"])
+        self.assertIn("2026", page.locator("#daily-calendar-month").inner_text())
+        self.assertEqual([], errors)
+        self.assertEqual([], console)
+
+    def test_calendar_live_reanchors_only_when_statistical_range_changes(self):
+        records = [
+            self._calendar_record("2026-05-05", "model-a", 7, "synthetic-cal-may"),
+            self._calendar_record("2026-05-05", "model-b", 3, "synthetic-cal-may-b"),
+            self._calendar_record("2026-06-02", "model-a", 100, "synthetic-cal-june"),
+            self._calendar_record("2026-06-02", "model-b", 5, "synthetic-cal-june-b"),
+            self._calendar_record("2026-06-10", "model-a", 50, "synthetic-cal-focus"),
+            self._calendar_record("2026-06-10", "model-b", 4, "synthetic-cal-focus-b"),
+        ]
+        payload, wire = _build_wire(records, since="2026-05-01", until="2026-06-30")
+        snapshot_id = payload["snapshot"]["id"]
+        html = report_dashboard.render_dashboard(
+            wire,
+            live={
+                "enabled": True, "interval": 300, "poll_interval": 60,
+                "has_snapshot": True, "refreshing": False,
+                "checked_at": _CHECKED_AT, "error": None,
+                "snapshot": snapshot_id, "revision": 1, "etag": '"cal-1"',
+            },
+        )
+        state, page, errors, console = self._open(
+            html,
+            _ready(wire, snapshot_id, etag='"cal-1"', revision=1),
+        )
+        page.wait_for_function(
+            "()=>typeof calendarState!=='undefined'&&"
+            "calendarState.month==='2026-06'&&"
+            "calendarState.stripEnd==='2026-06-10'&&"
+            "document.querySelectorAll('#daily-date-strip [data-strip-day]')"
+            ".length===7"
+        )
+        self.assertFalse(
+            page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+        )
+        initial_strip = page.evaluate(
+            "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+            "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+        )
+        self.assertEqual(
+            ["2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07",
+             "2026-06-08", "2026-06-09", "2026-06-10"],
+            initial_strip["days"],
+        )
+        page.evaluate("setModels(new Set(['model-a']))")
+        page.wait_for_function(
+            "()=>state.models.size===1&&state.models.has('model-a')"
+        )
+        self.assertEqual(
+            initial_strip,
+            page.evaluate(
+                "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+            ),
+        )
+        page.evaluate("applyRange('custom','2026-05-20')")
+        page.wait_for_function(
+            "()=>state.rangeDate==='2026-05-20'&&"
+            "calendarState.month==='2026-05'&&!calendarState.manual&&"
+            "calendarState.stripEnd==='2026-05-20'"
+        )
+        custom_strip = page.evaluate(
+            "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+            "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+        )
+        self.assertEqual(
+            ["2026-05-14", "2026-05-15", "2026-05-16", "2026-05-17",
+             "2026-05-18", "2026-05-19", "2026-05-20"],
+            custom_strip["days"],
+        )
+        self.assertFalse(
+            page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+        )
+        page.locator("#daily-calendar-toggle").click()
+        page.wait_for_function(
+            "()=>document.querySelector('#daily-calendar-picker').open&&"
+            "calendarState.renderedMonth==='2026-05'"
+        )
+        page.locator("#daily-calendar-prev").click()
+        page.wait_for_function(
+            "()=>calendarState.month==='2026-04'&&calendarState.manual"
+        )
+        self.assertEqual(
+            custom_strip,
+            page.evaluate(
+                "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+            ),
+            "manual month navigation must not move the strip",
+        )
+        page.evaluate(
+            "window.__liveCalendarPickerForTest="
+            "document.querySelector('#daily-calendar-picker')"
+        )
+        scope = page.evaluate(
+            "({range:state.range,date:state.rangeDate,"
+            "models:[...state.models].sort()})"
+        )
+        page.locator('[data-calendar-day="2026-04-15"]').focus()
+        page.evaluate("applyTheme('dark')")
+        page.evaluate("applyLanguage('en', false)")
+        page.wait_for_function(
+            "()=>calendarState.month==='2026-04'&&"
+            "document.activeElement.dataset.calendarDay==='2026-04-15'"
+        )
+        self.assertEqual("2026-04", page.evaluate("calendarState.month"))
+        self.assertTrue(
+            page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+        )
+        self.assertTrue(page.evaluate(
+            "window.__liveCalendarPickerForTest==="
+            "document.querySelector('#daily-calendar-picker')"
+        ))
+        self.assertEqual(
+            custom_strip,
+            page.evaluate(
+                "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+            ),
+            "theme/language redraw must retain the date window",
+        )
+        self.assertEqual(
+            "2026-04-15",
+            page.evaluate("document.activeElement.dataset.calendarDay"),
+            "theme/language must not move or defocus the browsed month",
+        )
+
+        payload2, wire2 = _build_wire(
+            records + [
+                self._calendar_record(
+                    "2026-05-06", "model-b", 30, "synthetic-cal-new"
+                )
+            ],
+            since="2026-05-01",
+            until="2026-06-30",
+        )
+        snapshot_id2 = payload2["snapshot"]["id"]
+        state.push(
+            _ready(wire2, snapshot_id2, etag='"cal-2"', revision=2)
+        )
+        self._force_check_without_focus(page)
+        page.wait_for_function(
+            "id=>DATA.snapshot&&DATA.snapshot.id===id", arg=snapshot_id2
+        )
+        self.assertEqual("2026-04", page.evaluate("calendarState.month"))
+        self.assertTrue(page.evaluate("calendarState.manual"))
+        self.assertTrue(
+            page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+        )
+        self.assertTrue(page.evaluate(
+            "window.__liveCalendarPickerForTest==="
+            "document.querySelector('#daily-calendar-picker')"
+        ))
+        self.assertEqual(
+            custom_strip,
+            page.evaluate(
+                "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+            ),
+            "live redraw must keep the range-anchored strip and open picker",
+        )
+        self.assertEqual(
+            "2026-04-15",
+            page.evaluate("document.activeElement.dataset.calendarDay"),
+        )
+        self.assertEqual(
+            scope,
+            page.evaluate(
+                "({range:state.range,date:state.rangeDate,"
+                "models:[...state.models].sort()})"
+            ),
+            "live data must not re-anchor or change the statistical scope",
+        )
+
+        # Re-applying the same effective range is not a range-key change, even
+        # after a live refresh and a manual month browse.
+        page.evaluate("applyRange('custom','2026-05-20')")
+        self.assertEqual("2026-04", page.evaluate("calendarState.month"))
+        self.assertTrue(page.evaluate("calendarState.manual"))
+        self.assertEqual(
+            custom_strip,
+            page.evaluate(
+                "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+            ),
+        )
+        self.assertTrue(
+            page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+        )
+
+        page.evaluate("applyRange('custom','2026-06-02')")
+        page.wait_for_function(
+            "()=>state.rangeDate==='2026-06-02'&&"
+            "calendarState.month==='2026-06'&&!calendarState.manual&&"
+            "calendarState.stripEnd==='2026-06-02'"
+        )
+        self.assertEqual(
+            ["2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30",
+             "2026-05-31", "2026-06-01", "2026-06-02"],
+            page.locator("#daily-date-strip [data-strip-day]").evaluate_all(
+                "els=>els.map(e=>e.dataset.stripDay)"
+            ),
+        )
+        self.assertTrue(
+            page.locator("#daily-calendar-picker").evaluate("e=>e.open"),
+            "changing the range outside day activation must not close details",
+        )
+        self.assertEqual([], errors)
+        self.assertEqual([], console)
 if __name__ == "__main__":
     unittest.main()

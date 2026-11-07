@@ -293,8 +293,8 @@ class CostCoreContractTests(unittest.TestCase):
     def test_parts_and_reference_are_frozen_values(self):
         self.assertEqual(["input", "output", "cache_read", "cache_write", "thoughts"],
                          json.loads(self.result["helpers"]["parts"]))
-        self.assertEqual("2026-10-12", self.result["helpers"]["referenceDate"])
-        self.assertEqual("openai,deepseek,zai", self.result["helpers"]["referenceVendors"])
+        self.assertEqual("2026-11-06", self.result["helpers"]["referenceDate"])
+        self.assertEqual("anthropic,openai,deepseek,zai,moonshot", self.result["helpers"]["referenceVendors"])
 
     def test_default_config(self):
         self.assertEqual({"v": 1, "currency": "USD", "reference": True, "prices": {}},

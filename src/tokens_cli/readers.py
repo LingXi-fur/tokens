@@ -25,8 +25,12 @@ import math
 import os
 import re
 import stat
+import sys
 import tempfile
-from datetime import datetime
+from collections import OrderedDict
+from copy import deepcopy
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from . import _claude_json, config
 
@@ -38,7 +42,26 @@ from . import _claude_json, config
 #   v5 = record 新增 billing 计费证据（schema 1，独立于既有用量统计）
 #   v6 = Claude 有界大日志读取、保留预算及安全缓存契约
 #   v7 = Claude 小/大行统一流式 JSON 投影，工程限额失败不再静默漏计
-CACHE_VERSION = 7
+#   v8 = Codex 投影/归档、响应去重及 output 不重复加 reasoning
+#   v9 = Codex 完整相邻证据下的显式零新增用量更新
+#   v10 = Codex 不变累计下有界下降的上下文估算更新
+#   v11 = Codex 完整对齐的现代镜像保留旧估算验证链
+#   v12 = Codex 无序镜像多重集相等；现代记录不再打断旧格式相邻性
+#   v13 = Codex 旧格式为完整账本，现代记录按值子集校验
+#   v14 = Codex 并集计数：旧格式全部计入，现代记录同值吸收、余量独立计入
+#   v15 = Codex 累计下降为新账本基线（生产者会中途重算累计值），不再视为冲突
+#   v16 = Codex 同累计锚点证据分歧保留首见（生产者 resume 会重写同快照），
+#         仅模型边界仍失败
+#   v17 = Codex 同累计锚点重复一律保留首见，跨模型边界也如此（resume 换模型
+#         会重写同快照）；legacy_anchor_mismatch 同文件不再触发
+#   v18 = Claude 记录新增 request_model（路由前的原始请求名，与解析后 backend
+#         并存）；计数/去重/费用口径零改动
+#   v19 = CCR hex 别名（settings.json 写入的 anthropic/claude-ccr-h<hex>）解码
+#         为内嵌后端名（如 zhipu/glm-5.3-flash），不再溢出 other；request_model
+#         仍保留编码原名
+#   v20 = hex 解码值剥除 provider 前缀（zhipu/glm-5.3-flash → glm-5.3-flash），
+#         与历史 router 裸名合一身份，避免身份容量折叠溢出 other
+CACHE_VERSION = 20
 
 # ---------- Billing evidence (schema 1) ----------
 # 独立计费证据：只读源头分量、字段是否实际存在及口径异常原因，绝不改写既有
@@ -133,6 +156,7 @@ _CODEX_BILLING_KEYS = {
     "cache_read": "cached_input_tokens",
     "reasoning": "reasoning_output_tokens",
     "total": "total_tokens",
+    "cache_write": "cache_write_input_tokens",
 }
 
 
@@ -142,6 +166,8 @@ def _codex_billing(usage):
     blocked = _missing_or_invalid(
         present, values, ("input", "output", "cache_read", "reasoning", "total"), reasons)
     parts = None
+    if present["cache_write"] and values["cache_write"] != 0:
+        reasons.append("cache_write_unconfirmed")
     if not blocked:
         inp = values["input"]
         outp = values["output"]
@@ -237,9 +263,9 @@ MAX_LINE_BYTES = 4 * 1024 * 1024
 CLAUDE_READ_CHUNK_BYTES = 64 * 1024
 MAX_CLAUDE_RECORDS = 100000
 MAX_CLAUDE_RETAINED_BYTES = 64 * 1024 * 1024
-MAX_TOTAL_RECORDS = 500000
-MAX_TOTAL_RETAINED_BYTES = 256 * 1024 * 1024
-MAX_CACHE_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_RECORDS = 1000000
+MAX_TOTAL_RETAINED_BYTES = 1024 * 1024 * 1024
+MAX_CACHE_BYTES = 512 * 1024 * 1024
 
 
 class CollectionIncompleteError(Exception):
@@ -251,14 +277,33 @@ class CollectionIncompleteError(Exception):
         "read_failed", "file_changed", "line_too_long", "record_limit",
         "retained_bytes_limit", "total_record_limit", "total_retained_bytes_limit",
         "json_depth_limit", "json_token_limit", "json_projection_limit",
+        "decompressor_unavailable", "decompression_failed", "decompression_limit",
+        "usage_invalid", "usage_identity_missing", "usage_conflict", "usage_mirror_mismatch",
         "json_number_limit",
     ))
 
-    def __init__(self, source, reason):
-        if source not in self.SOURCES or reason not in self.REASONS:
+    CONFLICT_KINDS = frozenset((
+        "modern_response_mismatch", "legacy_cumulative_rollback",
+        "legacy_anchor_mismatch", "cross_file_identity_mismatch",
+    ))
+
+    MISMATCH_KINDS = frozenset((
+        "usage", "model", "billing", "usage_model", "usage_billing",
+        "model_billing", "usage_model_billing",
+    ))
+
+    def __init__(self, source, reason, *, conflict_kind=None, mismatch_kind=None):
+        if (not isinstance(source, str) or not isinstance(reason, str)
+                or source not in self.SOURCES or reason not in self.REASONS):
             raise ValueError("invalid collection error code")
         self.source = source
         self.reason = reason
+        self.conflict_kind = (conflict_kind if source == "codex" and reason == "usage_conflict"
+                              and type(conflict_kind) is str
+                              and conflict_kind in self.CONFLICT_KINDS else None)
+        self.mismatch_kind = (mismatch_kind if self.conflict_kind == "legacy_anchor_mismatch"
+                              and type(mismatch_kind) is str
+                              and mismatch_kind in self.MISMATCH_KINDS else None)
         super().__init__(f"Collection incomplete ({source}: {reason})")
 
 
@@ -293,7 +338,8 @@ def _safe_open_flags():
 class _SafeReader:
     """安全打开普通文件，并只读打开时的长度；不保证祖先目录无软链。"""
 
-    def __init__(self, path):
+    def __init__(self, path, source="claude"):
+        self.source = source
         self.path = path
         self.fh = None
         self.initial = None
@@ -303,23 +349,23 @@ class _SafeReader:
         try:
             before = os.lstat(self.path)
         except OSError:
-            raise CollectionIncompleteError("claude", "stat_failed") from None
+            raise CollectionIncompleteError(self.source, "stat_failed") from None
         if not stat.S_ISREG(before.st_mode):
-            raise CollectionIncompleteError("claude", "unsafe_file")
+            raise CollectionIncompleteError(self.source, "unsafe_file")
         try:
             fd = os.open(self.path, _safe_open_flags())
         except OSError:
-            raise CollectionIncompleteError("claude", "open_failed") from None
+            raise CollectionIncompleteError(self.source, "open_failed") from None
         try:
             opened = os.fstat(fd)
             if not stat.S_ISREG(opened.st_mode):
-                raise CollectionIncompleteError("claude", "unsafe_file")
+                raise CollectionIncompleteError(self.source, "unsafe_file")
             if _stat_identity(before) != _stat_identity(opened):
-                raise CollectionIncompleteError("claude", "file_changed")
+                raise CollectionIncompleteError(self.source, "file_changed")
             if (opened.st_size < before.st_size
                     or (opened.st_size == before.st_size
                         and _stat_version(opened) != _stat_version(before))):
-                raise CollectionIncompleteError("claude", "file_changed")
+                raise CollectionIncompleteError(self.source, "file_changed")
             self.initial = opened
             self.remaining = opened.st_size
             self.fh = os.fdopen(fd, "rb")
@@ -337,7 +383,7 @@ class _SafeReader:
             return b""
         raw = self.fh.read(min(CLAUDE_READ_CHUNK_BYTES, self.remaining))
         if not raw:
-            raise CollectionIncompleteError("claude", "file_changed")
+            raise CollectionIncompleteError(self.source, "file_changed")
         self.remaining -= len(raw)
         return raw
 
@@ -346,14 +392,14 @@ class _SafeReader:
         try:
             named = os.lstat(self.path)
         except OSError:
-            raise CollectionIncompleteError("claude", "file_changed") from None
+            raise CollectionIncompleteError(self.source, "file_changed") from None
         for st in (current, named):
             if (not stat.S_ISREG(st.st_mode)
                     or _stat_identity(st) != _stat_identity(self.initial)
                     or st.st_size < self.initial.st_size
                     or (st.st_size == self.initial.st_size
                         and _stat_version(st) != _stat_version(self.initial))):
-                raise CollectionIncompleteError("claude", "file_changed")
+                raise CollectionIncompleteError(self.source, "file_changed")
         # 正常 append 不失败；下轮再读增量，不能缓存为新的完整版本。
         return (_stat_version(current) == _stat_version(self.initial)
                 and _stat_version(named) == _stat_version(self.initial))
@@ -481,7 +527,7 @@ def sanitize_session_title(raw, max_len=TITLE_MAX_LEN):
     return first[:max_len]
 
 
-def _to_local_date(iso_ts):
+def _to_local_date(iso_ts, *, _memo_proof=None):
     """ISO 字符串 → 本地时区 YYYY-MM-DD。非字符串/格式错返回 None（调用方跳过）。"""
     if not isinstance(iso_ts, str):
         return None
@@ -489,6 +535,11 @@ def _to_local_date(iso_ts):
         dt = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if _memo_proof is not None:
+        # Record the dependency before astimezone: Claude can skip this
+        # candidate if local-time conversion overflows (including empty output).
+        if dt.utcoffset() is None:
+            _memo_proof[0] = False
     return dt.astimezone(config.TZ).date().isoformat()
 
 
@@ -576,6 +627,28 @@ _TIER_MODEL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# settings.json 部署写入的 "anthropic/claude-ccr-h<hex>" 请求名：hex 后缀编码
+# 真实后端 "provider/model"。hex 是稳定传输格式，解码属于解析而非改写历史。
+# 解码值剥除 provider 前缀：hex 内嵌 "zhipu/glm-5.3-flash" 与历史 router 记录
+# 的裸名 "glm-5.3-flash" 是同一物理后端，合一身份避免容量溢出折叠进 other。
+_CCR_HEX_ALIAS_RE = re.compile(r"^anthropic/claude-ccr-h([0-9a-f]+)$")
+
+
+def _ccr_hex_backend(model):
+    """Decode a CCR hex alias into its bare backend name, else None."""
+    match = _CCR_HEX_ALIAS_RE.fullmatch(model)
+    if not match:
+        return None
+    blob = match.group(1)
+    if len(blob) % 2 or len(blob) < 2:
+        return None
+    try:
+        decoded = bytes.fromhex(blob).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return None
+    bare = decoded.rsplit("/", 1)[-1] if "/" in decoded else decoded
+    return bare or None
+
 
 def _tier_of(model):
     """Return a tier only for a plain tier or Claude-style request model."""
@@ -593,6 +666,9 @@ def _resolve_model(model):
     rules = _ccr_rules()
     if model in {backend for _, backend in rules}:
         return model
+    hex_backend = _ccr_hex_backend(model)
+    if hex_backend:
+        return hex_backend
     if not _tier_of(model):
         return model
     for needle, backend in rules:
@@ -641,7 +717,7 @@ def claude_files():
     return files
 
 
-def _claude_event_record(o):
+def _claude_event_record(o, *, _memo_proof=None):
     """一个 usage 事件归一化；坏 JSON/无效事件仍按既有口径跳过。"""
     if not isinstance(o, dict) or o.get("type") != "assistant":
         return None
@@ -655,9 +731,11 @@ def _claude_event_record(o):
     if not isinstance(usage, dict):
         return None
     ts = o.get("timestamp")
-    date = _to_local_date(ts)
+    date = (_to_local_date(ts) if _memo_proof is None
+            else _to_local_date(ts, _memo_proof=_memo_proof))
     if not date:
         return None
+    request_model = model
     model = _resolve_model(model)
     inp = usage.get("input_tokens", 0)
     outp = usage.get("output_tokens", 0)
@@ -669,6 +747,8 @@ def _claude_event_record(o):
     hash(dkey)  # 非法非 hashable ID/分量只是坏事件，不能导致整文件空成功。
     record = {
         "source": "claude", "ts": ts, "date": date, "model": model,
+        # 请求名仅信息性：计数/去重/费用全部按解析后的 model 归账。
+        "request_model": request_model,
         "input": inp, "output": outp, "cache_read": cread, "cache_write": cwrite,
         "total": inp + outp + cread + cwrite,
         "session": o.get("sessionId"), "cwd": o.get("cwd"),
@@ -742,14 +822,15 @@ def _claude_projected_lines(reader):
             bad = False
 
 
-def _claude_parse_state(path):
+def _claude_parse_state(path, *, _memo_proof=None):
     out, keys, seen_ids = [], [], set()
     retained = 0
     try:
         with _SafeReader(path) as reader:
             for o in _claude_projected_lines(reader):
                 try:
-                    result = _claude_event_record(o)
+                    result = (_claude_event_record(o) if _memo_proof is None else
+                              _claude_event_record(o, _memo_proof=_memo_proof))
                     if result is None:
                         continue
                     record, dkey, saved_key = result
@@ -919,61 +1000,16 @@ def gemini_parse(path):
 # ---------- Codex ----------
 
 def codex_files():
-    if not os.path.isdir(config.CODEX_SESSIONS):
-        return []
-    return glob.glob(os.path.join(config.CODEX_SESSIONS, "**", "rollout-*.jsonl"), recursive=True)
+    from . import codex_usage
+    return codex_usage.discover()
 
 
 def codex_parse(path):
-    out = []
-    cur_model = None
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line or len(line) > MAX_LINE_BYTES:
-                    continue
-                try:
-                    o = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(o, dict) or o.get("type") != "event_msg":
-                    continue
-                payload = o.get("payload")
-                if not isinstance(payload, dict):
-                    continue
-                ptype = payload.get("type")
-                if ptype == "turn_context":
-                    cur_model = payload.get("model") or cur_model
-                elif ptype == "token_count":
-                    info = payload.get("info") or {}
-                    usage = info.get("last_token_usage") or {}
-                    if not usage:
-                        continue
-                    ts = o.get("timestamp")
-                    date = _to_local_date(ts)
-                    if not date:
-                        continue
-                    inp = usage.get("input_tokens", 0)
-                    cached = usage.get("cached_input_tokens", 0)
-                    outp = usage.get("output_tokens", 0)
-                    reason = usage.get("reasoning_output_tokens", 0)
-                    out.append({
-                        "source": "codex",
-                        "ts": ts,
-                        "date": date,
-                        "model": cur_model or "codex-unknown",
-                        "input": inp,          # input_tokens 已含 cached
-                        "output": outp + reason,
-                        "cache_read": cached,  # 信息项，已计入 input，勿重复加
-                        "cache_write": 0,
-                        "total": usage.get("total_tokens", 0) or (inp + outp),
-                        "session": None,
-                        "billing": _codex_billing(usage),
-                    })
-    except OSError:
-        pass
-    return out
+    from . import codex_usage
+    return codex_usage.parse_state(path)[0]
+
+
+_BUILTIN_CODEX_PARSE = codex_parse
 
 
 # ---------- 调度 + 缓存 ----------
@@ -994,7 +1030,7 @@ def _safe_to_parse(path, st, source=None):
     """默认沿用旧资格规则；只有明确 Claude 来源免整文件大小上限。"""
     if os.path.islink(path) or not stat.S_ISREG(st.st_mode):
         return False
-    if source != "claude" and st.st_size > MAX_FILE_BYTES:
+    if source not in ("claude", "codex") and st.st_size > MAX_FILE_BYTES:
         return False
     return True
 
@@ -1139,11 +1175,15 @@ def _cached_records_valid(records, source):
     if not isinstance(records, list):
         return False
     fields = _RECORD_FIELDS | {"cwd"} if source == "claude" else _RECORD_FIELDS
+    if source == "claude":
+        fields = fields | {"request_model"}
     for record in records:
         if (not isinstance(record, dict) or set(record) != fields
                 or record.get("source") != source
                 or not all(isinstance(record.get(k), str) for k in ("ts", "date", "model"))
                 or not isinstance(record.get("billing"), dict)):
+            return False
+        if source == "claude" and not isinstance(record.get("request_model"), str):
             return False
         # token/billing 形态坏 cache 一律 miss 重析，不吞采集失败、不改口径。
         if not _cached_tokens_valid(record, source) or not _cached_billing_valid(
@@ -1155,6 +1195,12 @@ def _cached_records_valid(records, source):
         except (TypeError, ValueError, RecursionError, OverflowError):
             return False
     return True
+
+
+def _cached_codex_keys_valid(records, keys):
+    if not isinstance(keys, list) or len(keys) != len(records):
+        return False
+    return all(key is None or isinstance(key, str) and re.fullmatch(r"[0-9a-f]{64}", key) for key in keys)
 
 
 def _cached_claude_keys_valid(records, keys):
@@ -1215,13 +1261,304 @@ def _extend_records(out, records, retained):
     return retained
 
 
-def read_all(sources=None, use_cache=True):
+# Explicit parsing contracts, not a scan of module globals.  Retain the original
+# callable/code/defaults so a substituted parser or helper is never "trusted"
+# merely because a new round sees the same replacement twice.
+def _memo_callable_state(fn):
+    return (fn, getattr(fn, "__code__", None), getattr(fn, "__defaults__", None),
+            tuple(sorted((getattr(fn, "__kwdefaults__", None) or {}).items())))
+
+
+def _memo_contracts():
+    from . import codex_usage
+    common = (
+        (config, ("timezone_name",)),
+        (sys.modules[__name__], (
+            "_to_local_date", "_safe_tokens", "_field_evidence", "_billing_result",
+            "_missing_or_invalid", "_encoded_retained_bytes", "_record_retained_bytes",
+            "_dedup_retained_bytes", "_cached_records_valid", "_cached_tokens_valid",
+            "_cached_billing_valid", "_stat_identity", "_stat_version", "_safe_open_flags",
+            "_extend_records")),
+        (_SafeReader, ("__init__", "__enter__", "__exit__", "read_chunk", "finish")),
+        (_claude_json, ("_utf8_size",)),
+        (_claude_json.ProjectionParser, (
+            "__init__", "feed", "finish_line", "_check_active", "_discard_after_error",
+            "_charge", "_release", "_token", "_new_value", "_value_mode", "_accept_value",
+            "_start_value", "_start_key", "_finish_key", "_string_piece", "_flush_high",
+            "_unicode_unit", "_consume_string", "_number_piece", "_finish_number",
+            "_consume_number", "_literal_piece", "_consume_literal", "_close", "_consume")),
+        (_claude_json._Value, ("__init__",)),
+        (_claude_json._Member, ("__init__",)),
+        (_claude_json._Frame, ("__init__",)),
+        (_claude_json._String, ("__init__",)),
+        (_claude_json._Number, ("__init__",)),
+        (_claude_json._Literal, ("__init__",)),
+    )
+    own = common[1][0]
+    return {
+        "claude": common + ((own, (
+            "claude_parse", "_claude_parse_state", "_claude_event_record",
+            "_claude_line_chunks", "_claude_projected_lines", "_claude_billing",
+            "_cached_claude_keys_valid", "_check_claude_budget", "_resolve_model",
+            "_tier_of", "_ccr_rules", "_ccr_signature", "_parse_ccr_rules")),),
+        "codex": common + ((own, ("codex_parse", "_codex_billing", "_cached_codex_keys_valid")),
+                             (codex_usage, ("parse_state", "_events", "_chunks", "_fail",
+                                            "_text", "_signature", "_complete_usage", "identity"))),
+    }
+
+
+_MEMO_CONTRACTS = _memo_contracts()
+_MEMO_ORIGINALS = {
+    source: tuple((owner, name, _memo_callable_state(getattr(owner, name)))
+                  for owner, names in groups for name in names)
+    for source, groups in _MEMO_CONTRACTS.items()
+}
+# Binding class objects also detects replacement of a whole projection class.
+_MEMO_PROJECTION_TYPES = tuple(getattr(_claude_json, name) for name in (
+    "ProjectionParser", "_Value", "_Member", "_Frame", "_String", "_Number", "_Literal"))
+_MEMO_SAFE_READER = _SafeReader
+_MEMO_DATETIME = datetime
+
+
+def _memo_namespace_unchecked(source, files_fn, parse_fn):
+    """Explicit dependencies of the accepted built-in parse contract only."""
+    if SOURCES.get(source) != (files_fn, parse_fn):
+        return None
+    if source not in _MEMO_ORIGINALS or parse_fn is not {
+            "claude": _BUILTIN_CLAUDE_PARSE, "codex": _BUILTIN_CODEX_PARSE}[source]:
+        return None
+    if (datetime is not _MEMO_DATETIME or _SafeReader is not _MEMO_SAFE_READER
+            or tuple(getattr(_claude_json, name) for name in (
+            "ProjectionParser", "_Value", "_Member", "_Frame", "_String", "_Number", "_Literal"
+    )) != _MEMO_PROJECTION_TYPES):
+        return None
+    if any(_memo_callable_state(getattr(owner, name)) != original
+           for owner, name, original in _MEMO_ORIGINALS[source]):
+        return None
+    tz = config.TZ
+    # No str(tz)-based trust for arbitrary tzinfo, nor mutable system-local TZ.
+    if type(tz) is ZoneInfo:
+        zone = ("zoneinfo", tz, tz.key)
+    elif type(tz) is timezone:
+        zone = ("fixed", tz.utcoffset(None), tz.tzname(None))
+    else:
+        return None
+    from . import codex_usage
+    projection = (
+        tuple((key, tuple(value)) for key, value in sorted(_claude_json._FIELDS.items())),
+        _claude_json._SPACE, _claude_json._STRING_SPECIAL, _claude_json._DIGITS,
+        _claude_json._HEX, tuple(sorted(_claude_json._ESCAPES.items())),
+        _claude_json._CHUNK_BYTES,
+        (_claude_json._DROP, _claude_json._FULL, _claude_json._ROOT,
+         _claude_json._MESSAGE, _claude_json._USAGE, _claude_json._CODEX_ROOT,
+         _claude_json._CODEX_PAYLOAD, _claude_json._CODEX_INFO, _claude_json._CODEX_USAGE),
+    )
+    common = (
+        CACHE_VERSION, config.timezone_name(), zone, files_fn, parse_fn,
+        BILLING_SCHEMA, tuple(BILLING_COMPONENTS), _SAFE_INT_MAX,
+        tuple(sorted(_RECORD_FIELDS)), tuple(sorted(_BILLING_DICT_KEYS)),
+        tuple(sorted(_BILLING_VALIDATORS[source][0].items())),
+        _BILLING_VALIDATORS[source][1], MAX_FILE_BYTES, MAX_LINE_BYTES,
+        CLAUDE_READ_CHUNK_BYTES, MAX_TOTAL_RECORDS, MAX_TOTAL_RETAINED_BYTES,
+        MAX_CACHE_BYTES, projection,
+    )
+    if source == "claude":
+        specific = (config.CLAUDE_PROJECTS, MAX_CLAUDE_RECORDS, MAX_CLAUDE_RETAINED_BYTES,
+                    tuple(sorted(_CLAUDE_BILLING_KEYS.items())), _TIER_MODEL_RE,
+                    _NEEDLE_RE, _RETURN_RE, _ANY_RETURN_RE)
+    else:
+        specific = (config.CODEX_SESSIONS, config.CODEX_ARCHIVED_SESSIONS,
+                    codex_usage.MAX_RECORDS, codex_usage.MAX_RETAINED_BYTES,
+                    codex_usage.MAX_DECOMPRESSED_BYTES, codex_usage.ARCHIVE_TIMEOUT,
+                    codex_usage.CHUNK_BYTES, tuple(codex_usage.USAGE_FIELDS),
+                    tuple(codex_usage.ANCHOR_FIELDS),
+                    tuple(sorted(_CODEX_BILLING_KEYS.items())))
+    return common, specific
+
+
+def _memo_namespace(source, files_fn, parse_fn):
+    try:
+        return _memo_namespace_unchecked(source, files_fn, parse_fn)
+    except (AttributeError, TypeError, ValueError, RecursionError, OverflowError):
+        return None  # An unprovable optional contract is a miss, not a new error.
+
+
+def _memo_router_state():
+    """Stat only: use the existing ordered rules, never load router text here.
+
+    Own and target versions matter (a router may itself be a symlink).  This
+    does not repair the existing rule cache's mtime/size ABA limitations and is
+    not protection from an adversarial same-UID writer.
+    """
+    path = config.CCR_ROUTER_FILE
+    try:
+        own = os.lstat(path)
+    except FileNotFoundError:
+        identity, signature = (path, None, None), ""
+    except OSError:
+        return None, None
+    else:
+        try:
+            target = os.stat(path)
+        except OSError:
+            return None, None
+        if not stat.S_ISREG(target.st_mode):
+            return None, None
+        identity = (path, (own.st_mode, _stat_version(own)),
+                    (target.st_mode, _stat_version(target)))
+        signature = f"{target.st_mtime_ns}|{target.st_size}"
+    saved_signature, rules = _ccr_rules_cache
+    if saved_signature != signature or not isinstance(rules, list):
+        return identity, None
+    if any(not isinstance(rule, (tuple, list)) or len(rule) != 2
+           or any(type(part) is not str for part in rule) for rule in rules):
+        return identity, None
+    return identity, tuple(tuple(rule) for rule in rules)
+
+
+class _ParseMemo:
+    """Instance-private LRU; estimates are not an RSS cap (copies are temporary).
+
+    Sequential scans larger than capacity can thrash, including zero warm hits.
+    Oversized admission never evicts useful entries just to reject a new item.
+    No I/O, raw messages, failures, or whole-collection conclusions are retained.
+    """
+
+    def __init__(self, *, max_entries=4096, max_records=100000,
+                 max_bytes=64 * 1024 * 1024, max_entry_bytes=8 * 1024 * 1024,
+                 max_entry_records=20000):
+        self.max_entries = max_entries
+        self.max_records = max_records
+        self.max_bytes = max_bytes
+        self.max_entry_bytes = max_entry_bytes
+        self.max_entry_records = max_entry_records
+        self._entries = OrderedDict()
+        self._namespaces = {}
+        self._records = self._bytes = 0
+
+    def discard(self, key):
+        entry = self._entries.pop(key, None)
+        if entry is not None:
+            self._records -= len(entry[1])
+            self._bytes -= entry[3]
+
+    def activate(self, source, namespace):
+        if namespace is None or self._namespaces.get(source) != namespace:
+            for key in list(self._entries):
+                if key[0] == source:
+                    self.discard(key)
+            self._namespaces[source] = namespace
+
+    def get(self, key, version):
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        if entry[0] != version:
+            self.discard(key)
+            return None
+        self._entries.move_to_end(key)
+        return deepcopy((entry[1], entry[2]))
+
+    def put(self, key, version, records, dedup):
+        # Both trusted parsers preserve the exact timestamp used by
+        # _to_local_date in every raw preselection record.  Naive timestamps
+        # additionally depend on mutable process-local TZ, even for config.TZ
+        # = UTC.  Refuse the whole file instead of changing accepted parsing or
+        # claiming a system-timezone identity.  Empty results have no dates.
+        try:
+            if datetime is not _MEMO_DATETIME or any(
+                    type(record.get("ts")) is not str
+                    or datetime.fromisoformat(record["ts"].replace("Z", "+00:00")).utcoffset() is None
+                    for record in records):
+                self.discard(key)
+                return
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            self.discard(key)
+            return
+        if (self.max_entries <= 0 or len(records) > min(self.max_entry_records, self.max_records)
+                or not isinstance(dedup, list) or len(dedup) != len(records)):
+            return
+        ceiling = min(self.max_entry_bytes, self.max_bytes)
+        try:
+            # Include path/container bookkeeping and stop before the deep copy.
+            cost = 1024 + _encoded_retained_bytes(key)
+            if cost > ceiling:
+                return
+            for record, token in zip(records, dedup):
+                cost += _record_retained_bytes(record) + _dedup_retained_bytes(token)
+                if cost > ceiling:
+                    return
+            if (not _cached_records_valid(records, key[0])
+                    or not (_cached_claude_keys_valid(records, dedup) if key[0] == "claude"
+                            else _cached_codex_keys_valid(records, dedup))):
+                return
+            saved_records, saved_keys = deepcopy((records, dedup))
+        except (TypeError, ValueError, RecursionError, OverflowError):
+            return  # Capacity/shape refusal cannot become a new collection failure.
+        self.discard(key)
+        while self._entries and (len(self._entries) >= self.max_entries
+                                 or self._records + len(records) > self.max_records
+                                 or self._bytes + cost > self.max_bytes):
+            self.discard(next(iter(self._entries)))
+        self._entries[key] = version, saved_records, saved_keys, cost
+        self._records += len(records)
+        self._bytes += cost
+
+
+class _MemoRound:
+    """Per-source round context; at most one explicit context check per file edge."""
+
+    def __init__(self, memo, source, files_fn, parse_fn):
+        self.memo, self.source = memo, source
+        self.files_fn, self.parse_fn = files_fn, parse_fn
+        self.base = _memo_namespace(source, files_fn, parse_fn)
+        self.router, rules = _memo_router_state() if source == "claude" else ((), ())
+        self.rules = rules
+        self.namespace = (self.base, self.router, rules) if (
+            self.base is not None and self.router is not None and rules is not None) else None
+        memo.activate(source, self.namespace)
+
+    def current(self):
+        if self.base is None or _memo_namespace(self.source, self.files_fn, self.parse_fn) != self.base:
+            self.memo.activate(self.source, None)
+            return False
+        router, rules = _memo_router_state() if self.source == "claude" else ((), ())
+        if router != self.router or router is None or rules is None or (
+                self.rules is not None and self.rules != rules):
+            self.memo.activate(self.source, None)
+            return False
+        # A cold existing router may first populate _ccr_rules_cache during this
+        # file's parse.  Its unchanged own/target identity permits admission now.
+        self.rules = rules
+        self.namespace = (self.base, router, rules)
+        self.memo.activate(self.source, self.namespace)
+        return True
+
+    def get(self, key, st):
+        return self.memo.get(key, _stat_version(st)) if self.current() else None
+
+    def put(self, key, st, records, dedup, stable):
+        if stable and self.current():
+            self.memo.put(key, _stat_version(st), records, dedup)
+        else:
+            self.memo.discard(key)
+
+
+def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
     """所有来源成功才返回/存缓存；Claude 不完整异常不可降级为空成功。"""
+    def notify(event, source):
+        if observer is not None:
+            try:
+                observer(event, source)
+            except Exception:
+                pass  # 旁路观测失败不能改变采集结果或完整性。
+
     sources = sources or list(SOURCES)
     cache = _load_cache() if use_cache else {}
     seen_keys = set()
     out = []
     retained = 0
+    codex_seen = {}
     changed = False
 
     if use_cache and cache.get("_v") != CACHE_VERSION:
@@ -1240,57 +1577,107 @@ def read_all(sources=None, use_cache=True):
         if src not in SOURCES:
             continue
         files_fn, parse_fn = SOURCES[src]
+        memo_round = (_MemoRound(parse_memo, src, files_fn, parse_fn)
+                      if use_cache and parse_memo is not None and src in ("claude", "codex")
+                      else None)
+        active_memo_key = None
         try:
             files = files_fn()
         except CollectionIncompleteError:
             raise
         except OSError:
-            if src == "claude":
+            if src in ("claude", "codex"):
                 raise CollectionIncompleteError(src, "discovery_failed") from None
             files = []
         try:
             for path in files:
+                active_memo_key = (src, path)
+                notify("discovered", src)
+                skipped = False
                 try:
                     st = os.stat(path)
                 except OSError:
-                    if src == "claude":
+                    if src in ("claude", "codex"):
                         raise CollectionIncompleteError(src, "stat_failed") from None
+                    notify("skipped", src)
                     continue
                 if not _safe_to_parse(path, st, source=src):
-                    if src == "claude":
+                    if src in ("claude", "codex"):
                         raise CollectionIncompleteError(src, "unsafe_file")
+                    notify("skipped", src)
                     continue
                 key = f"{st.st_mtime_ns}|{st.st_size}"
                 ckey = src + "::" + path
                 seen_keys.add(ckey)
                 cached = cache.get(ckey)
-                warm = (use_cache and isinstance(cached, dict) and cached.get("key") == key
-                        and _cached_records_valid(cached.get("records"), src))
-                if warm and src == "claude":
-                    warm = (cached.get("identity") == list(_stat_identity(st))
-                            and cached.get("version") == list(_stat_version(st))
-                            and _cached_claude_keys_valid(cached["records"], cached.get("dedup")))
-                if warm:
-                    recs = cached["records"]
-                    if src == "claude":
-                        _check_claude_budget(recs, cached["dedup"])
-                        try:
-                            # Warm path 仍安全 open/fstat/identity，不能只信 path.stat。
-                            with _SafeReader(path) as reader:
-                                if _stat_version(reader.initial) != _stat_version(st):
-                                    warm = False
-                                else:
-                                    warm = reader.finish()
-                        except CollectionIncompleteError:
-                            raise
-                        except OSError:
-                            raise CollectionIncompleteError(src, "read_failed") from None
+                memo_hit = None
+                stable = True
+                disk_warm = False
+                # Disk keeps its existing priority and full validation chain.
+                # A controlled safety/budget exception propagates immediately;
+                # only a normal miss may try the optional RAM fallback.
+                for cache_kind in ("disk", "memo"):
+                    if cache_kind == "memo":
+                        memo_hit = memo_round.get(active_memo_key, st) if memo_round else None
+                        if memo_hit is None:
+                            break
+                        memo_records, memo_dedup = memo_hit
+                        cached = {"key": key, "records": memo_records, "dedup": memo_dedup,
+                                  "identity": list(_stat_identity(st)),
+                                  "version": list(_stat_version(st))}
+                    warm = (use_cache and isinstance(cached, dict) and cached.get("key") == key
+                            and _cached_records_valid(cached.get("records"), src))
+                    if warm and src == "claude":
+                        warm = (cached.get("identity") == list(_stat_identity(st))
+                                and cached.get("version") == list(_stat_version(st))
+                                and _cached_claude_keys_valid(cached["records"], cached.get("dedup")))
+                    if warm and src == "codex":
+                        warm = (cached.get("identity") == list(_stat_identity(st))
+                                and cached.get("version") == list(_stat_version(st))
+                                and _cached_codex_keys_valid(cached["records"], cached.get("dedup")))
+                    if warm:
+                        recs = cached["records"]
+                        dedup = cached.get("dedup")
+                        if src == "codex":
+                            try:
+                                with _SafeReader(path, source=src) as reader:
+                                    warm = (_stat_version(reader.initial) == _stat_version(st) and reader.finish())
+                            except OSError:
+                                raise CollectionIncompleteError(src, "read_failed") from None
+                        if src == "claude":
+                            _check_claude_budget(recs, cached["dedup"])
+                            try:
+                                # Warm path still safely opens/fstats/finishes.
+                                with _SafeReader(path) as reader:
+                                    if _stat_version(reader.initial) != _stat_version(st):
+                                        warm = False
+                                    else:
+                                        warm = reader.finish()
+                            except CollectionIncompleteError:
+                                raise
+                            except OSError:
+                                raise CollectionIncompleteError(src, "read_failed") from None
+                    if warm and memo_hit is not None and not memo_round.current():
+                        warm = False
+                    if warm:
+                        disk_warm = cache_kind == "disk"
+                        break
+                memo_proof = None
                 if not warm:
                     stable, dedup = True, None
                     try:
                         if src == "claude" and parse_fn is _BUILTIN_CLAUDE_PARSE:
-                            recs, dedup, opened, stable = _claude_parse_state(path)
+                            if memo_round is not None and memo_round.base is not None:
+                                memo_proof = [True]  # This file/call only; never stored.
+                                recs, dedup, opened, stable = _claude_parse_state(
+                                    path, _memo_proof=memo_proof)
+                            else:
+                                recs, dedup, opened, stable = _claude_parse_state(path)
                             # pre-stat 到 open 的追加也不能缓存为 pre-stat 版本。
+                            stable = stable and _stat_version(opened) == _stat_version(st)
+                        elif src == "codex" and parse_fn is _BUILTIN_CODEX_PARSE:
+                            from . import codex_usage
+                            recs, dedup, opened, stable = codex_usage.parse_state(path)
                             stable = stable and _stat_version(opened) == _stat_version(st)
                         else:
                             recs = parse_fn(path)
@@ -1300,27 +1687,60 @@ def read_all(sources=None, use_cache=True):
                     except CollectionIncompleteError:
                         raise
                     except OSError:
-                        if src == "claude":
+                        if src in ("claude", "codex"):
                             raise CollectionIncompleteError(src, "read_failed") from None
                         recs = []
+                        skipped = True
                     except Exception:
-                        if src == "claude":
+                        if src in ("claude", "codex"):
                             raise CollectionIncompleteError(src, "read_failed") from None
                         recs = []
+                        skipped = True
                     if stable:
                         entry = {"key": key, "records": recs}
-                        if src == "claude":
+                        if src in ("claude", "codex"):
                             entry.update(identity=list(_stat_identity(st)),
                                          version=list(_stat_version(st)), dedup=dedup)
                         cache[ckey] = entry
                     else:
                         cache.pop(ckey, None)
                     changed = True
+                raw_records = recs
+                if src == "codex" and dedup is not None:
+                    selected = []
+                    for record, token in zip(recs, dedup):
+                        if token is not None:
+                            if token in codex_seen:
+                                previous = codex_seen[token]
+                                if any(previous[k] != record[k] for k in ("model", "input", "output", "cache_read", "total", "billing")):
+                                    raise CollectionIncompleteError(
+                                        src, "usage_conflict", conflict_kind="cross_file_identity_mismatch")
+                                continue
+                            codex_seen[token] = record
+                        selected.append(record)
+                    recs = selected
                 retained = _extend_records(out, recs, retained)
+                if memo_round is not None and not disk_warm:
+                    if src == "claude" and not warm and memo_proof != [True]:
+                        parse_memo.discard(active_memo_key)
+                    else:
+                        memo_round.put(active_memo_key, st, raw_records, dedup, stable)
+                if memo_hit is not None and warm:
+                    # The disk schema/timing stays unchanged; no mutable memo
+                    # containers escape into the local disk-cache transaction.
+                    cache[ckey] = cached
+                    changed = True
+                notify("skipped" if skipped else
+                       "processed_cached" if warm else "processed_parsed", src)
+                active_memo_key = None
         except CollectionIncompleteError:
+            if memo_round is not None and active_memo_key is not None:
+                parse_memo.discard(active_memo_key)
             raise
         except OSError:
-            if src == "claude":
+            if memo_round is not None and active_memo_key is not None:
+                parse_memo.discard(active_memo_key)
+            if src in ("claude", "codex"):
                 raise CollectionIncompleteError(src, "discovery_failed") from None
             raise
 

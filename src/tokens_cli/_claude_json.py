@@ -29,12 +29,23 @@ class ProjectionLimit(ValueError):
 
 
 _DROP, _FULL, _ROOT, _MESSAGE, _USAGE = range(5)
+_CODEX_ROOT, _CODEX_PAYLOAD, _CODEX_INFO, _CODEX_USAGE = range(5, 9)
 _FIELDS = {
     _ROOT: ("type", "timestamp", "sessionId", "cwd", "message"),
     _MESSAGE: ("model", "id", "usage"),
     _USAGE: (
         "input_tokens", "output_tokens", "cache_read_input_tokens",
         "cache_creation_input_tokens",
+    ),
+    _CODEX_ROOT: ("type", "timestamp", "payload"),
+    _CODEX_PAYLOAD: (
+        "type", "id", "model", "session_id", "thread_id", "response_id",
+        "turn_id", "root_turn_id", "info", "usage",
+    ),
+    _CODEX_INFO: ("last_token_usage", "total_token_usage"),
+    _CODEX_USAGE: (
+        "input_tokens", "output_tokens", "cached_input_tokens",
+        "cache_write_input_tokens", "reasoning_output_tokens", "total_tokens",
     ),
 }
 _SPACE = " \t\r\n"
@@ -142,8 +153,11 @@ class ProjectionParser:
     def __init__(
         self, *, max_depth=256, max_tokens=2_000_000,
         max_projection_bytes=8 * 1024 * 1024,
-        max_projection_nodes=65_536, max_number_bytes=64 * 1024,
+        max_projection_nodes=65_536, max_number_bytes=64 * 1024, profile="claude",
     ):
+        if profile not in ("claude", "codex"):
+            raise ValueError("invalid_projection_profile")
+        self._root_mode = _ROOT if profile == "claude" else _CODEX_ROOT
         limits = (
             max_depth, max_tokens, max_projection_bytes,
             max_projection_nodes, max_number_bytes,
@@ -260,10 +274,18 @@ class ProjectionParser:
 
     def _value_mode(self):
         if not self._stack:
-            return _ROOT
+            return self._root_mode
         frame = self._stack[-1]
         if frame.mode == _DROP or (frame.kind == "object" and frame.key is None):
             return _DROP
+        if frame.mode == _CODEX_ROOT:
+            return _CODEX_PAYLOAD if frame.key == "payload" else _FULL
+        if frame.mode == _CODEX_PAYLOAD:
+            if frame.key == "info":
+                return _CODEX_INFO
+            return _CODEX_USAGE if frame.key == "usage" else _FULL
+        if frame.mode == _CODEX_INFO:
+            return _CODEX_USAGE
         if frame.mode == _ROOT:
             return _MESSAGE if frame.key == "message" else _FULL
         if frame.mode == _MESSAGE:
@@ -296,12 +318,12 @@ class ProjectionParser:
             if char == "[":
                 # A non-object root is unselected, but selected exceptional
                 # message/usage arrays must keep their full truthiness/type.
-                mode = _DROP if mode == _ROOT else (_FULL if mode != _DROP else _DROP)
+                mode = _DROP if mode in (_ROOT, _CODEX_ROOT) else (_FULL if mode != _DROP else _DROP)
             node = self._new_value(mode, {} if char == "{" else [])
             self._stack.append(_Frame("object" if char == "{" else "array", mode, node))
             self._peak_depth = max(self._peak_depth, len(self._stack))
         else:
-            if mode == _ROOT:
+            if mode in (_ROOT, _CODEX_ROOT):
                 mode = _DROP
             elif mode != _DROP:
                 mode = _FULL

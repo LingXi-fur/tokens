@@ -10,6 +10,7 @@ HOME = os.path.expanduser("~")
 CLAUDE_PROJECTS = os.path.join(HOME, ".claude", "projects")
 GEMINI_TMP = os.path.join(HOME, ".gemini", "tmp")
 CODEX_SESSIONS = os.path.join(HOME, ".codex", "sessions")
+CODEX_ARCHIVED_SESSIONS = os.path.join(HOME, ".codex", "archived_sessions")
 
 
 def _cache_root():
@@ -87,8 +88,8 @@ def _system_timezone():
 
 
 CACHE_DIR = os.path.join(_cache_root(), "ai-cli-tokens")
-# records-v7：Claude 小/大行统一有界 JSON 投影；旧 v5/v6 文件不删除。
-CACHE_FILE = os.path.join(CACHE_DIR, "records-v7.json")
+# records-v8：文件名沿用 v8 结构；records 内 _v 独立演进（当前 20），旧文件不删除。
+CACHE_FILE = os.path.join(CACHE_DIR, "records-v8.json")
 OUT_DIR = os.path.abspath(os.path.join(os.getcwd(), "out"))
 SESSION_SUMMARY_FILE = os.path.join(OUT_DIR, "session_summaries.json")
 TZ = _system_timezone()

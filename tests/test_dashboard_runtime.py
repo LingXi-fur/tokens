@@ -364,32 +364,39 @@ class DashboardRuntimeTests(unittest.TestCase):
             color_scheme=color_scheme,
             reduced_motion=reduced_motion,
         )
-        page = context.new_page()
-        if freeze_lazy:
-            page.add_init_script("""
-                class FrozenIntersectionObserver {
-                  observe() {}
-                  unobserve() {}
-                  disconnect() {}
-                  takeRecords() { return []; }
-                }
-                window.IntersectionObserver=FrozenIntersectionObserver;
-            """)
-        page_errors = []
-        console_errors = []
-        page.on("pageerror", lambda error: page_errors.append(str(error)))
-        page.on(
-            "console",
-            lambda message: console_errors.append(message.text)
-            if message.type == "error"
-            else None,
-        )
-        target = path or self._path
-        page.goto(
-            target if isinstance(target, str) and "://" in target else target.as_uri(),
-            wait_until="load",
-        )
-        return context, page, page_errors, console_errors
+        try:
+            page = context.new_page()
+            if freeze_lazy:
+                page.add_init_script("""
+                    class FrozenIntersectionObserver {
+                      observe() {}
+                      unobserve() {}
+                      disconnect() {}
+                      takeRecords() { return []; }
+                    }
+                    window.IntersectionObserver=FrozenIntersectionObserver;
+                """)
+            page_errors = []
+            console_errors = []
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+            page.on(
+                "console",
+                lambda message: console_errors.append(message.text)
+                if message.type == "error"
+                else None,
+            )
+            target = path or self._path
+            page.goto(
+                target if isinstance(target, str) and "://" in target else target.as_uri(),
+                wait_until="load",
+            )
+            return context, page, page_errors, console_errors
+        except BaseException:
+            try:
+                context.close()
+            except BaseException:
+                pass  # Preserve the initialization error if cleanup also fails.
+            raise
 
     def wait_for_flow(self, page):
         page.locator("#section-flow").scroll_into_view_if_needed()
@@ -415,6 +422,46 @@ class DashboardRuntimeTests(unittest.TestCase):
               panel.parentNode.insertBefore(window.__detachedFlowMap, panel);
             }
         """)
+
+    def test_overview_reading_order_starts_with_scope_and_usage(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            order = page.evaluate("""() => {
+              const ids=['section-scope','section-overview','section-trend','section-daily-models','section-cost'];
+              return ids.map(id=>({id,top:document.getElementById(id)?.offsetTop??-1}));
+            }""")
+            self.assertTrue(all(item["top"] >= 0 for item in order))
+            self.assertEqual(sorted(item["top"] for item in order), [item["top"] for item in order])
+            self.assertEqual("section-scope", page.locator(".section-links button").first.get_attribute("data-target"))
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
+    def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("""() => {
+              DATA.source=['claude','codex'];
+              DATA.provenance.sources={claude:{records:3,total:200,first_day:'2026-07-01',last_day:'2026-07-03'}};
+              renderSnapshotMeta();renderProvenance();
+            }""")
+            self.assertEqual("read", page.locator('#prov-sources [data-source="claude"]').get_attribute("data-source-state"))
+            self.assertEqual("empty", page.locator('#prov-sources [data-source="codex"]').get_attribute("data-source-state"))
+            self.assertEqual("disabled", page.locator('#prov-sources [data-source="gemini"]').get_attribute("data-source-state"))
+            self.assertIn("2026-07-03", page.locator('#prov-sources [data-source="claude"]').inner_text())
+            self.assertNotIn("200", page.locator("#source-coverage").inner_text())
+            page.evaluate("""() => {
+              delete DATA.provenance.sources.claude.first_day;
+              delete DATA.provenance.sources.claude.last_day;
+              renderProvenance();
+            }""")
+            self.assertNotIn("undefined", page.locator("#prov-sources").inner_text())
+            page.evaluate("applyLanguage('en',false)")
+            self.assertIn("Date unknown", page.locator('#prov-sources [data-source="claude"]').inner_text())
+            self.assertIn("Not enabled", page.locator('#prov-sources [data-source="gemini"]').inner_text())
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
 
     def test_command_palette_treats_model_names_as_text(self):
         context, page, page_errors, console_errors = self.new_page(
@@ -1028,6 +1075,34 @@ class DashboardRuntimeTests(unittest.TestCase):
                 finally:
                     context.close()
 
+    def test_local_source_coverage_is_bilingual_and_updates_with_live_sources(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            for width in (320, 390, 1280):
+                page.set_viewport_size({"width": width, "height": 820})
+                for language in ("zh", "en"):
+                    page.evaluate("language=>{applyLanguage(language,false);DATA.source=['claude','codex'];renderSnapshotMeta();}", language)
+                    text = page.locator("#source-coverage").inner_text()
+                    self.assertIn("Codex", text)
+                    self.assertIn("Claude App Code", text)
+                    boundary = page.locator("#source-boundary").text_content()
+                    self.assertIn("Cowork", boundary)
+                    self.assertIn("unknown" if language == "en" else "未知", boundary)
+                    self.assertIn("not an account-wide total" if language == "en" else "非账号全量", boundary)
+                    self.assertNotIn("0 Token", text)
+                    self.assertIn("Claude Code", page.locator("#source-txt").inner_text())
+                    self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth-innerWidth"), 1)
+            page.evaluate("()=>{const next=structuredClone(DATA);next.source=['codex'];reconcileLiveData(next);}")
+            text = page.locator("#source-coverage").inner_text()
+            self.assertNotIn("includes Claude App Code", text)
+            self.assertIn("Codex", page.locator("#source-txt").inner_text())
+            page.evaluate("DATA.source=[];renderSnapshotMeta()")
+            self.assertIn("No local source selected", page.locator("#source-coverage").inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
     def test_new_attribution_and_archive_labels_localize_to_english(self):
         context, page, page_errors, console_errors = self.new_page()
         try:
@@ -1071,6 +1146,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         try:
             page.evaluate("applyLanguage('en',false)")
             page.locator('#tabs [data-gran="day"]').click()
+            page.evaluate("document.getElementById('trend-table-details').open=true")
             model_button = page.locator('#thead [data-sort-key="m"]').first
             model_button.click()
             page.wait_for_function(
@@ -1257,6 +1333,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             page.locator('#tabs [data-gran="day"]').click()
+            page.evaluate("document.getElementById('trend-table-details').open=true")
             chronological = page.locator("#tbody tr[data-period]").evaluate_all(
                 "els => els.map(el => el.dataset.period)"
             )
@@ -1300,6 +1377,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             page.locator('#tabs [data-gran="day"]').click()
+            page.evaluate("document.getElementById('trend-table-details').open=true")
             button = page.locator('#thead [data-sort-key="m"][data-sort-model="model-a"]')
             header = button.locator("xpath=..")
             model_values = page.evaluate(
@@ -1335,6 +1413,7 @@ class DashboardRuntimeTests(unittest.TestCase):
     def test_malicious_model_name_is_safe_in_model_sort_attributes(self):
         context, page, page_errors, console_errors = self.new_page(path=self._malicious_path)
         try:
+            page.evaluate("document.getElementById('trend-table-details').open=true")
             model_name = "<img src=x onerror=window.__paletteXss=1>"
             button = page.locator('#thead [data-sort-key="m"]').filter(has_text=model_name)
             self.assertEqual(1, button.count())
@@ -1558,6 +1637,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             page.locator('#tabs [data-gran="day"]').click()
+            page.evaluate("document.getElementById('trend-table-details').open=true")
             row = page.locator("#tbody tr[data-period]").first
             row.focus()
             self.assertEqual(1, page.locator("#tbody tr.row-linked").count())
@@ -1653,9 +1733,18 @@ class DashboardRuntimeTests(unittest.TestCase):
                 viewport={"width": width, "height": 760}
             )
             try:
+                page.evaluate("document.getElementById('trend-table-details').open=true")
                 toggle = page.locator("#tbody tr[data-period] .row-toggle").first
                 self.assertTrue(toggle.is_visible(), f"row toggle must be visible at {width}px")
-                self.assertGreaterEqual(toggle.bounding_box()["height"], 44)
+                # Measure settled geometry, not a translated animation frame.
+                page.locator("#section-trend").evaluate(
+                    "card => Promise.all(card.getAnimations().map(animation => "
+                    "animation.finished.catch(() => {})))"
+                )
+                self.assertGreaterEqual(
+                    toggle.bounding_box()["height"], 44,
+                    f"row toggle must be at least 44px high in {self.BROWSER} at {width}px",
+                )
                 self.assertEqual(0, page.locator("#tbody .col-model:visible").count())
                 header_cells = page.locator("#thead th").count()
                 row_cells = page.locator("#tbody tr[data-period]").first.locator("td").count()
@@ -1799,6 +1888,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                 flash = page.locator('#daily-tbody tr:has-text("glm-5.3-flash")')
                 self.assertEqual(1, flash.count())
                 self.assertIn("13", flash.inner_text())
+                page.evaluate("() => { const d=document.querySelector('#glm-compare .glm-details'); if(d) d.open=true; }")
                 glm_text = page.locator("#glm-compare").inner_text()
                 self.assertIn("GLM-5.3", glm_text)
                 self.assertIn("GLM-5.3 Flash", glm_text)
@@ -1822,6 +1912,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                     ["glm-5.3", "glm-5.3-flash"],
                     page.evaluate("[...state.models].sort()"),
                 )
+                page.evaluate("() => { const d=document.querySelector('#glm-compare .glm-details'); if(d) d.open=true; }")
                 self.assertIn("13", page.locator("#glm-compare").inner_text())
                 self.assertEqual(models_before, page.evaluate("DATA.models.slice()"))
                 self.assertIn("Input", page.locator("#daily-thead").inner_text())
@@ -2902,6 +2993,919 @@ class DashboardRuntimeTests(unittest.TestCase):
             page.keyboard.press("Escape")
             self.assertFalse(page.evaluate("intervalState.active"))
             self.assertIsNone(page.evaluate("state.focusPeriod"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+
+    CALENDAR_PARTS = (
+        "", "-heading", "-note", "-prev", "-next", "-return", "-month",
+        "-grid", "-readout", "-status", "-legend",
+    )
+
+    def test_date_strip_defaults_to_seven_accessible_days_with_collapsed_picker(self):
+        expected_days = [
+            "2026-06-26", "2026-06-27", "2026-06-28", "2026-06-29",
+            "2026-06-30", "2026-07-01", "2026-07-02",
+        ]
+        for width in (1280, 390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                viewport={"width": width, "height": 820}, reduced_motion="reduce"
+            )
+            try:
+                page.wait_for_function(
+                    "()=>typeof calendarState!=='undefined'&&"
+                    "calendarState.stripEnd==='2026-07-02'&&"
+                    "document.querySelectorAll('#daily-date-strip [data-strip-day]')"
+                    ".length===7"
+                )
+                for theme in ("light", "dark"):
+                    for language in ("zh", "en"):
+                        with self.subTest(width=width, theme=theme, language=language):
+                            page.evaluate("theme=>applyTheme(theme)", theme)
+                            page.evaluate(
+                                "language=>applyLanguage(language,false)", language
+                            )
+                            root = page.locator("#daily-calendar")
+                            strip = page.locator("#daily-date-strip")
+                            picker = page.locator("#daily-calendar-picker")
+                            toggle = page.locator("#daily-calendar-toggle")
+                            root.scroll_into_view_if_needed()
+                            self.assertTrue(root.is_visible())
+                            self.assertTrue(strip.is_visible())
+                            self.assertEqual("group", strip.get_attribute("role"))
+                            self.assertTrue(strip.evaluate(r"""el => {
+                              const ids=(el.getAttribute('aria-labelledby')||'')
+                                .split(/\s+/).filter(Boolean);
+                              return (el.getAttribute('aria-label')||'').trim() ||
+                                ids.map(id=>document.getElementById(id)?.textContent||'')
+                                  .join(' ').trim();
+                            }"""))
+                            self.assertEqual("DETAILS", picker.evaluate("e=>e.tagName"))
+                            self.assertEqual("SUMMARY", toggle.evaluate("e=>e.tagName"))
+                            self.assertTrue(toggle.evaluate(
+                                "e=>e.parentElement.id==='daily-calendar-picker'"
+                            ))
+                            self.assertFalse(picker.evaluate("e=>e.open"))
+                            self.assertFalse(
+                                page.locator("#daily-calendar-grid").is_visible()
+                            )
+                            self.assertFalse(
+                                page.locator("#daily-calendar-prev").is_visible()
+                            )
+                            buttons = strip.locator("button[data-strip-day]")
+                            self.assertEqual(expected_days, buttons.evaluate_all(
+                                "els=>els.map(e=>e.dataset.stripDay)"
+                            ))
+                            self.assertEqual(["false"] * 7, buttons.evaluate_all(
+                                "els=>els.map(e=>e.getAttribute('aria-pressed'))"
+                            ))
+                            self.assertEqual(1, buttons.evaluate_all(
+                                "els=>els.filter(e=>e.tabIndex===0).length"
+                            ))
+                            self.assertEqual([-1] * 6 + [0], buttons.evaluate_all(
+                                "els=>els.map(e=>e.tabIndex).sort((a,b)=>a-b)"
+                            ))
+                            for item in buttons.evaluate_all("""els=>els.map(el=>{
+                              const r=el.getBoundingClientRect();
+                              return {day:el.dataset.stripDay,
+                                aria:el.getAttribute('aria-label')||'',
+                                width:r.width,height:r.height};
+                            })"""):
+                                self.assertIn(item["day"], item["aria"])
+                                self.assertGreaterEqual(item["width"], 44, item)
+                                self.assertGreaterEqual(item["height"], 44, item)
+                            missing = strip.locator('[data-strip-day="2026-06-26"]')
+                            self.assertIn("—", missing.inner_text())
+                            self.assertIn("250", strip.locator(
+                                '[data-strip-day="2026-07-01"]'
+                            ).get_attribute("aria-label"))
+                            visible_days = strip.evaluate("""el=>{
+                              const r=el.getBoundingClientRect();
+                              const left=Math.max(0,r.left),right=Math.min(innerWidth,r.right);
+                              return [...el.querySelectorAll('button[data-strip-day]')]
+                                .filter(button=>{const b=button.getBoundingClientRect();
+                                  return b.left>=left-1&&b.right<=right+1;}).length;
+                            }""")
+                            self.assertGreaterEqual(visible_days, 4)
+                            if width == 1280:
+                                self.assertEqual(7, visible_days)
+                            self.assertLessEqual(page.evaluate(
+                                "document.documentElement.scrollWidth"
+                            ), width + 1)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
+    def test_date_strip_keyboard_crosses_month_and_selection_matches_scope_and_csv(self):
+        context, page, page_errors, console_errors = self.new_page(
+            reduced_motion="reduce"
+        )
+        try:
+            page.wait_for_function(
+                "()=>typeof calendarState!=='undefined'&&"
+                "calendarState.stripEnd==='2026-07-02'&&"
+                "document.querySelectorAll('#daily-date-strip [data-strip-day]')"
+                ".length===7"
+            )
+            before = page.evaluate(
+                "({range:state.range,date:state.rangeDate,url:location.href,"
+                "total:document.querySelector('#k-total').textContent,"
+                "daily:document.querySelector('#daily-tbody').textContent})"
+            )
+            page.locator('#daily-date-strip [data-strip-day="2026-06-30"]').focus()
+            for key, expected in (
+                ("ArrowRight", "2026-07-01"),
+                ("ArrowLeft", "2026-06-30"),
+                ("Home", "2026-06-26"),
+                ("ArrowLeft", "2026-06-26"),
+                ("End", "2026-07-02"),
+                ("ArrowRight", "2026-07-02"),
+                ("ArrowLeft", "2026-07-01"),
+            ):
+                page.keyboard.press(key)
+                self.assertEqual(expected, page.evaluate(
+                    "document.activeElement.dataset.stripDay"
+                ), key)
+                self.assertEqual(expected, page.evaluate("calendarState.stripFocusDay"))
+                self.assertEqual(1, page.locator(
+                    '#daily-date-strip button[data-strip-day][tabindex="0"]'
+                ).count())
+                self.assertEqual([], page.locator(
+                    '#daily-date-strip [aria-pressed="true"]'
+                ).evaluate_all("els=>els.map(e=>e.dataset.stripDay)"))
+                self.assertEqual(before, page.evaluate(
+                    "({range:state.range,date:state.rangeDate,url:location.href,"
+                    "total:document.querySelector('#k-total').textContent,"
+                    "daily:document.querySelector('#daily-tbody').textContent})"
+                ), "moving strip focus must not select a statistical range")
+            page.keyboard.press("Enter")
+            page.wait_for_function(
+                "()=>state.range==='custom'&&state.rangeDate==='2026-07-01'&&"
+                "calendarState.stripEnd==='2026-07-01'"
+            )
+            self.assertEqual("daily-table-region", page.evaluate("document.activeElement.id"))
+            self.assertFalse(page.locator("#daily-calendar-picker").evaluate("e=>e.open"))
+            self.assertEqual(["2026-07-01"], page.locator(
+                '#daily-date-strip [aria-pressed="true"]'
+            ).evaluate_all("els=>els.map(e=>e.dataset.stripDay)"))
+            self.assertEqual("250", page.locator("#k-total").inner_text().strip())
+            self.assertIn("2026-07-01", page.locator("#range-ledger").inner_text())
+            self.assertIn("range=custom", page.url)
+            self.assertIn("date=2026-07-01", page.url)
+            self.assertIn("2026-07-01", page.locator("#daily-tbody").inner_text())
+            self.assertNotIn("2026-07-02", page.locator("#daily-tbody").inner_text())
+            with page.expect_download() as download_info:
+                page.locator("#daily-csv-btn").click()
+            self.assertEqual("tokens-daily-models.csv", download_info.value.suggested_filename)
+            rows = list(csv.DictReader(io.StringIO(
+                Path(download_info.value.path()).read_text(encoding="utf-8-sig")
+            )))
+            self.assertEqual(2, len(rows))
+            self.assertEqual({"model-a", "model-b"}, {row["model"] for row in rows})
+            for row in rows:
+                self.assertEqual("2026-07-01", row["date"])
+                self.assertEqual("2026-07-01", row["scope"])
+                self.assertEqual("100" if row["model"] == "model-a" else "150",
+                                 row["total_tokens"])
+                self.assertEqual("1", row["recorded_calls"])
+                self.assertEqual("exact", row["token_precision"])
+                self.assertEqual("exact", row["call_precision"])
+
+            # Filtering refreshes the same days, rather than following the latest
+            # record for the newly selected model or changing the date range.
+            strip_days = page.locator("#daily-date-strip [data-strip-day]").evaluate_all(
+                "els=>els.map(e=>e.dataset.stripDay)"
+            )
+            page.locator("#daily-csv-btn").focus()
+            page.evaluate("setModels(new Set(['model-a']))")
+            self.assertEqual(strip_days, page.locator(
+                "#daily-date-strip [data-strip-day]"
+            ).evaluate_all("els=>els.map(e=>e.dataset.stripDay)"))
+            self.assertEqual("2026-07-01", page.evaluate("calendarState.stripEnd"))
+            self.assertEqual("2026-07-01", page.evaluate("state.rangeDate"))
+            self.assertEqual("100", page.locator("#k-total").inner_text().strip())
+            self.assertIn("100", page.locator(
+                '#daily-date-strip [data-strip-day="2026-07-01"]'
+            ).get_attribute("aria-label"))
+            self.assertEqual("daily-csv-btn", page.evaluate("document.activeElement.id"))
+
+            # Space activates a no-record day too; it must not be a disabled cell
+            # or silently keep the previous day's statistics.
+            page.locator("#daily-calendar-toggle").click()
+            page.wait_for_function("()=>document.querySelector('#daily-calendar-picker').open")
+            page.locator('#daily-date-strip [data-strip-day="2026-06-30"]').focus()
+            page.keyboard.press("Space")
+            page.wait_for_function(
+                "()=>state.range==='custom'&&state.rangeDate==='2026-06-30'&&"
+                "calendarState.stripEnd==='2026-06-30'"
+            )
+            self.assertEqual("0", page.locator("#k-total").inner_text().strip())
+            self.assertEqual("daily-table-region", page.evaluate("document.activeElement.id"))
+            self.assertFalse(page.locator("#daily-calendar-picker").evaluate("e=>e.open"))
+            self.assertEqual(["2026-06-30"], page.locator(
+                '#daily-date-strip [aria-pressed="true"]'
+            ).evaluate_all("els=>els.map(e=>e.dataset.stripDay)"))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_calendar_native_toggle_escape_and_redraw_preserve_open_state_and_focus(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._interval_path, reduced_motion="reduce"
+        )
+        try:
+            page.wait_for_function(
+                "()=>typeof calendarState!=='undefined'&&"
+                "calendarState.stripEnd==='2026-06-04'&&"
+                "document.querySelectorAll('#daily-date-strip [data-strip-day]')"
+                ".length===7"
+            )
+            # Theme redraws may update only the theme URL parameter, not report scope.
+            scope = page.evaluate(
+                """() => {
+                  const url=new URL(location.href);
+                  url.searchParams.delete('t');
+                  return {range:state.range,date:state.rangeDate,url:url.href,
+                    total:document.querySelector('#k-total').textContent};
+                }"""
+            )
+            strip_days = page.locator("#daily-date-strip [data-strip-day]").evaluate_all(
+                "els=>els.map(e=>e.dataset.stripDay)"
+            )
+            page.evaluate("""() => {
+              window.__calendarShellForTest={
+                root:document.querySelector('#daily-calendar'),
+                strip:document.querySelector('#daily-date-strip'),
+                picker:document.querySelector('#daily-calendar-picker'),
+                toggle:document.querySelector('#daily-calendar-toggle')};
+            }""")
+            toggle = page.locator("#daily-calendar-toggle")
+            picker = page.locator("#daily-calendar-picker")
+            self.assertFalse(picker.evaluate("e=>e.open"))
+            toggle.focus()
+            page.keyboard.press("Enter")
+            page.wait_for_function(
+                "()=>document.querySelector('#daily-calendar-picker').open&&"
+                "calendarState.renderedMonth==='2026-06'"
+            )
+            self.assertTrue(page.locator("#daily-calendar-grid").is_visible())
+            page.locator('[data-calendar-day="2026-06-10"]').focus()
+            for key, expected in (
+                ("ArrowDown", "2026-06-17"),
+                ("ArrowUp", "2026-06-10"),
+            ):
+                page.keyboard.press(key)
+                self.assertEqual(expected, page.evaluate(
+                    "document.activeElement.dataset.calendarDay"
+                ))
+            for redraw in ("applyTheme('dark')", "applyLanguage('en',false)"):
+                page.evaluate(redraw)
+                self.assertTrue(picker.evaluate("e=>e.open"))
+                self.assertEqual("2026-06-10", page.evaluate(
+                    "document.activeElement.dataset.calendarDay"
+                ))
+                self.assertTrue(page.evaluate("""() => {
+                  const old=window.__calendarShellForTest;
+                  return old.root===document.querySelector('#daily-calendar')&&
+                    old.strip===document.querySelector('#daily-date-strip')&&
+                    old.picker===document.querySelector('#daily-calendar-picker')&&
+                    old.toggle===document.querySelector('#daily-calendar-toggle');
+                }"""), "redraw must keep the native details and summary nodes")
+                self.assertEqual(strip_days, page.locator(
+                    "#daily-date-strip [data-strip-day]"
+                ).evaluate_all("els=>els.map(e=>e.dataset.stripDay)"))
+            page.keyboard.press("Escape")
+            page.wait_for_function("()=>!document.querySelector('#daily-calendar-picker').open")
+            self.assertEqual("daily-calendar-toggle", page.evaluate("document.activeElement.id"))
+            self.assertFalse(page.locator("#daily-calendar-grid").is_visible())
+            self.assertEqual(scope, page.evaluate(
+                """() => {
+                  const url=new URL(location.href);
+                  url.searchParams.delete('t');
+                  return {range:state.range,date:state.rangeDate,url:url.href,
+                    total:document.querySelector('#k-total').textContent};
+                }"""
+            ))
+
+            # Native Space reopens; native Enter closes without selecting a day.
+            page.keyboard.press("Space")
+            page.wait_for_function("()=>document.querySelector('#daily-calendar-picker').open")
+            self.assertEqual("daily-calendar-toggle", page.evaluate("document.activeElement.id"))
+            for redraw in ("applyTheme('light')", "applyLanguage('zh',false)"):
+                page.evaluate(redraw)
+                self.assertTrue(picker.evaluate("e=>e.open"))
+                self.assertEqual("daily-calendar-toggle", page.evaluate("document.activeElement.id"))
+            page.keyboard.press("Enter")
+            page.wait_for_function("()=>!document.querySelector('#daily-calendar-picker').open")
+            page.locator('#daily-date-strip [data-strip-day="2026-06-03"]').focus()
+            for redraw in ("applyTheme('dark')", "applyLanguage('en',false)"):
+                page.evaluate(redraw)
+                self.assertFalse(picker.evaluate("e=>e.open"))
+                self.assertEqual("2026-06-03", page.evaluate(
+                    "document.activeElement.dataset.stripDay"
+                ))
+                self.assertEqual("2026-06-03", page.evaluate("calendarState.stripFocusDay"))
+            page.locator("#daily-csv-btn").focus()
+            for redraw in ("applyTheme('light')", "applyLanguage('zh',false)"):
+                page.evaluate(redraw)
+                self.assertFalse(picker.evaluate("e=>e.open"))
+                self.assertEqual("daily-csv-btn", page.evaluate("document.activeElement.id"))
+            self.assertEqual(scope, page.evaluate(
+                """() => {
+                  const url=new URL(location.href);
+                  url.searchParams.delete('t');
+                  return {range:state.range,date:state.rangeDate,url:url.href,
+                    total:document.querySelector('#k-total').textContent};
+                }"""
+            ))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_calendar_layout_matrix_theme_language_and_overflow(self):
+        for width in (1280, 390, 320):
+            context, page, page_errors, console_errors = self.new_page(
+                path=self._interval_path,
+                viewport={"width": width, "height": 820},
+                reduced_motion="reduce",
+            )
+            try:
+                page.wait_for_function(
+                    "()=>typeof calendarState!=='undefined'&&"
+                    "calendarState.month==='2026-06'&&"
+                    "document.querySelectorAll('#daily-date-strip [data-strip-day]')"
+                    ".length===7"
+                )
+                page.locator("#daily-calendar-toggle").click()
+                page.wait_for_function(
+                    "()=>document.querySelector('#daily-calendar-picker').open&&"
+                    "calendarState.renderedMonth==='2026-06'"
+                )
+                for theme in ("light", "dark"):
+                    for language in ("zh", "en"):
+                        with self.subTest(width=width, theme=theme, language=language):
+                            page.evaluate("theme => applyTheme(theme)", theme)
+                            page.evaluate(
+                                "language => applyLanguage(language, false)", language
+                            )
+                            for suffix in self.CALENDAR_PARTS:
+                                self.assertEqual(
+                                    1,
+                                    page.locator("#daily-calendar" + suffix).count(),
+                                    (width, theme, language, suffix),
+                                )
+                            self.assertEqual(
+                                "2026-06", page.evaluate("calendarState.month")
+                            )
+                            self.assertEqual(
+                                "2026-06",
+                                page.evaluate("calendarState.renderedMonth"),
+                            )
+                            month_text = page.locator(
+                                "#daily-calendar-month"
+                            ).inner_text()
+                            self.assertIn("2026", month_text)
+                            self.assertNotEqual(
+                                "", page.locator("#daily-calendar-heading").inner_text()
+                            )
+                            cells = page.locator(
+                                "#daily-calendar-grid button[role='gridcell']"
+                                "[data-calendar-day]"
+                            )
+                            self.assertEqual(30, cells.count())
+                            self.assertEqual(
+                                0,
+                                page.locator(
+                                    "#daily-calendar-grid button"
+                                    ":not([data-calendar-day])"
+                                ).count(),
+                            )
+                            geometry = cells.evaluate_all(
+                                """els => els.map(el => {
+                                  const rect=el.getBoundingClientRect();
+                                  return {tag:el.tagName, role:el.getAttribute('role'),
+                                          day:el.dataset.calendarDay,
+                                          width:rect.width, height:rect.height};
+                                })"""
+                            )
+                            for item in geometry:
+                                self.assertEqual("BUTTON", item["tag"])
+                                self.assertEqual("gridcell", item["role"])
+                                self.assertGreaterEqual(
+                                    item["width"], 24, (width, theme, language, item)
+                                )
+                                self.assertGreaterEqual(
+                                    item["height"], 24, (width, theme, language, item)
+                                )
+                            tabstops = page.evaluate(
+                                "[...document.querySelectorAll("
+                                "'#daily-calendar [data-calendar-day]')]"
+                                ".filter(e=>e.tabIndex===0).length"
+                            )
+                            self.assertEqual(1, tabstops)
+                            for button in ("prev", "next", "return"):
+                                control = page.locator(
+                                    "#daily-calendar-" + button
+                                )
+                                self.assertEqual(
+                                    "BUTTON", control.evaluate("e=>e.tagName")
+                                )
+                                self.assertTrue(
+                                    control.get_attribute("aria-label")
+                                    or control.inner_text().strip(),
+                                    (width, theme, language, button),
+                                )
+                            self.assertLessEqual(
+                                page.evaluate(
+                                    "document.documentElement.scrollWidth"
+                                ),
+                                width + 1,
+                                (width, theme, language),
+                            )
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
+    def test_calendar_token_zero_preserves_unknown_texture(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._interval_path, reduced_motion="reduce"
+        )
+        try:
+            for theme in ("light", "dark"):
+                with self.subTest(theme=theme):
+                    page.evaluate("theme => applyTheme(theme)", theme)
+                    cells = page.evaluate(
+                        """() => {
+                          const model='synthetic-calendar-model';
+                          const rows=[
+                            {period:'2026-06-05',models:{[model]:0},
+                             model_calls:{[model]:3}},
+                            {period:'2026-06-06',models:{[model]:0},
+                             model_calls:{}},
+                            {period:'2026-06-07',models:{[model]:0},
+                             model_calls:{[model]:Number.MAX_SAFE_INTEGER+1}}
+                          ];
+                          const data=calendarMonthData(
+                            rows,[model],'2026-06',{},null);
+                          const fixture=document.createElement('div');
+                          document.querySelector('#daily-calendar').append(fixture);
+                          try {
+                            fixture.innerHTML=rows.map(row=>calCellButton(
+                              data.cells.find(cell=>cell.day===row.period),
+                              true,'2026-06-05')).join('');
+                            return [...fixture.querySelectorAll('button')].map(el=>({
+                              day:el.dataset.calendarDay,
+                              zero:el.classList.contains('is-zero'),
+                              unknown:el.classList.contains('is-unknown'),
+                              intensity:el.classList.contains('intensity-0'),
+                              mark:el.querySelector('.cal-mark').textContent,
+                              image:getComputedStyle(el).backgroundImage,
+                              aria:el.getAttribute('aria-label')
+                            }));
+                          } finally { fixture.remove(); }
+                        }"""
+                    )
+                    self.assertEqual(3, len(cells))
+                    for index, cell in enumerate(cells):
+                        unknown = index > 0
+                        self.assertTrue(cell["zero"], cell)
+                        self.assertTrue(cell["intensity"], cell)
+                        self.assertEqual(unknown, cell["unknown"], cell)
+                        self.assertEqual("0!" if unknown else "0", cell["mark"])
+                        self.assertIn(cell["day"], cell["aria"])
+                        if unknown:
+                            self.assertIn("repeating-linear-gradient", cell["image"])
+                        else:
+                            self.assertEqual("none", cell["image"])
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_calendar_keyboard_selection_csv_and_scope_guards(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._interval_path,
+            viewport={"width": 1280, "height": 820},
+            reduced_motion="reduce",
+        )
+        try:
+            page.wait_for_function(
+                "()=>typeof calendarState!=='undefined'&&"
+                "calendarState.month==='2026-06'&&"
+                "document.querySelectorAll('#daily-date-strip [data-strip-day]')"
+                ".length===7"
+            )
+            page.locator("#daily-calendar-toggle").click()
+            page.wait_for_function(
+                "()=>document.querySelector('#daily-calendar-picker').open&&"
+                "calendarState.renderedMonth==='2026-06'"
+            )
+            self.assertEqual(
+                1,
+                page.evaluate(
+                    "[...document.querySelectorAll("
+                    "'#daily-calendar [data-calendar-day]')]"
+                    ".filter(e=>e.tabIndex===0).length"
+                ),
+            )
+            page.locator('[data-calendar-day="2026-06-02"]').focus()
+            self.assertEqual(
+                "2026-06-02",
+                page.evaluate("document.activeElement.dataset.calendarDay"),
+            )
+            page.keyboard.press("ArrowRight")
+            self.assertEqual(
+                "2026-06-03",
+                page.evaluate("document.activeElement.dataset.calendarDay"),
+            )
+            page.keyboard.press("End")
+            self.assertEqual(
+                "2026-06-30",
+                page.evaluate("document.activeElement.dataset.calendarDay"),
+            )
+            page.keyboard.press("ArrowRight")
+            self.assertEqual(
+                "2026-06-30",
+                page.evaluate("document.activeElement.dataset.calendarDay"),
+                "ArrowRight must clamp at the end of the visible month",
+            )
+            page.keyboard.press("Home")
+            self.assertEqual(
+                "2026-06-01",
+                page.evaluate("document.activeElement.dataset.calendarDay"),
+            )
+            page.keyboard.press("ArrowLeft")
+            self.assertEqual(
+                "2026-06-01",
+                page.evaluate("document.activeElement.dataset.calendarDay"),
+                "ArrowLeft must clamp at the start of the visible month",
+            )
+
+            page.keyboard.press("Enter")
+            page.wait_for_function(
+                "()=>state.range==='custom'&&state.rangeDate==='2026-06-01'"
+            )
+            self.assertEqual(
+                "daily-table-region", page.evaluate("document.activeElement.id")
+            )
+            self.assertEqual(
+                ["2026-06-01"],
+                page.locator('[data-strip-day][aria-pressed="true"]').evaluate_all(
+                    "els=>els.map(e=>e.dataset.stripDay)"
+                ),
+            )
+            self.assertIn("2026-06-01", page.locator("#daily-tbody").inner_text())
+            self.assertNotIn("2026-06-04", page.locator("#daily-tbody").inner_text())
+            with page.expect_download() as download_info:
+                page.locator("#daily-csv-btn").click()
+            csv_text = Path(download_info.value.path()).read_text(
+                encoding="utf-8-sig"
+            )
+            self.assertIn("2026-06-01", csv_text)
+            self.assertNotIn("2026-06-02", csv_text)
+            scope = page.evaluate(
+                "({range:state.range,date:state.rangeDate,"
+                "total:document.querySelector('#k-total').textContent})"
+            )
+
+            self.assertFalse(
+                page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+            )
+            strip_before_browse = page.evaluate(
+                "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+            )
+            page.locator("#daily-calendar-toggle").click()
+            page.wait_for_function(
+                "()=>document.querySelector('#daily-calendar-picker').open&&"
+                "calendarState.renderedMonth==='2026-06'"
+            )
+            page.locator('#daily-calendar-grid').wait_for(state="visible")
+            self.assertEqual(
+                ["2026-06-01"],
+                page.evaluate(
+                    "[...document.querySelectorAll("
+                    "'#daily-calendar [aria-selected=\"true\"]')]"
+                    ".map(e=>e.dataset.calendarDay)"
+                ),
+            )
+            page.locator("#daily-calendar-prev").click()
+            page.wait_for_function("()=>calendarState.month==='2026-05'")
+            self.assertEqual(
+                strip_before_browse,
+                page.evaluate(
+                    "({end:calendarState.stripEnd,days:[...document.querySelectorAll("
+                    "'#daily-date-strip [data-strip-day]')].map(e=>e.dataset.stripDay)})"
+                ),
+                "month browsing must not move the date strip",
+            )
+            self.assertTrue(page.evaluate("calendarState.manual"))
+            self.assertEqual(
+                scope,
+                page.evaluate(
+                    "({range:state.range,date:state.rangeDate,"
+                    "total:document.querySelector('#k-total').textContent})"
+                ),
+                "month browsing must not change the statistical scope or KPIs",
+            )
+            self.assertIn("2026-06-01", page.locator("#daily-tbody").inner_text())
+
+            page.locator('[data-calendar-day="2026-05-20"]').focus()
+            page.evaluate("applyTheme('dark')")
+            page.evaluate("applyLanguage('en', false)")
+            page.wait_for_function(
+                "()=>calendarState.month==='2026-05'&&"
+                "document.activeElement.dataset.calendarDay==='2026-05-20'"
+            )
+            self.assertEqual("2026-05", page.evaluate("calendarState.month"))
+            self.assertEqual(
+                "2026-05-20",
+                page.evaluate("document.activeElement.dataset.calendarDay"),
+                "theme/language re-render must restore in-calendar day focus",
+            )
+            self.assertEqual("2026-06-01", page.evaluate("state.rangeDate"))
+
+            page.locator("#daily-calendar-return").click()
+            page.wait_for_function(
+                "()=>calendarState.month==='2026-06'&&!calendarState.manual"
+            )
+            self.assertEqual("custom", page.evaluate("state.range"))
+            self.assertEqual("2026-06-01", page.evaluate("state.rangeDate"))
+            self.assertEqual(
+                ["2026-06-01"],
+                page.evaluate(
+                    "[...document.querySelectorAll("
+                    "'#daily-calendar [aria-selected=\"true\"]')]"
+                    ".map(e=>e.dataset.calendarDay)"
+                ),
+            )
+
+            page.locator('[data-calendar-day="2026-06-02"]').focus()
+            page.keyboard.press("Space")
+            page.wait_for_function(
+                "()=>state.range==='custom'&&state.rangeDate==='2026-06-02'"
+            )
+            self.assertEqual(
+                "daily-table-region", page.evaluate("document.activeElement.id")
+            )
+            self.assertFalse(
+                page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+            )
+            self.assertEqual(
+                ["2026-06-02"],
+                page.locator('[data-strip-day][aria-pressed="true"]').evaluate_all(
+                    "els=>els.map(e=>e.dataset.stripDay)"
+                ),
+            )
+            page.locator("#daily-calendar-toggle").click()
+            page.wait_for_function(
+                "()=>document.querySelector('#daily-calendar-picker').open&&"
+                "calendarState.renderedMonth==='2026-06'"
+            )
+            page.locator('#daily-calendar-grid').wait_for(state="visible")
+            self.assertEqual(
+                ["2026-06-02"],
+                page.evaluate(
+                    "[...document.querySelectorAll("
+                    "'#daily-calendar [aria-selected=\"true\"]')]"
+                    ".map(e=>e.dataset.calendarDay)"
+                ),
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_calendar_nav_and_command_palette_entry(self):
+        context, page, page_errors, console_errors = self.new_page(
+            path=self._glm_path,
+            viewport={"width": 1280, "height": 820},
+            reduced_motion="reduce",
+        )
+        try:
+            page.wait_for_function(
+                "()=>typeof calendarState!=='undefined'&&"
+                "calendarState.month==='2026-02'&&"
+                "document.querySelectorAll('#daily-date-strip [data-strip-day]')"
+                ".length===7"
+            )
+            nav = page.locator(
+                '#section-dock button[data-target="section-daily-models"]'
+            )
+            self.assertGreaterEqual(nav.count(), 1)
+            nav.first.click()
+            page.wait_for_function(
+                "()=>{const rect=document.getElementById('section-daily-models')"
+                ".getBoundingClientRect();"
+                "return rect.top>=-1&&rect.top<innerHeight;}"
+            )
+            self.assertTrue(page.locator("#daily-calendar").is_visible())
+            self.assertTrue(page.locator("#daily-date-strip").is_visible())
+            self.assertFalse(
+                page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+            )
+
+            self.assertTrue(
+                page.evaluate(
+                    "cmdActions().some(action=>"
+                    "String(action.t).includes('每日模型'))"
+                ),
+                "command palette needs a daily-models entry",
+            )
+            page.evaluate("openPalette()")
+            page.locator("#palette-q").fill("每日模型")
+            self.assertGreaterEqual(page.locator("#palette-list li").count(), 1)
+            self.assertIn(
+                "每日模型", page.locator("#palette-list").inner_text()
+            )
+            page.keyboard.press("Enter")
+            page.wait_for_function(
+                "()=>{const rect=document.getElementById('section-daily-models')"
+                ".getBoundingClientRect();"
+                "return rect.top>=-1&&rect.top<innerHeight;}"
+            )
+            self.assertFalse(
+                page.locator("#scrim").evaluate(
+                    "e=>e.classList.contains('open')"
+                )
+            )
+            self.assertTrue(page.locator("#daily-calendar").is_visible())
+            self.assertTrue(page.locator("#daily-date-strip").is_visible())
+            self.assertFalse(
+                page.locator("#daily-calendar-picker").evaluate("e=>e.open")
+            )
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def _request_model_fixture(self):
+        """Two backend/alias pairs plus one same-name day (no panel entry)."""
+        def record(date, model, request_model, total, session):
+            body = {
+                "source": "claude", "ts": date + "T09:00:00+08:00",
+                "date": date, "model": model,
+                "input": total // 2, "output": total // 4,
+                "cache_read": total // 4, "cache_write": 0,
+                "total": total, "session": session,
+                "cwd": "/synthetic/request-fixture",
+            }
+            if request_model is not None:
+                body["request_model"] = request_model
+            return body
+        records = [
+            record("2026-06-01", "glm-5.3", "claude-opus-5-5", 300, "synthetic-req-a"),
+            record("2026-06-02", "glm-5.3", "claude-opus-5-5", 100, "synthetic-req-b"),
+            record("2026-06-03", "model-a", None, 100, "synthetic-req-c"),
+        ]
+        with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
+            payload = report_dashboard.build_payload(
+                records, since="2026-05-01", until="2026-06-30",
+                sources=["claude"], generated_at=datetime(2026, 7, 15, 12, 0),
+            )
+        path = Path(self._tmp.name) / "synthetic-dashboard-request-model.html"
+        path.write_text(
+            report_dashboard.render_dashboard(dashboard_wire.encode_payload(payload)),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_daily_table_shows_request_name_column_and_mapping_panel(self):
+        path = self._request_model_fixture()
+        context, page, page_errors, console_errors = self.new_page(path=path)
+        try:
+            self.assertFalse(
+                page.locator("#request-model-details").evaluate("e=>e.open"),
+                "mapping panel starts collapsed")
+            page.evaluate(
+                "document.getElementById('request-model-details').open=true")
+            chips = page.locator("#request-model-chips").inner_text()
+            self.assertIn("claude-opus-5-5", chips)
+            self.assertIn("glm-5.3", chips)
+            self.assertIn("400", chips)
+            self.assertNotIn("model-a", chips.split("claude-opus-5-5")[0].split("glm-5.3")[0])
+            page.evaluate("setGran('day')")
+            page.evaluate("setModels(DATA.models.slice())")
+            page.evaluate(
+                "document.getElementById('daily-table-details').open=true")
+            self.assertIn(
+                "请求名", page.locator("#daily-thead").inner_text())
+            alias_rows = page.locator(
+                '#daily-tbody tr:has-text("glm-5.3"):has-text("claude-opus-5-5")')
+            self.assertEqual(2, alias_rows.count())
+            plain_rows = page.locator(
+                '#daily-tbody tr:has-text("model-a")')
+            self.assertTrue(all(
+                "claude-opus" not in plain_rows.nth(index).inner_text()
+                for index in range(plain_rows.count())))
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_route_map_renders_flows_hidden_without_aliases_and_highlights_on_hover(self):
+        path = self._request_model_fixture()
+        context, page, page_errors, console_errors = self.new_page(path=path)
+        try:
+            details = page.locator("#route-map-details")
+            self.assertFalse(details.evaluate("e=>e.open"), "route map starts collapsed")
+            page.evaluate("document.getElementById('route-map-details').open=true")
+            svg = page.locator("#route-map-svg")
+            self.assertEqual(1, svg.count(), "route map svg exists")
+            # One flow: claude-opus-5-5 -> glm-5.3 (400 total). Links + labels present.
+            links = page.locator("#route-map-svg path.rm-link")
+            self.assertEqual(1, links.count())
+            labels_text = page.evaluate(
+                "()=>Array.from(document.querySelectorAll('#route-map-svg text.rm-node')).map(t=>t.textContent).join(' ')")
+            self.assertIn("claude-opus-5-5", labels_text)
+            self.assertIn("glm-5.3", labels_text)
+            # Hover a link (dispatch events; page ambient motion keeps SVG
+            # geometry unsteady for physical hover): it gains the highlight class.
+            page.evaluate(
+                "()=>{const el=document.querySelector('#route-map-svg path.rm-link');"
+                "el.dispatchEvent(new MouseEvent('mouseenter'));}")
+            page.wait_for_function(
+                "()=>document.querySelectorAll('#route-map-svg path.rm-link.rm-hot').length===1")
+            # Backend node click filters models (target model selected);
+            # dispatch via JS because ambient motion keeps nodes unsteady.
+            page.evaluate(
+                "()=>document.querySelector(\"#route-map-svg g.rm-node[data-model='glm-5.3']\")"
+                ".dispatchEvent(new MouseEvent('click',{bubbles:true}))")
+            page.wait_for_function(
+                "()=>Array.from(document.querySelectorAll('#filters input[type=checkbox]'))"
+                ".filter(cb=>cb.checked).length===1")
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_route_map_hidden_when_no_request_aliases(self):
+        # Same-name-only fixture: model-a has no request_model, so no flows.
+        def record(date, model, total):
+            return {
+                "source": "claude", "ts": date + "T09:00:00+08:00",
+                "date": date, "model": model,
+                "input": total // 2, "output": total // 4,
+                "cache_read": total // 4, "cache_write": 0,
+                "total": total, "session": "synthetic-plain",
+                "cwd": "/synthetic/plain-fixture",
+            }
+        records = [record("2026-06-01", "model-a", 120)]
+        with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
+            payload = report_dashboard.build_payload(
+                records, since="2026-05-01", until="2026-06-30",
+                sources=["claude"], generated_at=datetime(2026, 7, 15, 12, 0),
+            )
+        path = Path(self._tmp.name) / "synthetic-dashboard-route-empty.html"
+        path.write_text(
+            report_dashboard.render_dashboard(dashboard_wire.encode_payload(payload)),
+            encoding="utf-8",
+        )
+        context, page, page_errors, console_errors = self.new_page(path=path)
+        try:
+            self.assertTrue(
+                page.locator("#route-map-details").evaluate("e=>e.hidden"),
+                "route map hidden without alias flows")
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_daily_and_trend_tables_collapse_by_default_and_daily_opens_on_selection(self):
+        path = self._request_model_fixture()
+        context, page, page_errors, console_errors = self.new_page(path=path)
+        try:
+            self.assertFalse(
+                page.locator("#daily-table-details").evaluate("e=>e.open"))
+            self.assertFalse(
+                page.locator("#trend-table-details").evaluate("e=>e.open"))
+            # Hidden tables expose no text via inner_text.
+            self.assertNotIn("2026-02-03", page.locator("#daily-table-region").inner_text())
+            page.evaluate("setGran('day')")
+            page.locator('[data-strip-day="2026-06-03"]').click()
+            page.wait_for_function(
+                "()=>document.getElementById('daily-table-details').open===true")
+            self.assertEqual(
+                "daily-table-region", page.evaluate("document.activeElement.id"))
+            self.assertIn(
+                "2026-06-03", page.locator("#daily-tbody").inner_text())
+            self.assertFalse(
+                page.locator("#trend-table-details").evaluate("e=>e.open"),
+                "trend table stays collapsed; selection only opens daily")
+            # Daily summary mirrors the trend summary idiom: rows + total tokens.
+            summary = page.locator("#daily-table-details summary").inner_text()
+            self.assertIn("行", summary, summary)
+            self.assertIn("Token", summary, summary)
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:

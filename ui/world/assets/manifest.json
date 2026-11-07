@@ -1,0 +1,28 @@
+{
+  "license": "CC0 1.0 Universal, site-wide for downloaded assets (https://polyhaven.com/license). Site branding, previews and copy are NOT covered and were not copied.",
+  "retrieved": "2026-10-13",
+  "api": "Poly Haven Public API (https://api.polyhaven.com, ToS: https://github.com/Poly-Haven/Public-API/blob/master/ToS.md); named User-Agent 'tokens-world-prototype/1.0', serial requests, 6 API calls + 4 file downloads, no site scraping.",
+  "budget": { "maxDownloadBytes": 4194304, "downloadedBytes": 3831966, "inlineTargetBytes": 8388608 },
+  "sets": {
+    "rock": {
+      "asset": "cliff_side",
+      "source": "https://polyhaven.com/a/cliff_side",
+      "authors": ["James Ray Cock (Photography)", "Jenelle van Heerden (Processing)", "Dario Barresi (Photography)"],
+      "maps": {
+        "albedo": { "file": "cliff_side/cliff_side_diff_1k.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cliff_side/cliff_side_diff_1k.jpg", "md5": "a64986e5f858e4f8df30f0394ededd78", "sha256": "5c6858541108fc34e5726ecf4d8d942d6301155c489e7341619260f2909570c5", "bytes": 859756, "width": 1024, "height": 1024, "channels": "RGB" },
+        "normal": { "file": "cliff_side/cliff_side_nor_gl_1k.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cliff_side/cliff_side_nor_gl_1k.jpg", "md5": "604fd4101fe5ad92181c22b96ed795c5", "sha256": "28583860810a7d6d8ffddeaaff463408fc580338fd5a92c67b058207e75375a3", "bytes": 1007837, "width": 1024, "height": 1024, "channels": "RGB", "convention": "OpenGL (Y+)" }
+      }
+    },
+    "ground": {
+      "asset": "rocky_terrain",
+      "source": "https://polyhaven.com/a/rocky_terrain",
+      "authors": ["Amal Kumar"],
+      "maps": {
+        "albedo": { "file": "rocky_terrain/rocky_terrain_diff_1k.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rocky_terrain/rocky_terrain_diff_1k.jpg", "md5": "306ae62c38ab1942a63e831a534875ab", "sha256": "429315865fd89c150272592f6d93def174c6f69804a565ff08e53627a885579b", "bytes": 905179, "width": 1024, "height": 1024, "channels": "RGB" },
+        "normal": { "file": "rocky_terrain/rocky_terrain_nor_gl_1k.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rocky_terrain/rocky_terrain_nor_gl_1k.jpg", "md5": "4d42a558317f1d52c9080c73372d125a", "sha256": "a6556e1220c6e6c822e68ceeb9589719e4db8c87340199657cc705fea6ecf391", "bytes": 1059194, "width": 1024, "height": 1024, "channels": "RGB", "convention": "OpenGL (Y+)" }
+      }
+    }
+  },
+  "omitted": { "Rough maps": "Not downloaded; procedural roughness fallback is kept so the total download stays within the 4 MiB budget (3.66 MiB used)." },
+  "regenerate": "python3 ui/world/assets/generate.py  (from this directory; stdlib only) reproduces textures.js byte-for-byte from the original jpgs."
+}

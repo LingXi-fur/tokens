@@ -343,6 +343,10 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
     day_periods = {}
     week_periods = {}
     month_periods = {}
+    # v19 请求名（信息性）：按报告日 × 解析后 model 累积别名 token；
+    # 同名/缺字段/匿名化一律不产生条目，计数与费用口径零改动。
+    day_request = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    request_totals = defaultdict(int)
     global_cwds = {}
     replay_heaps = defaultdict(list)
     session_counts = defaultdict(int)
@@ -504,6 +508,8 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             "with_cache_read": 0,
             "with_cache_write": 0,
             "with_components": 0,
+            "first_day": None,
+            "last_day": None,
         })
         provenance["records"] += 1
         provenance["total"] += total
@@ -511,6 +517,8 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         provenance["last_day"] = day if provenance["last_day"] is None or day > provenance["last_day"] else provenance["last_day"]
         source_provenance["records"] += 1
         source_provenance["total"] += total
+        source_provenance["first_day"] = day if source_provenance["first_day"] is None or day < source_provenance["first_day"] else source_provenance["first_day"]
+        source_provenance["last_day"] = day if source_provenance["last_day"] is None or day > source_provenance["last_day"] else source_provenance["last_day"]
         component_keys = ("input", "output", "cache_read", "cache_write")
         coverage = (
             ("valid_ts", local_dt is not None),
@@ -543,6 +551,10 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         _period_add(day_periods, day, model, total, input_value, output_value, cache_value, cache_write, source)
         _period_add(week_periods, week, model, total, input_value, output_value, cache_value, cache_write, source)
         _period_add(month_periods, month, model, total, input_value, output_value, cache_value, cache_write, source)
+        raw_request = record.get("request_model")
+        if not anonymize and isinstance(raw_request, str) and raw_request != raw_model:
+            day_request[day][model][raw_request] += total
+            request_totals[(raw_request, model, source)] += total
 
         detail = day_acc.get(day)
         if detail is None:
@@ -804,6 +816,19 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "month": _pack_periods(month_periods),
         "cost": cost,
     }
+    # 恒形状：day 行总带 request_models（缺省 {}），week/month 不带。
+    day_requests_packed = {
+        period: {backend: dict(sorted(names.items())) for backend, names in models.items()}
+        for period, models in day_request.items()
+    }
+    for row in dashboard_data["day"]:
+        row["request_models"] = day_requests_packed.get(row["period"], {})
+    dashboard_data["request_models"] = [
+        {"request": request, "model": model, "source": source, "total": total}
+        for (request, model, source), total in sorted(
+            request_totals.items(), key=lambda item: item[1], reverse=True
+        )[:24]
+    ]
     snapshot_data = {
         "snapshot_schema": SNAPSHOT_SCHEMA,
         "metric_schema": METRIC_SCHEMA,

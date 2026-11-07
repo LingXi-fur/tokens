@@ -11,6 +11,7 @@ try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.l
 <script>/* 首帧前即进入准备态，避免 JS 渲染前闪现伪造的 0 值。 */
 try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProperty.call(__l,'has_snapshot')&&!__l.has_snapshot;if(__p)document.body.setAttribute('data-live','prepare');}catch(e){}
 </script>
+<div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
 <div class=wrap>
 
 <header>
@@ -19,6 +20,8 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
     <div>
       <h1>Token 用量</h1>
       <div class=sub id=meta></div>
+      <details class=snapshot-details><summary data-i18n-key="Snapshot details">快照说明</summary><p class=sub id=snapshot-detail data-i18n-skip></p><p class=sub id=source-boundary data-i18n-skip></p></details>
+      <div class=sub id=source-coverage data-i18n-skip></div>
     </div>
   </div>
   <div class=head-tools>
@@ -50,9 +53,19 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
   </div>
 </header>
 <div class=live-prepare id=live-prepare role=status aria-live=polite aria-hidden=true><strong>正在准备数据</strong><span>首次扫描正在后台进行，完成后自动显示图表。</span></div>
+<section class=live-progress id=live-progress aria-live=off data-i18n-skip hidden>
+ <p class=live-retained id=live-restored hidden></p>
+ <p class=live-storage-warning id=live-storage-warning hidden></p>
+ <div class=live-scan id=live-scan hidden>
+  <div class=live-progress-heading><strong id=live-progress-stage aria-live=polite aria-atomic=true></strong><span id=live-progress-outcome></span></div>
+  <div class=live-progress-counts id=live-progress-counts></div>
+  <p class=live-progress-updated id=live-progress-updated></p>
+  <details id=live-progress-details><summary id=live-progress-summary></summary><dl id=live-progress-timings></dl><p id=live-progress-cache></p></details>
+ </div>
+</section>
 
 <nav class=section-dock id=section-dock aria-label="Dashboard 区域导航">
- <div class=section-links><button data-target=section-overview class=on>总览</button><button data-target=section-cost>费用</button><button data-target=section-trend>趋势</button><button data-target=section-delta>归因</button><button data-target=section-provenance>体检</button><button data-target=section-almanac>年鉴</button><button data-target=section-achievements>成就</button><button data-target=section-project>项目</button><button data-target=section-rhythm>节奏</button><button data-target=section-modes>模式</button><button data-target=section-reuse>复用</button><button data-target=section-flow>去向</button><button data-target=section-top>Top</button></div>
+ <div class=section-links><button data-target=section-scope class=on>范围</button><button data-target=section-overview>总览</button><button data-target=section-trend>趋势</button><button data-target=section-daily-models data-i18n-key="Daily model usage">每日模型用量</button><button data-target=section-cost>费用</button><button data-target=section-delta>归因</button><button data-target=section-provenance>体检</button><button data-target=section-almanac>年鉴</button><button data-target=section-achievements>成就</button><button data-target=section-project>项目</button><button data-target=section-rhythm>节奏</button><button data-target=section-modes>模式</button><button data-target=section-reuse>复用</button><button data-target=section-flow>去向</button><button data-target=section-top>Top</button></div>
  <div class=view-wrap><button class=view-capsule id=view-capsule type=button aria-controls=view-pop aria-expanded=false title="查看当前视图状态"><span id=view-label>月 · 全部模型 · 全景</span></button><div class=view-pop id=view-pop><h3>Current View · 当前视图</h3><div class=view-summary id=view-summary></div><div class=view-actions><button class=ghostbtn id=view-copy type=button>⧉ 复制视图链接</button><button class=ghostbtn id=view-reset type=button>↺ 恢复全景</button></div></div></div>
  <div class=signal-dock id=signal-dock aria-label="Signal Dock 信号坞">
   <button class=signal-main id=signal-main type=button aria-controls=signal-pop aria-expanded=false><span class=signal-orb></span><span><b id=signal-label>Signal Dock</b><small id=signal-detail>悬停或聚焦数据以 Peek</small></span></button>
@@ -88,40 +101,9 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  <div class=trail-status id=trail-status role=status aria-live=polite aria-atomic=true></div>
 </aside>
 
-<section class=card id=section-overview>
- <div class=kpis>
-   <div class="kpi is-primary">
-     <div class=v><span class=grad id=k-total></span><span class=exact-inline id=k-total-exact></span> <small id=k-total-u></small></div>
-     <div class=l>总 token <button class=k-copy id=k-total-copy type=button aria-label="复制总 Token 精确值" title="复制精确值">⧉</button><span class=delta id=k-delta></span><span class=fc id=k-forecast></span></div>
-     <svg class=spark id=spark aria-hidden=true></svg>
-   </div>
-   <div class=kpi>
-     <div class=v><span id=k-cache-pct></span><small>%</small></div>
-     <div class=l>缓存命中 · Read <span id=k-saved></span></div>
-     <div class=gauge aria-hidden=true><i id=gauge-fill style="width:0"></i></div>
-     <div id=caliber-cache></div>
-   </div>
-   <div class=kpi><div class=v><span id=k-calls></span></div><div class=l>调用次数</div></div>
-   <div class=kpi><div class=v><span id=k-models></span></div><div class=l>命中模型数</div></div>
-   <div class=kpi><div class=v><span id=k-dom></span></div><div class=l>主力模型</div></div>
- </div>
-</section>
-
-<section class="card cost-ledger" data-module=cost data-lazy=cost id=section-cost>
+<section class=card id=section-scope>
  <div class=row-between>
-  <div><h2 style=margin:0>费用账本 · Cost Ledger</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">按官方参考或手填单价估算所选区间费用；非实际扣费，私人手填价不嵌入报告</p></div>
-  <div class="cost-actions"><button class=ghostbtn id=cost-price-btn type=button>设置单价</button><button class=ghostbtn id=cost-csv-btn type=button>导出费用 CSV</button></div>
- </div>
- <div class=cost-body id=cost-body></div>
- <details class="cost-details" id=cost-details>
-  <summary>费用明细表</summary>
-  <div class=table-scroll tabindex=0 role=region aria-label="费用明细，可横向滚动"><table class="detail-table cost-table"><thead id=cost-table-head></thead><tbody id=cost-table-body></tbody></table></div>
- </details>
-</section>
-
-<section class=card>
- <div class=row-between>
-   <h2 style=margin:0>粒度与筛选</h2>
+   <h2 style=margin:0>统计范围</h2>
    <div class=tabs id=tabs role=group aria-label="统计粒度">
      <button type=button data-gran=day aria-pressed=false>按日</button>
      <button type=button data-gran=week aria-pressed=false>按周</button>
@@ -142,6 +124,26 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  <div id=caliber-ledger></div>
 </section>
 
+<section class=card id=section-overview>
+ <h2 class=overview-heading data-i18n-key="Usage overview">用量总览</h2>
+ <div class=kpis>
+   <div class="kpi is-primary">
+     <div class=v><span class=grad id=k-total></span><span class=exact-inline id=k-total-exact></span> <small id=k-total-u></small></div>
+     <div class=l>总 token <button class=k-copy id=k-total-copy type=button aria-label="复制总 Token 精确值" title="复制精确值">⧉</button><span class=delta id=k-delta></span><span class=fc id=k-forecast></span></div>
+     <svg class=spark id=spark aria-hidden=true></svg>
+   </div>
+   <div class=kpi>
+     <div class=v><span id=k-cache-pct></span><small>%</small></div>
+     <div class=l>缓存命中 · Read <span id=k-saved></span></div>
+     <div class=gauge aria-hidden=true><i id=gauge-fill style="width:0"></i></div>
+     <div id=caliber-cache></div>
+   </div>
+   <div class=kpi><div class=v><span id=k-calls></span></div><div class=l>调用次数</div></div>
+   <div class=kpi><div class=v><span id=k-models></span></div><div class=l>命中模型数</div></div>
+   <div class="kpi is-dom"><div class=v><i class=kpi-dom-dot id=k-dom-dot aria-hidden=true></i><span id=k-dom></span></div><div class=l>主力模型</div></div>
+ </div>
+</section>
+
 <section class=card id=section-trend>
  <div class=row-between>
    <h2 style=margin:0 id=bar-title>每期 token（按模型堆叠）</h2>
@@ -158,7 +160,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
    <div><h3 style=margin:0 data-i18n-key="Exact details">Exact details</h3><p class=sub style="margin:3px 0 0;color:var(--faint)" data-i18n-key="Exact values behind the trend chart and export actions">Exact values behind the trend chart and export actions</p></div>
    <div style="display:flex;gap:8px"><button class=ghostbtn id=md-btn title="下载当前明细为 Markdown">◇ 导出 MD</button><button class=ghostbtn id=csv-btn title="下载当前明细为 CSV">⤓ 导出 CSV</button></div>
   </div>
-  <div class=table-scroll tabindex=0 role=region aria-label="Token 明细，可横向滚动"><table class=detail-table><thead id=thead></thead><tbody id=tbody></tbody></table></div>
+  <details class="cost-details" id=trend-table-details><summary>精确明细表</summary><div class=table-scroll tabindex=0 role=region aria-label="Token 明细，可横向滚动"><table class=detail-table><thead id=thead></thead><tbody id=tbody></tbody></table></div></details>
  </div>
 </section>
 
@@ -167,9 +169,46 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
   <div><h2 style=margin:0 data-i18n-key="Daily model usage">每日模型用量</h2><p class=sub style="margin:3px 0 0;color:var(--faint)" data-i18n-key="Filtered by the current date range and models; tokens and recorded calls use day aggregates; costs sum trusted parts rows only.">按当前日期范围与模型筛选；Token/已记录调用取 day 聚合，费用只汇总可信 parts 行</p></div>
   <div><span id=daily-scope></span><button type=button class=ghostbtn id=glm-compare-btn data-i18n-key="Compare GLM">GLM 对比</button><button type=button class=ghostbtn id=daily-csv-btn data-i18n-key="Export model usage CSV">导出模型用量 CSV</button></div>
  </div>
+ <div class=daily-calendar id=daily-calendar role=group aria-labelledby=daily-calendar-heading>
+  <div class=daily-calendar-head><h3 id=daily-calendar-heading>日期浏览</h3></div>
+  <p class=daily-calendar-note id=daily-calendar-note></p>
+  <div class=daily-date-strip id=daily-date-strip role=group aria-label="连续报告日期" aria-describedby="daily-calendar-note daily-calendar-status"></div>
+  <p class=daily-calendar-readout id=daily-calendar-readout aria-live=polite aria-atomic=true></p>
+  <p class=daily-calendar-status id=daily-calendar-status></p>
+  <details class=daily-calendar-picker id=daily-calendar-picker>
+   <summary id=daily-calendar-toggle>选日期</summary>
+   <div class=daily-calendar-picker-body>
+    <div class=daily-calendar-nav><button type=button class=ghostbtn id=daily-calendar-prev aria-label=上一个月>‹</button><strong class=daily-calendar-month id=daily-calendar-month></strong><button type=button class=ghostbtn id=daily-calendar-next aria-label=下一个月>›</button><button type=button class=ghostbtn id=daily-calendar-return hidden></button></div>
+    <div class=daily-calendar-grid id=daily-calendar-grid role=grid aria-labelledby=daily-calendar-month aria-describedby="daily-calendar-note daily-calendar-readout daily-calendar-status"></div>
+   </div>
+  </details>
+  <details class=daily-calendar-help id=daily-calendar-help>
+   <summary id=daily-calendar-help-toggle>口径与色阶</summary>
+   <p id=daily-calendar-explanation></p>
+   <ul class=daily-calendar-legend id=daily-calendar-legend></ul>
+  </details>
+ </div>
  <div class=glm-compare id=glm-compare aria-live=polite></div>
- <div class=table-scroll id=daily-table-region tabindex=0 role=region aria-label="每日模型明细，可横向滚动"><table class="detail-table daily-table"><thead id=daily-thead></thead><tbody id=daily-tbody></tbody></table></div>
+ <details class="cost-details" id=request-model-details hidden><summary data-i18n-key="Request names routed to backends">请求名 → 后端名对照</summary><div id=request-model-chips class=request-chips></div></details>
+ <details class="cost-details" id=route-map-details hidden><summary data-i18n-key="Route map">路由星图 · 请求 → 后端流向</summary><div class=route-map-wrap id=route-map-wrap><svg class=route-map id=route-map-svg role=img aria-label="请求名到后端名的 Token 流向图"></svg><p class=sub id=route-map-note style="margin:8px 0 0;color:var(--faint)"></p></div></details>
+ <details class="cost-details" id=daily-table-details><summary>每日模型表</summary><div class=table-scroll id=daily-table-region tabindex=0 role=region aria-label="每日模型明细，可横向滚动"><table class="detail-table daily-table"><thead id=daily-thead></thead><tbody id=daily-tbody></tbody></table></div></details>
  <p class=daily-note id=daily-note></p>
+</section>
+
+<section class="card cost-ledger" data-module=cost data-lazy=cost id=section-cost>
+ <div class=row-between>
+  <div><h2 style=margin:0>费用账本 · Cost Ledger</h2><p class=sub style="margin:3px 0 0;color:var(--faint)">按官方参考或手填单价估算所选区间费用；非实际扣费，私人手填价不嵌入报告</p></div>
+  <div class="cost-actions"><button class=ghostbtn id=cost-price-btn type=button>设置单价</button><button class=ghostbtn id=cost-csv-btn type=button>导出费用 CSV</button></div>
+ </div>
+ <div class=cost-body id=cost-body></div>
+ <section class=budget-panel aria-labelledby=budget-title>
+  <div class=row-between><h3 id=budget-title>月度预算</h3><div class=cost-actions><button class=ghostbtn id=budget-edit type=button>设置预算</button><button class=ghostbtn id=budget-manage type=button>已存预算</button><button class=ghostbtn id=budget-clear type=button disabled>清除本月预算</button></div></div>
+  <div id=budget-body></div>
+ </section>
+ <details class="cost-details" id=cost-details>
+  <summary>费用明细表</summary>
+  <div class=table-scroll tabindex=0 role=region aria-label="费用明细，可横向滚动"><table class="detail-table cost-table"><thead id=cost-table-head></thead><tbody id=cost-table-body></tbody></table></div>
+ </details>
 </section>
 
 <section class="card delta-card" id=section-delta>
@@ -357,6 +396,37 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  </div>
 </div>
 
+<div class="modal cost-modal" id=budget-manager-modal aria-hidden=true>
+ <div class="sheet budget-manager-sheet" role=dialog aria-modal=true aria-labelledby=budget-manager-title>
+  <button class=x id=budget-manager-x type=button aria-label=关闭>×</button>
+  <h3 id=budget-manager-title>已存预算</h3>
+  <p id=budget-manager-help class=cost-ed-note></p>
+  <p id=budget-manager-summary class=budget-meta></p>
+  <div id=budget-manager-list class=budget-manager-list></div>
+  <div class=budget-manager-pager><button class=ghostbtn id=budget-manager-prev type=button>上一页</button><span id=budget-manager-page></span><button class=ghostbtn id=budget-manager-next type=button>下一页</button></div>
+  <div id=budget-manager-confirm class=budget-manager-confirm hidden>
+   <p id=budget-manager-confirm-text></p>
+   <div class=cost-ed-actions><button class=ghostbtn id=budget-manager-cancel-delete type=button>取消删除</button><button class="ghostbtn strong" id=budget-manager-confirm-delete type=button>确认删除</button></div>
+  </div>
+  <p id=budget-manager-status class=cost-ed-status role=status aria-live=polite></p>
+  <p id=budget-manager-storage class=budget-storage role=status></p>
+  <div class=cost-ed-actions><button class=ghostbtn id=budget-manager-close type=button>关闭</button></div>
+ </div>
+</div>
+
+<div class="modal cost-modal" id=budget-modal aria-hidden=true>
+ <div class="sheet budget-sheet" role=dialog aria-modal=true aria-labelledby=budget-modal-title>
+  <button class=x id=budget-x type=button aria-label=关闭>×</button>
+  <h3 id=budget-modal-title>设置本月预算</h3>
+  <p id=budget-editor-scope class=sub></p>
+  <label class=budget-input-label for=budget-amount id=budget-amount-label>预算金额</label>
+  <input id=budget-amount type=text inputmode=decimal autocomplete=off maxlength=32 aria-describedby="budget-input-help budget-editor-status">
+  <p id=budget-input-help class=cost-ed-note>正数，最多两位小数，上限 1,000,000；只在保存时写入本机浏览器。</p>
+  <div id=budget-editor-status class=cost-ed-status role=alert aria-live=polite></div>
+  <div class=cost-ed-actions><button class="ghostbtn strong" id=budget-save type=button>保存预算</button><button class=ghostbtn id=budget-cancel type=button>取消</button></div>
+ </div>
+</div>
+
 <div class="modal cost-modal" id=cost-modal aria-hidden=true>
  <div class="sheet cost-sheet" role=dialog aria-modal=true aria-labelledby=cost-modal-title>
   <button class=x id=cost-x aria-label=关闭>×</button>
@@ -369,6 +439,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
   <div class=cost-confirm id=cost-currency-confirm hidden><span>切换币种会清空当前已填价格，不会自动换算。确定？</span><div><button class=ghostbtn id=cost-cur-ok type=button>清空并切换</button> <button class=ghostbtn id=cost-cur-cancel type=button>取消</button></div></div>
   <p class=cost-ed-note>source 是日志来源标签，不是计费渠道，可留短渠道备注；价格为用户确认的当前统一有效价，不自动识别多渠道或历史变化。Claude 缓存写为合并统计，只能配置统一有效单价（不区分 5m/1h 分档）；订阅 Token 额度不能折算为实际花费。留空＝待定价，显式 0＝免费；仅有实际用量的分量需要价格。</p>
   <p class=cost-ed-note>官方参考为只读美元基准，不是渠道实际扣费。未改动的空输入使用参考；一旦手填，整条模型价格优先，清空并保存仍保留待定价覆盖。关闭参考可自行填写；CNY 不套 USD，不自动换算。开启参考并确认换币会移除旧手填条目和备注。</p>
+  <div class="cost-ed-search"><label id=cost-editor-search-label for=cost-editor-search>搜索模型或来源</label><div class=cost-ed-search-controls><input id=cost-editor-search type=text autocomplete=off spellcheck=false aria-describedby=cost-editor-results><button class=ghostbtn id=cost-editor-search-clear type=button>清除搜索</button></div><span id=cost-editor-results role=status aria-live=polite></span></div>
   <div class="cost-ed-status" id=cost-editor-status role=alert aria-live=polite></div>
   <div class=cost-ed-scroll><div id=cost-editor-list></div><div class="dest-pager cost-pager" id=cost-editor-pager></div></div>
   <div class=cost-ed-actions><button class="ghostbtn strong" id=cost-save type=button>保存并生效</button><button class=ghostbtn id=cost-cancel type=button>取消</button></div>

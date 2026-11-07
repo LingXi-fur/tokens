@@ -342,6 +342,127 @@ if (model.includes('sonnet')) { return 'provider-b,backend-balanced'; }
             self.assertEqual("claude-opus-backend", readers._resolve_model("claude-opus-backend"))
             self.assertEqual("claude-sonnet-backend", readers._resolve_model("claude-opus-5"))
 
+    @staticmethod
+    def _alias_event(mid="m1", model="claude-opus-5-5", tokens=7):
+        return {
+            "type": "assistant",
+            "timestamp": "2026-10-20T10:00:00Z",
+            "sessionId": "synthetic-session",
+            "cwd": "/synthetic/project",
+            "message": {"id": mid, "model": model, "usage": {
+                "input_tokens": tokens, "output_tokens": 3,
+                "cache_read_input_tokens": 2, "cache_creation_input_tokens": 1,
+            }},
+        }
+
+    def test_claude_record_keeps_request_model_and_resolved_backend(self):
+        router = "if (model.includes('opus')) { return 'zhipu,glm-5.3'; }\n"
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp, router):
+            parsed = readers._claude_event_record(self._alias_event())
+        self.assertEqual("glm-5.3", parsed[0]["model"])
+        self.assertEqual("claude-opus-5-5", parsed[0]["request_model"])
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = str(Path(tmp) / "missing.js")
+            with mock.patch.object(readers.config, "CCR_ROUTER_FILE", missing):
+                parsed = readers._claude_event_record(self._alias_event())
+        self.assertEqual("claude-opus-5-5", parsed[0]["model"])
+        self.assertEqual("claude-opus-5-5", parsed[0]["request_model"])
+
+    def test_claude_request_model_does_not_change_dedup(self):
+        router = "if (model.includes('opus')) { return 'zhipu,glm-5.3'; }\n"
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp, router):
+            alias = readers._claude_event_record(self._alias_event())
+            literal = readers._claude_event_record(self._alias_event(model="glm-5.3"))
+        # Same message id under the alias and its backend dedup to one record.
+        self.assertEqual(alias[2], literal[2])
+        # The fallback key stays anchored on the resolved backend name.
+        no_id = self._alias_event()
+        del no_id["message"]["id"]
+        parsed = None
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp, router):
+            parsed = readers._claude_event_record(no_id)
+        record, dkey, key_tag = parsed
+        self.assertEqual(["fallback", key_tag[1]], key_tag)
+        self.assertEqual("glm-5.3", dkey[1])
+        self.assertEqual("claude-opus-5-5", record["request_model"])
+
+    def test_cached_claude_records_require_request_model_string(self):
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp):
+            parsed = readers._claude_event_record(self._alias_event())
+        record = dict(parsed[0])
+        self.assertTrue(readers._cached_records_valid([record], "claude"))
+        missing = dict(record)
+        del missing["request_model"]
+        self.assertFalse(readers._cached_records_valid([missing], "claude"))
+        bad_type = dict(record)
+        bad_type["request_model"] = 7
+        self.assertFalse(readers._cached_records_valid([bad_type], "claude"))
+        # Non-claude sources never carry the field.
+        evidence = {name: 0 for name in readers._GEMINI_BILLING_KEYS}
+        gemini = {"source": "gemini", "ts": "2026-10-20T10:00:00Z", "date": "2026-10-20",
+                  "model": "gem", "input": 1, "output": 2, "cache_read": 0,
+                  "cache_write": 0, "total": 3, "session": "s1",
+                  "billing": readers._gemini_billing(evidence)}
+        self.assertTrue(readers._cached_records_valid([gemini], "gemini"))
+
+    def test_ccr_hex_alias_resolves_to_encoded_backend(self):
+        # settings.json 的 "anthropic/claude-ccr-<hex>" 请求名：hex 编码真实
+        # 后端 "provider/glm-model"。解析应解出后缀并按 backend 名返回，
+        # request_model 保留原始编码名。hex 解码独立于路由规则存在。
+        encoded = "anthropic/claude-ccr-h" + "7a686970752f676c6d2d352e332d666c617368"
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp, ""):
+            resolved = readers._resolve_model(encoded)
+            plain = readers._resolve_model("claude-opus-5-5")
+        # provider 前缀剥除：同一物理后端与历史裸名身份合一，避免容量溢出 other。
+        self.assertEqual("glm-5.3-flash", resolved)
+        # 非 hex 后缀 / 非该前缀不适用；无规则时 tier 名原样。
+        self.assertEqual("anthropic/claude-ccr-hnothex", readers._resolve_model("anthropic/claude-ccr-hnothex"))
+        self.assertEqual("claude-opus-5-5", plain)
+
+    def test_ccr_hex_alias_strips_provider_prefix_to_bare_name(self):
+        # 多形态 "provider/name" 解码值统一剥到裸名；无斜杠或斜杠结尾不变形。
+        cases = {
+            "7a686970752f676c6d2d352e332d666c617368": "glm-5.3-flash",  # zhipu/glm-5.3-flash
+            "7a686970752f676c6d2d352e33": "glm-5.3",                    # zhipu/glm-5.3
+            "7a6967752f636c617564652d6f7075732d352e35": "claude-opus-5.5",  # zigu/claude-opus-5.5
+            "676c6d2d352e332d666c617368": "glm-5.3-flash",              # 无前缀原样
+        }
+        for blob, expected in cases.items():
+            self.assertEqual(expected, readers._ccr_hex_backend("anthropic/claude-ccr-h" + blob))
+        self.assertIsNone(readers._ccr_hex_backend("anthropic/claude-ccr-h7a686970752f"))  # "zhipu/" 剥后为空
+
+    def test_ccr_hex_record_roundtrip_and_dedup_shape(self):
+        encoded = "anthropic/claude-ccr-h" + "7a686970752f676c6d2d352e332d666c617368"
+        event = {
+            "type": "assistant",
+            "timestamp": "2026-11-04T10:00:00.000Z",
+            "sessionId": "hex-alias-session",
+            "cwd": "/synthetic/hex",
+            "requestId": "req_hex_1",
+            "message": {
+                "model": encoded,
+                "id": "msg_hex_1",
+                "usage": {
+                    "input_tokens": 3,
+                    "output_tokens": 4,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp):
+            record, dkey, key_tag = readers._claude_event_record(event)
+        self.assertEqual("glm-5.3-flash", record["model"])
+        self.assertEqual(encoded, record["request_model"])
+        # 有 message.id 时去重按 id;dkey[1] 只在 fallback 才是模型名。
+        self.assertEqual(["id", "msg_hex_1"], key_tag)
+        del event["message"]["id"]
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp):
+            record, dkey, key_tag = readers._claude_event_record(event)
+        self.assertEqual(["fallback", key_tag[1]], key_tag)
+        # fallback 去重键用解析后的 backend 名（provider 前缀已剥）。
+        self.assertEqual("glm-5.3-flash", dkey[1])
+
     def test_gemini_and_codex_models_are_not_resolved_through_claude_router(self):
         router = """if (model.includes('sonnet')) { return 'provider-a,backend-balanced'; }
 if (model.includes('opus')) { return 'provider-b,backend-large'; }

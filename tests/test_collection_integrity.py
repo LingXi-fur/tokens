@@ -224,7 +224,7 @@ class CollectionIntegrityTests(unittest.TestCase):
         self.assertEqual(2 * len(sources), len(cold))
         self.assertEqual(cold, self.collect(sources))
         pristine = self.cache_data()
-        self.assertEqual(7, pristine["_v"])
+        self.assertEqual(readers.CACHE_VERSION, pristine["_v"])
         for source in sources:
             record = pristine[self.entry_key(source)]["records"][0]
             self.assertEqual({"v", "present", "raw", "parts", "uncertain", "reasons"},
@@ -329,13 +329,22 @@ class CollectionIntegrityTests(unittest.TestCase):
         child.mkdir()
         (child / "back-to-projects").symlink_to(self.projects, target_is_directory=True)
 
+    def test_previous_cache_version_forces_recollection(self):
+        expected, cache = self.prime()
+        cache["_v"] = readers.CACHE_VERSION - 1
+        self.cache.write_text(json.dumps(cache))
+        with self.source_reads() as counts:
+            self.assertEqual(expected, self.collect())
+        self.assertTrue(all(counts[source] > 0 for source in SOURCES))
+        self.assertEqual(readers.CACHE_VERSION, self.cache_data()["_v"])
+
     def test_three_source_cold_and_warm_results_match_without_warm_source_reads(self):
         with self.source_reads() as cold_counts:
             cold = self.collect()
         self.assertEqual(6, len(cold))
         self.assertEqual(set(SOURCES), {record["source"] for record in cold})
         self.assertTrue(all(cold_counts[source] > 0 for source in SOURCES))
-        self.assertEqual(7, self.cache_data()["_v"])
+        self.assertEqual(readers.CACHE_VERSION, self.cache_data()["_v"])
         with self.source_reads() as warm_counts:
             warm = self.collect()
         self.assertEqual(cold, warm)

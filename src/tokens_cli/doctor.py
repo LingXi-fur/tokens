@@ -1,5 +1,6 @@
 """Environment diagnostics without reading log contents."""
 import os
+import shutil
 
 from . import config, readers
 
@@ -14,10 +15,13 @@ def collect(sources=None):
             "gemini": config.GEMINI_TMP,
             "codex": config.CODEX_SESSIONS,
         }[source]
+        error = None
         try:
             files = files_fn()
+        except readers.CollectionIncompleteError as exc:
+            files, error = [], exc.reason
         except OSError:
-            files = []
+            files, error = [], "discovery_failed"
         readable = sum(os.path.isfile(path) and os.access(path, os.R_OK) for path in files)
         source_rows.append({
             "source": source,
@@ -25,6 +29,11 @@ def collect(sources=None):
             "exists": os.path.isdir(root),
             "files": len(files),
             "readable": readable,
+            **({"error": error} if error else {}),
+            **({"archive_exists": os.path.isdir(config.CODEX_ARCHIVED_SESSIONS),
+                "compressed_files": sum(path.endswith(".zst") for path in files),
+                "decompressor_available": bool(shutil.which("zstd"))}
+               if source == "codex" else {}),
         })
     return {
         "timezone": config.timezone_name(),
@@ -54,13 +63,18 @@ def print_report(report):
     print(f"  Cache:    {report['cache']} ({_status(report['cache_parent_writable'])})")
     print("  Sources:")
     for row in report["sources"]:
-        if not row["exists"]:
+        if row.get("error"):
+            status = "incomplete discovery (" + row["error"] + ")"
+        elif not row["exists"] and not row.get("archive_exists"):
             status = "not found"
         elif not row["files"]:
             status = "no log files"
         else:
             status = f"{row['readable']}/{row['files']} readable files"
         print(f"    {row['source']:<7} {status} — {row['root']}")
+        if row["source"] == "codex":
+            support = "available" if row["decompressor_available"] else "unavailable"
+            print(f"            {row['compressed_files']} compressed archives; zstd {support}")
 
 
 def _status(ok):

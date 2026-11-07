@@ -148,9 +148,24 @@ class ReleaseContractsTests(unittest.TestCase):
                 with self.subTest(asset=asset.name):
                     self.assertIn(f"`{asset.name}`", staging)
 
+    def test_calendar_core_is_embedded_once_before_dashboard_consumer(self):
+        sys.path.insert(0, str(SRC))
+        try:
+            from tokens_cli import report_dashboard
+        finally:
+            sys.path.pop(0)
+        template = report_dashboard._dashboard_template()
+        namespace = "global.CalendarCore="
+        consumer = "CalendarCore.create({isoDayValid,addISODays,dailySafeInt})"
+        self.assertEqual(1, template.count(namespace))
+        self.assertEqual(1, template.count(consumer))
+        self.assertLess(template.index(namespace), template.index(consumer))
+        self.assertNotIn('__SCRIPT__', template)
+        self.assertNotIn('__STYLE__', template)
+
     def test_dashboard_assets_exist_and_are_embedded(self):
         assets = SRC / "tokens_cli" / "dashboard_assets"
-        for name in ("template.html", "dashboard.css", "cost_core.js", "dashboard.js"):
+        for name in ("template.html", "dashboard.css", "cost_core.js", "calendar_core.js", "budget_core.js", "dashboard.js"):
             with self.subTest(asset=name):
                 self.assertTrue((assets / name).is_file())
                 self.assertGreater((assets / name).stat().st_size, 0)

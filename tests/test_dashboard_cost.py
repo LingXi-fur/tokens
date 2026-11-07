@@ -379,6 +379,46 @@ class DashboardCostTests(unittest.TestCase):
         self.assertNoErrors(page_errors, console_errors)
         context.close()
 
+    def test_cost_details_summary_counts(self):
+        context, page, page_errors, console_errors = self.new_page()
+        prices = self.full_config()
+        # model-a cache_read carries real usage (3M tokens on 2026-07-02), so a
+        # blank rate there yields a genuinely pending entry; fully priced setups
+        # must omit the pending segment instead of showing "待定价 0".
+        prices["prices"][price_key("model-a")]["rates"] = ["1", "0", "", "0", "0"]
+        self.seed_prices(page, prices)
+        self.open_ledger(page)
+        # Summary must carry live counts like the daily table summary: rows and
+        # pending models, so a collapsed reader knows what is inside before opening.
+        summary = page.locator("#cost-details summary").inner_text()
+        self.assertIn("2", summary, summary)
+        self.assertIn("行", summary, summary)
+        self.assertIn("待定价 1", summary, summary)
+        page.evaluate("() => { document.getElementById('cost-details').open = true; }")
+        rows = page.locator("#cost-table-body tr")
+        self.assertEqual(rows.count(), 2)
+        self.assertNoErrors(page_errors, console_errors)
+        context.close()
+
+    def test_cost_details_summary_omits_zero_pending(self):
+        context, page, page_errors, console_errors = self.new_page()
+        # Every fixture component priced (cache_write 0 = free) -> pendingCount
+        # is 0; the summary must not append a noisy "待定价 0" segment.
+        self.seed_prices(page, {
+            "v": 1, "currency": "CNY", "prices": {
+                price_key("model-a"): {"rates": ["1", "0", "0.5", "0", ""], "note": ""},
+                price_key("model-b"): {"rates": ["0.5", "0.25", "", "0", ""], "note": ""},
+            },
+        })
+        self.open_ledger(page)
+        summary = page.locator("#cost-details summary").inner_text()
+        self.assertIn("2", summary, summary)
+        self.assertIn("行", summary, summary)
+        self.assertNotIn("待定价", summary, summary)
+        self.assertNotIn("pending", summary, summary)
+        self.assertNoErrors(page_errors, console_errors)
+        context.close()
+
     def test_zero_free_price_and_small_amount_flooring(self):
         context, page, page_errors, console_errors = self.new_page()
         self.seed_prices(page, {
@@ -537,6 +577,10 @@ class DashboardCostTests(unittest.TestCase):
         self.open_ledger(page)
         page.click("#cost-price-btn")
         page.wait_for_selector("#cost-modal.open")
+        page.wait_for_function(
+            "document.activeElement === document.getElementById('cost-currency')",
+            timeout=3000,
+        )
         ends = page.evaluate(
             """() => {
                  const modal = document.getElementById('cost-modal');
@@ -710,7 +754,7 @@ class DashboardCostTests(unittest.TestCase):
         page.evaluate("() => { state.models = new Set(['model-a']); invalidateDerived(); }")
         page.click("#cost-price-btn")
         self.assertEqual(page.locator(".cost-ed-row").count(), 8)
-        self.assertEqual(page.locator("#cost-editor-pager .pager-info").inner_text(), "1 / 2")
+        self.assertEqual(page.locator("#cost-editor-pager .pager-info").inner_text(), "1 / 2 · 共 14 条")
         page.click("#cost-editor-pager button[data-step='1']")
         page.wait_for_function(
             "() => document.querySelectorAll('#cost-editor-list .cost-ed-row').length === 6"
@@ -733,16 +777,16 @@ class DashboardCostTests(unittest.TestCase):
             },
         })
         self.assertEqual(page.locator(".cost-bar-row").count(), 12)
-        self.assertEqual(page.locator("#cost-pager .pager-info").inner_text(), "1 / 2")
+        self.assertEqual(page.locator("#cost-pager .pager-info").inner_text(), "1 / 2 · 共 14 条")
         page.focus("#cost-pager button[data-step='1']")
         page.keyboard.press("Enter")
         page.wait_for_function(
             "() => document.querySelectorAll('#cost-body .cost-bar-row').length === 2"
         )
-        self.assertEqual(page.locator("#cost-pager .pager-info").inner_text(), "2 / 2")
+        self.assertEqual(page.locator("#cost-pager .pager-info").inner_text(), "2 / 2 · 共 14 条")
         # Out-of-range page state clamps safely.
         page.evaluate("() => { costState.page = 99; renderCostLedger(); }")
-        self.assertEqual(page.locator("#cost-pager .pager-info").inner_text(), "2 / 2")
+        self.assertEqual(page.locator("#cost-pager .pager-info").inner_text(), "2 / 2 · 共 14 条")
         self.assertNoErrors(page_errors, console_errors)
         context.close()
 
@@ -902,6 +946,23 @@ class DashboardCostTests(unittest.TestCase):
 
 REFERENCE_EXPECTED_RATES = {
     "gpt-6.1-sol": ["2", "10", "0.10", "2.50", ""],
+    "gpt-6.1-terra": ["1", "5", "0.05", "1.25", ""],
+    "gpt-6-astra": ["10", "50", "1.00", "12.50", ""],
+    "gpt-5.5": ["5", "30", "0.50", "7.50", ""],
+    # 2026-11-06 起这批模型一律按官方价（Anthropic / OpenAI / Moonshot）；
+    # 缓存写取 5 分钟档，不再使用 freetest 代理档价单。
+    "gpt-6-luna": ["0.10", "0.50", "0.01", "0.125", ""],
+    "claude-haiku-5.5": ["0.10", "0.50", "0.01", "0.125", ""],
+    "claude-opus-5.5": ["4", "20", "0.20", "5", ""],
+    "claude-sonnet-5.5": ["2", "10", "0.10", "2.50", ""],
+    "claude-opus-5": ["5", "25", "0.50", "6.25", ""],
+    "claude-sonnet-5": ["2", "10", "0.20", "2.50", ""],
+    "claude-opus-4.8": ["5", "25", "0.50", "6.25", ""],
+    "claude-opus-4.7": ["5", "25", "0.50", "6.25", ""],
+    "claude-sonnet-4.6": ["3", "15", "0.30", "3.75", ""],
+    "claude-haiku-4.5": ["1", "5", "0.10", "1.25", ""],
+    "deepseek-v4.1-flash": ["0.30", "1.20", "0.006", "", ""],
+    "kimi-k3": ["3", "15", "0.30", "3", ""],
     "gpt-6-sol": ["2", "10", "0.20", "2.50", ""],
     "gpt-5.6-sol": ["4", "20", "0.40", "5", ""],
     "gpt-5.6-luna": ["0.20", "1.20", "0.02", "0.25", ""],
@@ -909,8 +970,11 @@ REFERENCE_EXPECTED_RATES = {
     "deepseek-flash": ["0.30", "1.20", "0.006", "", ""],
     "deepseek-v4-flash": ["0.30", "1.20", "0.006", "", ""],
     "deepseek-v4-pro": ["1.32", "3.96", "0.044", "", ""],
-    "glm-5.2": ["1.40", "4.40", "0.26", "", ""],
-    "glm-5.3": ["1.40", "4.40", "0.26", "", ""],
+    "glm-5.2": ["1.40", "4.40", "0.26", "0", ""],
+    "glm-5.3": ["1.40", "4.40", "0.26", "0", ""],
+    "glm-5.3-flash": ["0.15", "0.50", "0.03", "0", ""],
+    # 直写 provider 前缀的非 hex 记录（如 /private/tmp 会话）：精确名单独入表。
+    "zhipu/glm-5.3-flash": ["0.15", "0.50", "0.03", "0", ""],
 }
 
 
@@ -957,7 +1021,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
         # Three whitelisted models plus one non-whitelisted control model.
         # gpt-6.1-sol:  1M in * 2 + 0.5M out * 10            -> $7.00
         # ds-v4-flash:  2M * 0.30 + 1M * 1.20 + 1M * 0.006   -> $1.806
-        # glm-5.2:      cache_write 用量、参考价未公布        -> pending, never free
+        # deepseek-v4-pro: cache_write 用量、参考价未公布     -> pending, never free
         cls._ref_path = out / "cost-reference.html"
         cls._ref_path.write_text(
             build_reference_page(
@@ -966,7 +1030,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
                     [
                         ("gpt-6.1-sol", "model-a", False),
                         ("deepseek-v4-flash", "model-a", False),
-                        ("glm-5.2", "model-b", False),
+                        ("deepseek-v4-pro", "model-b", False),
                         ("model-a", "model-a", False),
                     ],
                     [
@@ -1096,7 +1160,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
 
     # -- tests -----------------------------------------------------------
 
-    def test_reference_table_pins_exact_usd_rates_for_all_ten_models(self):
+    def test_reference_table_pins_exact_usd_rates_for_all_built_in_models(self):
         context, page, page_errors, console_errors = self.new_page()
         self.open_ledger(page)
         table = page.evaluate("() => COST_REFERENCE")
@@ -1106,6 +1170,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
             entry = table["prices"][model]
             self.assertEqual(entry["rates"], rates, model)
             vendor = table["vendors"][entry["vendor"]]
+            # Every vendor must be an official source with an https page.
             self.assertTrue(str(vendor["url"]).startswith("https://"), model)
             # Every published rate must parse as a legal price; '' stays ''.
             parse_ok = page.evaluate(
@@ -1180,7 +1245,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
             any("gpt-6.1-sol" in t and "$7.00" in t for t in rows), rows)
         self.assertTrue(
             any("deepseek-v4-flash" in t and "$1.81" in t for t in rows), rows)
-        self.assertTrue(any("glm-5.2" in t and "待定价" in t for t in rows), rows)
+        self.assertTrue(any("deepseek-v4-pro" in t and "待定价" in t for t in rows), rows)
         self.assertTrue(any("model-a" in t and "待定价" in t for t in rows), rows)
         # Subtotal (glm + model-a pending), never presented as a full total.
         self.assertEqual(page.locator(".cost-value").inner_text(), "$8.81")
@@ -1201,7 +1266,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
     def test_reference_cache_write_unknown_with_usage_is_pending_not_free(self):
         context, page, page_errors, console_errors = self.new_page()
         self.open_ledger(page)
-        glm = page.locator(".cost-bar-row").filter(has_text="glm-5.2")
+        glm = page.locator(".cost-bar-row").filter(has_text="deepseek-v4-pro")
         self.assertIn("待定价", glm.inner_text())
         self.assertNotIn("$0.00", glm.inner_text())
         # A pending cache_write keeps the hero a subtotal, never a full total,
@@ -1209,7 +1274,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
         self.assertNotEqual(page.locator(".cost-value").inner_text(), "$0.00")
         self.assertIn("已定价小计", page.locator(".cost-hero-label").inner_text())
         page.evaluate("() => { document.getElementById('cost-details').open = true; }")
-        glm_detail = page.locator("#cost-table-body tr").filter(has_text="glm-5.2")
+        glm_detail = page.locator("#cost-table-body tr").filter(has_text="deepseek-v4-pro")
         self.assertIn("待定价", glm_detail.inner_text())
         self.assertNotIn("$0.0000", glm_detail.inner_text())
         self.assertNoErrors(page_errors, console_errors)
@@ -1280,9 +1345,9 @@ class DashboardCostReferenceTests(unittest.TestCase):
             ".cost-ed-reference")
         self.assertEqual(ds_ref.count(), 1)
         self.assertIn("0.006", ds_ref.inner_text())
-        glm_ref = self.editor_row(page, "glm-5.2").locator(".cost-ed-reference")
+        glm_ref = self.editor_row(page, "deepseek-v4-pro").locator(".cost-ed-reference")
         self.assertEqual(glm_ref.count(), 1)
-        self.assertIn("0.26", glm_ref.inner_text())
+        self.assertIn("0.044", glm_ref.inner_text())
         # Non-whitelisted model has no reference display.
         self.assertEqual(
             self.editor_row(page, "model-a").locator(".cost-ed-reference").count(), 0)

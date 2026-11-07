@@ -134,9 +134,9 @@ class CodexBillingTests(unittest.TestCase):
 
     def test_input_excludes_cache_output_raw_and_stats_unchanged(self):
         record = self._parse(dict(self.USAGE))
-        # 既有统计：input 含 cached、output 加 reason、total 用 total_tokens。
+        # Codex output already includes reasoning; cached is included in input.
         self.assertEqual(100, record["input"])
-        self.assertEqual(70, record["output"])
+        self.assertEqual(50, record["output"])
         self.assertEqual(30, record["cache_read"])
         self.assertEqual(150, record["total"])
         billing = record["billing"]
@@ -690,16 +690,16 @@ class CostPayloadTests(unittest.TestCase):
 
 class CacheVersionTests(unittest.TestCase):
     def test_cache_version_and_filename(self):
-        self.assertEqual(7, readers.CACHE_VERSION)
-        self.assertTrue(config.CACHE_FILE.endswith("records-v7.json"))
+        self.assertEqual(20, readers.CACHE_VERSION)
+        self.assertTrue(config.CACHE_FILE.endswith("records-v8.json"))
 
     def test_v5_cache_left_in_place_and_v6_rebuilds(self):
-        # Keep the original regression method; its rebuild target is now v7.
+        # The filename stays v8; the internal schema is versioned independently.
         with tempfile.TemporaryDirectory() as tmp:
             log = _write_claude_log(tmp, {"input_tokens": 1, "output_tokens": 2})
-            # 旧 v5/v6 缓存自然作废重解析；文件本身不删除。
+            # 旧 v5/v6/v7 缓存自然作废重解析；文件本身不删除。
             old_caches = []
-            for version in (5, 6):
+            for version in (5, 6, 7):
                 old_cache = Path(tmp) / f"records-v{version}.json"
                 old_cache.write_text(json.dumps({
                     "_v": version,
@@ -710,7 +710,7 @@ class CacheVersionTests(unittest.TestCase):
                     },
                 }), encoding="utf-8")
                 old_caches.append((version, old_cache, old_cache.read_bytes()))
-            new_cache = Path(tmp) / "records-v7.json"
+            new_cache = Path(tmp) / "records-v8.json"
             with mock.patch.object(readers.config, "CLAUDE_PROJECTS", tmp), \
                     mock.patch.object(readers.config, "CACHE_DIR", tmp), \
                     mock.patch.object(readers.config, "CACHE_FILE", str(new_cache)), \
@@ -721,7 +721,7 @@ class CacheVersionTests(unittest.TestCase):
             self.assertEqual("claude-backend-x", records[0]["model"])
             self.assertEqual(3, records[0]["total"])
             self.assertTrue(new_cache.exists())
-            self.assertEqual(7, json.loads(new_cache.read_text(encoding="utf-8"))["_v"])
+            self.assertEqual(readers.CACHE_VERSION, json.loads(new_cache.read_text(encoding="utf-8"))["_v"])
             for version, old_cache, original in old_caches:
                 self.assertEqual(original, old_cache.read_bytes())
                 self.assertEqual(version, json.loads(original)["_v"])

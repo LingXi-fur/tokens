@@ -163,17 +163,24 @@ class ActionsPageMixin:
             reduced_motion="no-preference",
             accept_downloads=True,
         )
-        page = context.new_page()
-        page_errors, console_errors = [], []
-        page.on("pageerror", lambda error: page_errors.append(str(error)))
-        page.on(
-            "console",
-            lambda message: console_errors.append(message.text)
-            if message.type == "error"
-            else None,
-        )
-        page.goto((path or self._page).as_uri(), wait_until="load")
-        return context, page, page_errors, console_errors
+        try:
+            page = context.new_page()
+            page_errors, console_errors = [], []
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+            page.on(
+                "console",
+                lambda message: console_errors.append(message.text)
+                if message.type == "error"
+                else None,
+            )
+            page.goto((path or self._page).as_uri(), wait_until="load")
+            return context, page, page_errors, console_errors
+        except BaseException:
+            try:
+                context.close()
+            except BaseException:
+                pass  # Preserve the initialization error if cleanup also fails.
+            raise
 
     def open_ledger(self, page, path=None):
         page.locator("#section-cost").scroll_into_view_if_needed()
@@ -1347,6 +1354,224 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
             self.assertNotIn(banned, header)
         self.assertNoErrors(page_errors, console_errors)
         context.close()
+
+
+@unittest.skipIf(sync_playwright is None, "Playwright is not installed")
+class DashboardCostEditorSearchTests(ActionsPageMixin, unittest.TestCase):
+    """Local model lookup must preserve drafts and locate exact invalid rates."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls._page = Path(cls._tmp.name) / "cost-editor-search.html"
+        names = ["gpt-6.1-sol"] + [f"lookup-{i:02}" for i in range(1, 13)]
+        names.append('literal[.*]"model')
+        block = cost_block([(name, "model-a", False) for name in names], [
+            ["2026-07-01", i, [1000, 200, 0, 0, 0], 1200, 1, False]
+            for i in range(len(names))
+        ])
+        block["models"][-1]["source"] = "SpecialSource"
+        cls._page.write_text(build_page(
+            [record("2026-07-01", "model-a", 1200, "synthetic-search")], block
+        ), encoding="utf-8")
+        cls.start_browser()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.stop_browser()
+
+    def prepared(self):
+        context, page, errors, console = self.new_page()
+        self.addCleanup(context.close)
+        self.open_ledger(page)
+        self.seed_config(page, {
+            "v": 1, "currency": "USD", "reference": True,
+            "prices": {price_key("gpt-6.1-sol"): {
+                "rates": ["0", "1.123456", "", "", ""], "note": "private-note-lookup"
+            }},
+        })
+        self.open_editor(page)
+        page.wait_for_function("() => document.activeElement.id === 'cost-currency'")
+        self.assertEqual(1, page.locator("#cost-editor-search").count())
+        return page, errors, console
+
+    def draft(self, page):
+        return page.evaluate("() => JSON.stringify(costDraft)")
+
+    def test_search_is_literal_paginated_and_never_writes_or_loses_draft(self):
+        page, errors, console = self.prepared()
+        before = self.stored(page)[1]
+        self.rate_inputs(page, "lookup-01").nth(1).fill("2.500000")
+        draft = self.draft(page)
+        search = page.locator("#cost-editor-search")
+        search.fill("  LOOKUP-12  ")
+        self.assertEqual(["lookup-12"], page.locator(".cost-ed-model").all_text_contents())
+        self.assertIn("1 / 14", page.locator("#cost-editor-results").inner_text())
+        for query in ("SpecialSource", "[.*]", 'literal[.*]"model'):
+            search.fill(query)
+            self.assertEqual(1, page.locator(".cost-ed-row").count())
+            self.assertIn("literal[.*]", page.locator(".cost-ed-model").inner_text())
+        for query in ("private-note-lookup", "1.123456", "not-present"):
+            search.fill(query)
+            self.assertEqual(0, page.locator(".cost-ed-row").count())
+            self.assertIn("没有匹配", page.locator("#cost-editor-list").inner_text())
+        page.click("#cost-editor-search-clear")
+        self.assertEqual("cost-editor-search", page.evaluate("document.activeElement.id"))
+        self.assertEqual(8, page.locator(".cost-ed-row").count())
+        self.assertEqual("2.500000", self.rate_inputs(page, "lookup-01").nth(1).input_value())
+        page.locator("#cost-editor-pager button").last.click()
+        self.assertEqual(6, page.locator(".cost-ed-row").count())
+        search.fill("lookup")
+        self.assertEqual("lookup-01", page.locator(".cost-ed-model").first.inner_text())
+        self.assertEqual(draft, self.draft(page))
+        self.assertEqual(before, self.stored(page)[1])
+        search.press("Escape")
+        self.close_editor_and_wait(page)
+        self.open_editor(page)
+        self.assertEqual("", search.input_value())
+        self.assertEqual("", self.rate_inputs(page, "lookup-01").nth(1).input_value())
+        self.assertNoErrors(errors, console)
+
+    def test_save_locates_exact_invalid_component_across_pages_and_search(self):
+        page, errors, console = self.prepared()
+        before = self.stored(page)[1]
+        page.locator("#cost-editor-pager button").last.click()
+        target = self.rate_inputs(page, "lookup-12").nth(3)
+        target.fill("-3.bad")
+        page.locator("#cost-editor-pager button").first.click()
+        page.locator("#cost-editor-search").fill("gpt")
+        draft = self.draft(page)
+        page.click("#cost-save")
+        self.assertEqual("", page.locator("#cost-editor-search").input_value())
+        target = self.rate_inputs(page, "lookup-12").nth(3)
+        self.assertTrue(target.evaluate("el => el === document.activeElement"))
+        self.assertEqual("-3.bad", target.input_value())
+        self.assertEqual("true", target.get_attribute("aria-invalid"))
+        self.assertIn("invalid", target.get_attribute("class"))
+        self.assertEqual(draft, self.draft(page))
+        self.assertEqual(before, self.stored(page)[1])
+        target.fill("0")
+        page.click("#cost-save")
+        self.close_editor_and_wait(page)
+        self.assertEqual("0", self.stored(page)[0]["prices"][price_key("lookup-12")]["rates"][3])
+        self.assertNoErrors(errors, console)
+
+    def test_same_page_error_focus_and_redraw_keep_validation(self):
+        page, errors, console = self.prepared()
+        target = self.rate_inputs(page, "lookup-01").nth(4)
+        target.fill("1.0000001")
+        page.click("#cost-save")
+        self.assertTrue(target.evaluate("el => el === document.activeElement"))
+        page.locator("#cost-editor-search").fill("gpt")
+        page.click("#cost-editor-search-clear")
+        self.assertEqual("true", target.get_attribute("aria-invalid"))
+        self.assertIn("invalid", target.get_attribute("class"))
+        self.assertNoErrors(errors, console)
+
+    def test_hidden_restore_confirmation_is_reachable_and_still_blocks_save(self):
+        page, errors, console = self.prepared()
+        before = self.stored(page)[1]
+        self.restore_btn(page, "gpt-6.1-sol").click()
+        page.locator("#cost-editor-search").fill("lookup-12")
+        draft = self.draft(page)
+        page.click("#cost-save")
+        self.assertEqual(SAVE_BLOCKED_MSG, page.locator("#cost-editor-status").inner_text())
+        self.assertTrue(page.locator(RESTORE_CANCEL).evaluate("el => el === document.activeElement"))
+        self.assertEqual("", page.locator("#cost-editor-search").input_value())
+        self.assertEqual(draft, self.draft(page))
+        self.assertEqual(before, self.stored(page)[1])
+        page.locator(RESTORE_CANCEL).click()
+        page.select_option("#cost-currency", "CNY")
+        page.locator("#cost-editor-search").fill("lookup-12")
+        page.click("#cost-save")
+        self.assertEqual(CURRENCY_BLOCKED_MSG, page.locator("#cost-editor-status").inner_text())
+        self.assertEqual("lookup-12", page.locator("#cost-editor-search").input_value())
+        self.assertEqual(before, self.stored(page)[1])
+        self.assertNoErrors(errors, console)
+
+    def test_removed_model_error_and_confirmation_are_not_silently_discarded(self):
+        page, errors, console = self.prepared()
+        before = self.stored(page)[1]
+        self.rate_inputs(page, "lookup-01").nth(2).fill("bad")
+        page.evaluate("() => { DATA.cost.models = DATA.cost.models.filter(m => m.model !== 'lookup-01'); renderCostEditorList(); }")
+        page.click("#cost-save")
+        self.assertIn("当前模型列表", page.locator("#cost-editor-status").inner_text())
+        self.assertIn("bad", self.draft(page))
+        self.assertEqual(before, self.stored(page)[1])
+        page.click("#cost-cancel")
+        self.open_editor(page)
+        self.restore_btn(page, "gpt-6.1-sol").click()
+        page.evaluate("() => { DATA.cost.models = DATA.cost.models.filter(m => m.model !== 'gpt-6.1-sol'); renderCostEditorList(); }")
+        page.click("#cost-save")
+        self.assertIn("当前模型列表", page.locator("#cost-editor-status").inner_text())
+        self.assertEqual(price_key("gpt-6.1-sol"), page.evaluate("costPendingRestoreKey"))
+        self.assertEqual(before, self.stored(page)[1])
+        self.assertNoErrors(errors, console)
+
+    def test_language_refresh_preserves_search_caret_and_draft(self):
+        page, errors, console = self.prepared()
+        search = page.locator("#cost-editor-search")
+        search.fill("lookup-12")
+        self.rate_inputs(page, "lookup-12").nth(1).fill("2.125")
+        draft = self.draft(page)
+        search.focus()
+        search.evaluate("el => el.setSelectionRange(2, 5)")
+        self.assertEqual("cost-editor-search", page.evaluate("document.activeElement.id"))
+        page.evaluate("() => applyLanguage('en', false)")
+        page.wait_for_function("() => document.getElementById('cost-editor-search-label').textContent.includes('Search')")
+        self.assertEqual("cost-editor-search", page.evaluate("document.activeElement.id"))
+        self.assertEqual(["lookup-12", 2, 5], search.evaluate("el => [el.value, el.selectionStart, el.selectionEnd]"))
+        self.assertIn("1 / 14", page.locator("#cost-editor-results").inner_text())
+        self.assertEqual(draft, self.draft(page))
+        search.fill("absent")
+        self.assertIn("No matching", page.locator("#cost-editor-list").inner_text())
+        self.assertNoErrors(errors, console)
+
+    def test_live_catalog_refresh_preserves_query_caret_and_draft(self):
+        page, errors, console = self.prepared()
+        search = page.locator("#cost-editor-search")
+        search.fill("lookup-12")
+        self.rate_inputs(page, "lookup-12").nth(0).fill("3.125")
+        draft, stored = self.draft(page), self.stored(page)[1]
+        search.focus()
+        search.evaluate("el => el.setSelectionRange(1, 4)")
+        page.evaluate("""() => {
+            const next = JSON.parse(JSON.stringify(DATA));
+            next.cost.models.push({source:'claude', model:'lookup-12-new', identity:'model-a', hidden:false});
+            reconcileLiveData(next);
+        }""")
+        page.wait_for_function("() => document.getElementById('cost-editor-results').textContent.includes('2 / 15')")
+        self.assertEqual("lookup-12", search.input_value())
+        self.assertEqual([1, 4], search.evaluate("el => [el.selectionStart, el.selectionEnd]"))
+        self.assertEqual(draft, self.draft(page))
+        self.assertEqual(stored, self.stored(page)[1])
+        self.assertEqual("3.125", self.rate_inputs(page, "lookup-12").nth(0).input_value())
+        self.assertNoErrors(errors, console)
+
+    def test_search_layout_and_keyboard_in_both_languages_and_themes(self):
+        page, errors, console = self.prepared()
+        for width in (320, 390, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            for lang in ("zh", "en"):
+                page.evaluate("lang => applyLanguage(lang, false)", lang)
+                for theme in ("light", "dark"):
+                    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+                    page.locator("#cost-editor-search").fill("lookup")
+                    self.assertTrue(page.locator(".cost-sheet").evaluate("el => el.scrollWidth <= el.clientWidth + 1"))
+                    self.assertTrue(page.locator(".cost-ed-search").evaluate("el => el.scrollWidth <= el.clientWidth + 1"))
+        search = page.locator("#cost-editor-search")
+        search.focus()
+        search.press("Tab")
+        self.assertEqual("cost-editor-search-clear", page.evaluate("document.activeElement.id"))
+        page.locator("#cost-editor-search-clear").press("Enter")
+        self.assertEqual("cost-editor-search", page.evaluate("document.activeElement.id"))
+        page.locator("#cost-cancel").focus()
+        page.keyboard.press("Tab")
+        self.assertEqual("cost-x", page.evaluate("document.activeElement.id"))
+        page.keyboard.press("Escape")
+        self.close_editor_and_wait(page)
+        self.assertEqual("cost-price-btn", page.evaluate("document.activeElement.id"))
+        self.assertNoErrors(errors, console)
 
 
 if __name__ == "__main__":

@@ -95,6 +95,7 @@ class DashboardCrossBrowserTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             page.locator('#tabs [data-gran="day"]').click()
+            page.evaluate("document.getElementById('trend-table-details').open=true")
             rows = page.locator("#tbody tr[data-period]")
             rows.first.focus()
             page.keyboard.press("ArrowDown")

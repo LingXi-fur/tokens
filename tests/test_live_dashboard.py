@@ -2,6 +2,7 @@ import http.client
 import json
 import threading
 import time
+import tempfile
 import unittest
 from unittest import mock
 
@@ -11,7 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from tokens_cli import dashboard_payload, live_dashboard
+from tokens_cli import config, dashboard_payload, live_dashboard
 
 
 class _FakeDashboard:
@@ -57,9 +58,19 @@ class _FakeDashboard:
 
 class LiveDashboardTests(unittest.TestCase):
     def setUp(self):
-        # No test may touch a raw title entry point; every payload build here is
-        # synthetic.
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        # No test may touch a real source root, cache, router or raw title entry.
         patches = (
+            mock.patch.multiple(config,
+                HOME=str(root), CLAUDE_PROJECTS=str(root / "claude"),
+                GEMINI_TMP=str(root / "gemini"), CODEX_SESSIONS=str(root / "codex"),
+                CODEX_ARCHIVED_SESSIONS=str(root / "archive"),
+                CACHE_DIR=str(root / "cache"), CACHE_FILE=str(root / "cache" / "records.json"),
+                OUT_DIR=str(root / "out"), SESSION_SUMMARY_FILE=str(root / "out" / "titles.json"),
+                CCR_ROUTER_FILE=str(root / "router.js")),
+            mock.patch("tokens_cli.readers._ccr_signature", return_value=None),
             mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries",
                        return_value={}),
             mock.patch("tokens_cli.dashboard_payload.readers.build_session_index",
@@ -220,10 +231,15 @@ class LiveDashboardTests(unittest.TestCase):
         with mock.patch(
             "tokens_cli.live_dashboard.LiveDashboardServer",
             return_value=mock.sentinel.server,
-        ) as server_class:
+        ) as server_class, mock.patch(
+            "tokens_cli.live_dashboard.create_snapshot_store",
+            return_value=None,
+        ) as store_factory:
             server = live_dashboard.create_server(0, ["claude"])
         self.assertIs(mock.sentinel.server, server)
         self.assertEqual(300.0, server_class.call_args.args[2])
+        self.assertEqual(mock.call(["claude"], None, None, anonymize=False, use_cache=True),
+                         store_factory.call_args)
 
     # -- refresh semantics ---------------------------------------------------
     @mock.patch("tokens_cli.live_dashboard.readers.read_all", return_value=[])
@@ -263,6 +279,227 @@ class LiveDashboardTests(unittest.TestCase):
         self.assertIn("local log scan failed", response["error"])
         self.assertNotIn("private path", response["error"])
         self.assertIn('"has_snapshot": false', dashboard.page(300))
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all")
+    def test_scan_failure_exposes_only_whitelisted_stage_and_codes(self, read_all):
+        error = live_dashboard.readers.CollectionIncompleteError("codex", "usage_conflict")
+        read_all.side_effect = error
+        dashboard = live_dashboard.LiveDashboard(["claude", "codex"])
+        with mock.patch.object(dashboard, "_file_signature", return_value=()):
+            dashboard.refresh()
+        response = dashboard.response()
+        self.assertEqual({"stage": "collection", "source": "codex", "reason": "usage_conflict"},
+                         response["error_details"])
+        self.assertIn("no successful snapshot", response["error"])
+        self.assertIn('"error_details":', dashboard.page(300))
+        response["error_details"]["reason"] = "private mutation"
+        self.assertEqual("usage_conflict", dashboard.response()["error_details"]["reason"])
+        read_all.side_effect = None
+        read_all.return_value = []
+        with mock.patch.object(dashboard, "_file_signature", return_value=()):
+            dashboard.refresh()
+        self.assertIsNone(dashboard.response()["error_details"])
+
+    def assert_error_details_exports(self, dashboard, expected):
+        response = dashboard.response()
+        status = dashboard.status()
+        with mock.patch.object(live_dashboard.report_dashboard, "render_dashboard",
+                               return_value="synthetic-page") as render:
+            self.assertEqual("synthetic-page", dashboard.page(300))
+        page_live = render.call_args.kwargs["live"]
+        for exported in (response, status, page_live):
+            self.assertEqual(expected, exported["error_details"])
+            exported["error_details"]["reason"] = "private-copy-mutation"
+        self.assertEqual(expected, dashboard.status()["error_details"])
+        return response, status, page_live
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all")
+    def test_anchor_mismatch_groups_are_projected_and_cleared(self, read_all):
+        kinds = ("usage", "model", "billing", "usage_model", "usage_billing",
+                 "model_billing", "usage_model_billing")
+        for kind in kinds:
+            with self.subTest(kind=kind):
+                dashboard = live_dashboard.LiveDashboard(["codex"])
+                read_all.side_effect = None
+                read_all.return_value = []
+                with mock.patch.object(dashboard, "_file_signature", return_value=()):
+                    self.assertTrue(dashboard.refresh())
+                    before = dashboard.response()
+                    error = live_dashboard.readers.CollectionIncompleteError(
+                        "codex", "usage_conflict", conflict_kind="legacy_anchor_mismatch")
+                    error.mismatch_kind = kind
+                    read_all.side_effect = error
+                    with mock.patch.object(dashboard, "_file_signature", return_value=("changed",)):
+                        self.assertFalse(dashboard.refresh())
+                    self.assert_error_details_exports(dashboard, {
+                        "stage": "collection", "source": "codex", "reason": "usage_conflict",
+                        "conflict_kind": "legacy_anchor_mismatch", "mismatch_kind": kind})
+                    after = dashboard.response()
+                    self.assertEqual(before["wire"], after["wire"])
+                    self.assertEqual(before["checked_at"], after["checked_at"])
+                    read_all.side_effect = None
+                    self.assertFalse(dashboard.refresh())  # Same data, successful revalidation.
+                    self.assertEqual("success", dashboard.status()["scan"]["outcome"])
+                    self.assertIsNone(dashboard.status()["error_details"])
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all")
+    def test_mismatch_metadata_rejects_missing_invalid_and_wrong_context(self, read_all):
+        class StringSubclass(str):
+            pass
+        for value in (None, "private-mismatch-sentinel", [], {}, ["model"],
+                      {"kind": "model"}, True, 1, StringSubclass("model"), "missing"):
+            with self.subTest(value_type=type(value).__name__):
+                error = live_dashboard.readers.CollectionIncompleteError(
+                    "codex", "usage_conflict", conflict_kind="legacy_anchor_mismatch")
+                error.mismatch_kind = value
+                if value == "missing":
+                    del error.mismatch_kind
+                read_all.side_effect = error
+                dashboard = live_dashboard.LiveDashboard(["codex"])
+                with mock.patch.object(dashboard, "_file_signature", return_value=()):
+                    self.assertFalse(dashboard.refresh())
+                self.assert_error_details_exports(dashboard, {
+                    "stage": "collection", "source": "codex", "reason": "usage_conflict",
+                    "conflict_kind": "legacy_anchor_mismatch"})
+        for kind in (None, "modern_response_mismatch", "legacy_cumulative_rollback",
+                     "cross_file_identity_mismatch"):
+            error = live_dashboard.readers.CollectionIncompleteError(
+                "codex", "usage_conflict", conflict_kind=kind)
+            error.mismatch_kind = "model"
+            read_all.side_effect = error
+            dashboard = live_dashboard.LiveDashboard(["codex"])
+            with mock.patch.object(dashboard, "_file_signature", return_value=()):
+                self.assertFalse(dashboard.refresh())
+            self.assertNotIn("mismatch_kind", dashboard.status()["error_details"])
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all")
+    def test_four_conflict_codes_are_copied_to_all_exports_and_cleared_on_recovery(self, read_all):
+        for kind in ("modern_response_mismatch", "legacy_cumulative_rollback",
+                     "legacy_anchor_mismatch", "cross_file_identity_mismatch"):
+            with self.subTest(kind=kind):
+                error = live_dashboard.readers.CollectionIncompleteError(
+                    "codex", "usage_conflict", conflict_kind=kind)
+                error.private_path = "/synthetic/private-path-sentinel"
+                error.identity = "private-identity-sentinel"
+                error.hash = "private-hash-sentinel"
+                error.token = "private-token-sentinel"
+                error.args = ("private-exception-text-sentinel",)
+                read_all.side_effect = error
+                dashboard = live_dashboard.LiveDashboard(["codex"])
+                with mock.patch.object(dashboard, "_file_signature", return_value=()):
+                    self.assertFalse(dashboard.refresh())
+                    expected = {"stage": "collection", "source": "codex",
+                                "reason": "usage_conflict", "conflict_kind": kind}
+                    self.assert_error_details_exports(dashboard, expected)
+                    public = json.dumps([dashboard.response(), dashboard.status()]) + dashboard.page(300)
+                    for private in (*error.args, error.private_path, error.identity,
+                                    error.hash, error.token):
+                        self.assertNotIn(private, public)
+                    self.assertFalse(dashboard.status()["has_snapshot"])
+                    self.assertIsNone(dashboard.response()["wire"])
+                    self.assertIsNone(dashboard.status()["checked_at"])
+                    read_all.side_effect = None
+                    read_all.return_value = []
+                    self.assertTrue(dashboard.refresh())
+                    self.assertEqual("success", dashboard.status()["scan"]["outcome"])
+                    self.assertIsNone(dashboard.response()["error_details"])
+                    self.assertIsNone(dashboard.status()["error_details"])
+                    self.assertFalse(dashboard.refresh())
+                    self.assertEqual("unchanged", dashboard.status()["scan"]["outcome"])
+                    with mock.patch.object(live_dashboard.report_dashboard, "render_dashboard") as render:
+                        dashboard.page(300)
+                    self.assertIsNone(render.call_args.kwargs["live"]["error_details"])
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all")
+    def test_old_exception_and_tampered_conflict_diagnostics_are_omitted(self, read_all):
+        class StringSubclass(str):
+            pass
+
+        for value in (None, "private-diagnostic-sentinel", [], {},
+                      ["modern_response_mismatch"], {"kind": "modern_response_mismatch"},
+                      7, True, "missing-attribute", StringSubclass("modern_response_mismatch")):
+            with self.subTest(value_type=type(value).__name__):
+                error = live_dashboard.readers.CollectionIncompleteError("codex", "usage_conflict")
+                error.conflict_kind = value
+                if value == "missing-attribute":
+                    del error.conflict_kind
+                read_all.side_effect = error
+                dashboard = live_dashboard.LiveDashboard(["codex"])
+                with mock.patch.object(dashboard, "_file_signature", return_value=()):
+                    self.assertFalse(dashboard.refresh())
+                self.assert_error_details_exports(dashboard, {
+                    "stage": "collection", "source": "codex", "reason": "usage_conflict"})
+                self.assertNotIn("private-diagnostic-sentinel", dashboard.page(300))
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all")
+    def test_conflict_kind_requires_collection_stage_and_exact_codex_reason(self, read_all):
+        cases = (("collection", "claude", "usage_conflict"),
+                 ("collection", "gemini", "usage_conflict"),
+                 ("collection", "all", "usage_conflict"),
+                 ("collection", "codex", "usage_invalid"),
+                 ("discovery", "codex", "usage_conflict"),
+                 ("payload", "codex", "usage_conflict"),
+                 ("encoding", "codex", "usage_conflict"))
+        for stage, source, reason in cases:
+            with self.subTest(stage=stage, source=source, reason=reason):
+                error = live_dashboard.readers.CollectionIncompleteError(source, reason)
+                error.conflict_kind = "modern_response_mismatch"
+                dashboard = live_dashboard.LiveDashboard(["codex"])
+                target, method = {
+                    "collection": (live_dashboard.readers, "read_all"),
+                    "discovery": (dashboard, "_file_signature"),
+                    "payload": (dashboard_payload, "build_payload"),
+                    "encoding": (live_dashboard.dashboard_wire, "encode_payload"),
+                }[stage]
+                read_all.side_effect = None
+                read_all.return_value = []
+                with mock.patch.object(dashboard, "_file_signature", return_value=()), \
+                        mock.patch.object(target, method, side_effect=error):
+                    self.assertFalse(dashboard.refresh())
+                self.assert_error_details_exports(dashboard, {
+                    "stage": stage, "source": source, "reason": reason})
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all")
+    def test_container_or_unknown_source_reason_never_breaks_error_publication(self, read_all):
+        for attribute in ("source", "reason"):
+            for value in ([], {}, ["codex"], {"reason": "usage_conflict"},
+                          None, "private-source-reason-sentinel"):
+                with self.subTest(attribute=attribute, value_type=type(value).__name__):
+                    error = live_dashboard.readers.CollectionIncompleteError("codex", "usage_conflict")
+                    error.conflict_kind = "modern_response_mismatch"
+                    setattr(error, attribute, value)
+                    read_all.side_effect = error
+                    dashboard = live_dashboard.LiveDashboard(["codex"])
+                    with mock.patch.object(dashboard, "_file_signature", return_value=()):
+                        self.assertFalse(dashboard.refresh())
+                    self.assertFalse(dashboard.status()["refreshing"])
+                    self.assertEqual("failed", dashboard.status()["scan"]["outcome"])
+                    self.assert_error_details_exports(dashboard, {"stage": "collection"})
+                    self.assertNotIn("private-source-reason-sentinel", dashboard.page(300))
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all", return_value=[])
+    def test_unknown_build_error_never_exposes_private_text(self, read_all):
+        dashboard = live_dashboard.LiveDashboard(["claude"])
+        with mock.patch.object(dashboard, "_file_signature", return_value=()), mock.patch(
+            "tokens_cli.live_dashboard.dashboard_payload.build_payload",
+            side_effect=RuntimeError("/private/project secret-session"),
+        ):
+            dashboard.refresh()
+        response = dashboard.response()
+        self.assertEqual({"stage": "payload"}, response["error_details"])
+        self.assertNotIn("secret-session", json.dumps(response))
+        self.assertNotIn("/private/project", dashboard.page(300))
+
+    @mock.patch("tokens_cli.live_dashboard.readers.read_all", return_value=[])
+    def test_mutated_collection_codes_are_not_exposed(self, read_all):
+        error = live_dashboard.readers.CollectionIncompleteError("claude", "file_changed")
+        error.source = "/private/project"
+        error.reason = "secret-session"
+        read_all.side_effect = error
+        dashboard = live_dashboard.LiveDashboard(["claude"])
+        with mock.patch.object(dashboard, "_file_signature", return_value=()):
+            dashboard.refresh()
+        self.assertEqual({"stage": "collection"}, dashboard.response()["error_details"])
 
     @mock.patch("tokens_cli.live_dashboard.readers.read_all")
     def test_successful_scan_publishes_snapshot_and_checked_at(self, read_all):

@@ -86,6 +86,29 @@ class DashboardTests(unittest.TestCase):
         self.assertGreater((ASSETS / "dashboard.css").stat().st_size, 10000)
         self.assertGreater((ASSETS / "dashboard.js").stat().st_size, 50000)
 
+    def test_entrance_choreography_assets_are_present_and_motion_gated(self):
+        css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        template = (ASSETS / "template.html").read_text(encoding="utf-8")
+        # 主 KPI 渐变呼吸：仅 primary 卡流动，keyframes 收尾回到 0 位避免接缝
+        self.assertIn("animation:gradFlow 6s ease-in-out infinite alternate", css)
+        self.assertIn("@keyframes gradFlow{from{background-position:0% 50%}", css)
+        self.assertIn("to{background-position:100% 50%}", css)
+        self.assertIn(".kpi.is-primary .v .grad", css)
+        # 渐变底必须放大铺满 clip 区域，防止流动时露出底色断层
+        self.assertIn(".kpi.is-primary .v .grad{background-size:220% 100%", css)
+        # 趋势柱错峰生长：JS 按序封顶延迟 + inline animation-delay，不动全局 grow
+        self.assertIn("const barStagger=motionDisabled()||document.documentElement.dataset.motion==='low'?0:Math.min(i*28,260);", script)
+        self.assertIn("style=\"animation-delay:'+barStagger+'ms\"", script)
+        # h1 渐变文字与主题变量走同一 hero 渐变
+        self.assertIn('h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.1px', css)
+        self.assertIn("background:var(--hero-grad)", css)
+        # motion 档位击杀：off 全局禁、low 关呼吸+错峰归零；reduced-motion 由全局通配击杀覆盖
+        self.assertIn(":root[data-motion=low] .kpi.is-primary .v .grad{animation:none}", css)
+        self.assertIn("@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}*,*::before,*::after{animation:none!important", css)
+        # 模板侧：主数字挂渐变类，柱状图容器存在
+        self.assertIn('<span class=grad id=k-total></span>', template)
+
     def test_dashboard_language_is_chinese_first_and_privacy_isolated(self):
         template = report_dashboard._TEMPLATE
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
@@ -304,7 +327,7 @@ class DashboardTests(unittest.TestCase):
             "generated", "calendar_day", "snapshot", "source", "range", "models", "colors", "hourly",
             "day_details", "top_cwds", "session_series",
             "reuse", "day", "week", "month", "provenance", "achievement_stats",
-            "achievement_daily",
+            "achievement_daily", "request_models",
         ):
             self.assertIn(key, payload)
         self.assertEqual(["claude"], payload["source"])
@@ -453,7 +476,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn('data-dest-view="table"', template)
         self.assertIn(".tl-item,.chip,#tabs button{min-height:44px}", template)
         self.assertIn(".trend-legend{flex-wrap:nowrap;overflow-x:auto", template)
-        self.assertIn("--faint:#5f6b7a", template)
+        self.assertIn("--faint:#4f5a68", template)
         self.assertIn("--faint:#8b949e", template)
         self.assertIn("dest-viewswitch", template)
         self.assertIn("project_model", template)
@@ -1197,6 +1220,125 @@ if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new 
     @mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={})
     @mock.patch("tokens_cli.dashboard_payload.readers.session_title", return_value="")
     @mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={})
+    def test_payload_reports_request_models_per_day_and_total(self, _summaries, _title, _index):
+        records = [
+            {
+                "source": "claude", "ts": "2026-07-01T01:00:00+08:00",
+                "date": "2026-07-01", "model": "glm-5.3",
+                "request_model": "claude-opus-5-5",
+                "input": 70, "output": 20, "cache_read": 10,
+                "cache_write": 0, "total": 100, "session": "session-a",
+                "cwd": "/synthetic/project-a",
+            },
+            {
+                "source": "claude", "ts": "2026-07-01T02:00:00+08:00",
+                "date": "2026-07-01", "model": "glm-5.3",
+                "request_model": "claude-opus-5-5",
+                "input": 5, "output": 2, "cache_read": 3,
+                "cache_write": 0, "total": 10, "session": "session-c",
+                "cwd": "/tmp/project-c",
+            },
+            {
+                "source": "claude", "ts": "2026-07-02T14:00:00+08:00",
+                "date": "2026-07-02", "model": "glm-5.3",
+                "request_model": "claude-sonnet-5-5",
+                "input": 120, "output": 60, "cache_read": 20,
+                "cache_write": 0, "total": 200, "session": "session-b",
+                "cwd": "/synthetic/project-b",
+            },
+            {
+                # codex 无 request_model：不参与请求名统计。
+                "source": "codex", "ts": "2026-07-02T15:00:00+08:00",
+                "date": "2026-07-02", "model": "gpt-6.1-sol",
+                "input": 1, "output": 1, "cache_read": 0,
+                "cache_write": 0, "total": 2, "session": "session-d",
+                "cwd": "/synthetic/project-b",
+            },
+        ]
+        payload = report_dashboard.build_payload(records)
+        day_one = next(row for row in payload["day"] if row["period"] == "2026-07-01")
+        day_two = next(row for row in payload["day"] if row["period"] == "2026-07-02")
+        self.assertEqual({"glm-5.3": {"claude-opus-5-5": 110}}, day_one["request_models"])
+        self.assertEqual({"glm-5.3": {"claude-sonnet-5-5": 200}}, day_two["request_models"])
+        # week/month 行不带请求名形状。
+        for row in payload["week"] + payload["month"]:
+            self.assertNotIn("request_models", row)
+        top = payload["request_models"]
+        self.assertEqual(
+            [
+                {"request": "claude-opus-5-5", "model": "glm-5.3",
+                 "source": "claude", "total": 110},
+                {"request": "claude-sonnet-5-5", "model": "glm-5.3",
+                 "source": "claude", "total": 200},
+            ],
+            sorted(top, key=lambda item: item["total"]),
+        )
+        self.assertTrue(all(
+            set(item) == {"request", "model", "source", "total"} for item in top))
+
+    def test_request_models_truncated_to_24_entries(self):
+        records = []
+        for index in range(30):
+            records.append({
+                "source": "claude", "ts": f"2026-07-01T{index:02d}:00:00+08:00",
+                "date": "2026-07-01", "model": f"backend-{index}",
+                "request_model": f"alias-{index}",
+                "input": 1, "output": 0, "cache_read": 0,
+                "cache_write": 0, "total": 10 ** index, "session": "s",
+                "cwd": "/p",
+            })
+        payload = report_dashboard.build_payload(records)
+        top = payload["request_models"]
+        self.assertEqual(24, len(top))
+        totals = [item["total"] for item in top]
+        self.assertEqual(sorted(totals, reverse=True), totals)
+        # 截掉的是 total 最小的 6 条。
+        self.assertNotIn("alias-0", {item["request"] for item in top})
+        self.assertIn("alias-29", {item["request"] for item in top})
+
+    def test_anonymized_payload_omits_request_models(self):
+        records = [{
+            "source": "claude", "ts": "2026-07-01T01:00:00+08:00",
+            "date": "2026-07-01", "model": "glm-5.3",
+            "request_model": "claude-opus-5-5",
+            "input": 1, "output": 2, "cache_read": 0,
+            "cache_write": 0, "total": 3, "session": "s",
+            "cwd": "/p",
+        }]
+        payload = report_dashboard.build_payload(records, anonymize=True)
+        self.assertEqual([], payload["request_models"])
+        day = next(row for row in payload["day"] if row["period"] == "2026-07-01")
+        self.assertEqual({}, day["request_models"])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("claude-opus-5-5", serialized)
+
+    def test_request_models_omitted_when_names_match(self):
+        records = [
+            {
+                "source": "claude", "ts": "2026-07-01T01:00:00+08:00",
+                "date": "2026-07-01", "model": "model-a",
+                "request_model": "model-a",
+                "input": 1, "output": 2, "cache_read": 0,
+                "cache_write": 0, "total": 3, "session": "s",
+                "cwd": "/p",
+            },
+            {
+                # 旧快照记录无 request_model 字段：等价于同名，不出现在统计。
+                "source": "claude", "ts": "2026-07-01T02:00:00+08:00",
+                "date": "2026-07-01", "model": "model-a",
+                "input": 1, "output": 2, "cache_read": 0,
+                "cache_write": 0, "total": 3, "session": "s2",
+                "cwd": "/p",
+            },
+        ]
+        payload = report_dashboard.build_payload(records)
+        self.assertEqual([], payload["request_models"])
+        day = next(row for row in payload["day"] if row["period"] == "2026-07-01")
+        self.assertEqual({}, day["request_models"])
+
+    @mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("tokens_cli.dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={})
     def test_complete_daily_entities_preserve_cross_day_top_candidate(self, _summaries, _title, _index):
         records = []
         for day in ("2026-07-01", "2026-07-02"):
@@ -1382,7 +1524,7 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
             "role=dialog aria-modal=true aria-label=\"Token 分享卡\"",
             "role=dialog aria-modal=true aria-labelledby=ach-title",
             "class=table-scroll tabindex=0 role=region aria-label=\"Token 明细，可横向滚动\"",
-            ".head-tools{display:flex;width:100%;min-width:0;flex-wrap:wrap}",
+            ".head-tools{display:flex;width:100%;min-width:0;flex-wrap:wrap;justify-content:flex-start}",
             ".passport{padding:22px;min-height:0}",
             ".ach-bar{flex-wrap:wrap;min-width:0}",
         ):
@@ -1599,6 +1741,10 @@ if(almanacScopeKey({...DATA,anonymized:true})===almanacScopeKey(DATA))throw new 
         self.assertEqual("2026-07-01", provenance["first_day"])
         self.assertEqual("2026-07-03", provenance["last_day"])
         self.assertEqual(1, provenance["sources"]["codex"]["records"])
+        self.assertEqual("2026-07-03", provenance["sources"]["codex"]["first_day"])
+        self.assertEqual("2026-07-03", provenance["sources"]["codex"]["last_day"])
+        self.assertEqual("2026-07-01", provenance["sources"]["claude"]["first_day"])
+        self.assertEqual("2026-07-02", provenance["sources"]["claude"]["last_day"])
         self.assertEqual(provenance, anonymized["provenance"])
         serialized = json.dumps(provenance, ensure_ascii=False)
         self.assertNotIn("/synthetic/project-a", serialized)
@@ -2113,7 +2259,7 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
         storage_keys = set(re.findall(r"tk-[a-z0-9-]+", report_dashboard._TEMPLATE))
         storage_keys.discard("tk-motion-change")
         self.assertEqual(
-            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang", "tk-cost-v1"},
+            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang", "tk-cost-v1", "tk-budget-v1"},
             storage_keys,
         )
         self.assertNotIn("localStorage.setItem('tk-trail", script)

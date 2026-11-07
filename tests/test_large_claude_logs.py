@@ -45,7 +45,8 @@ def normalized(value):
     usage = message["usage"]
     return {
         "source": "claude", "ts": value["timestamp"], "date": "2026-10-20",
-        "model": message["model"], "input": usage["input_tokens"],
+        "model": message["model"],
+        "request_model": message["model"], "input": usage["input_tokens"],
         "output": usage["output_tokens"], "cache_read": usage["cache_read_input_tokens"],
         "cache_write": usage["cache_creation_input_tokens"],
         "total": sum(usage.values()), "session": value.get("sessionId"),
@@ -248,13 +249,13 @@ class LargeClaudeLogsTests(unittest.TestCase):
         expected = {
             "MAX_FILE_BYTES": 64 * 1024 * 1024, "MAX_LINE_BYTES": 4 * 1024 * 1024,
             "MAX_CLAUDE_RECORDS": 100000, "MAX_CLAUDE_RETAINED_BYTES": 64 * 1024 * 1024,
-            "MAX_TOTAL_RECORDS": 500000, "MAX_TOTAL_RETAINED_BYTES": 256 * 1024 * 1024,
-            "MAX_CACHE_BYTES": 64 * 1024 * 1024, "CLAUDE_READ_CHUNK_BYTES": 64 * 1024,
+            "MAX_TOTAL_RECORDS": 1000000, "MAX_TOTAL_RETAINED_BYTES": 1024 * 1024 * 1024,
+            "MAX_CACHE_BYTES": 512 * 1024 * 1024, "CLAUDE_READ_CHUNK_BYTES": 64 * 1024,
         }
         for name, value in expected.items():
             with self.subTest(limit=name):
                 self.assertEqual(value, getattr(readers, name))
-        self.assertEqual(7, readers.CACHE_VERSION)
+        self.assertEqual(20, readers.CACHE_VERSION)
 
     @unittest.skipUnless(sys.platform == "win32", "Windows-only failure-field capture")
     def test_capture_stat_fields_at_failing_safe_open(self):
@@ -280,15 +281,15 @@ class LargeClaudeLogsTests(unittest.TestCase):
             self.assertEqual([normalized(first), normalized(second)], self.collect())
             self.assertEqual([normalized(first), normalized(second)], self.collect())
 
-    def test_only_claude_gets_the_large_regular_file_exception(self):
+    def test_claude_and_codex_get_the_large_regular_file_exception(self):
         path = self.write([event()])
         with mock.patch.object(readers, "MAX_FILE_BYTES", 1):
             self.assertFalse(readers._safe_to_parse(str(path), path.stat()))
-            self.assertTrue(readers._safe_to_parse(str(path), path.stat(), source="claude"))
-            for source in ("gemini", "codex"):
-                self.paths[source].append(str(path))
-                self.assertFalse(readers._safe_to_parse(str(path), path.stat(), source=source))
-            self.assertEqual([], readers.read_all(sources=["gemini", "codex"], use_cache=False))
+            for source in ("claude", "codex"):
+                self.assertTrue(readers._safe_to_parse(str(path), path.stat(), source=source))
+            self.paths["gemini"].append(str(path))
+            self.assertFalse(readers._safe_to_parse(str(path), path.stat(), source="gemini"))
+            self.assertEqual([], readers.read_all(sources=["gemini"], use_cache=False))
         for parser in self.other_parsers.values():
             parser.assert_not_called()
 
@@ -567,7 +568,9 @@ class LargeClaudeLogsTests(unittest.TestCase):
         self.assertFalse(failed["has_snapshot"])
         self.assertIsNone(failed["snapshot"])
         self.assertIsNone(failed["checked_at"])
-        self.assertEqual(live_dashboard._SCAN_FAILED_ERROR, failed["error"])
+        self.assertIn("no successful snapshot", failed["error"])
+        self.assertEqual({"stage": "collection", "source": "claude", "reason": "json_projection_limit"},
+                         failed["error_details"])
         self.parse.reset_mock()
         self.assertTrue(dashboard.refresh())
         self.parse.assert_called_once()
