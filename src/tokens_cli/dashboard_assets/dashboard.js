@@ -898,6 +898,7 @@ function renderKPI(){
   animateNum(document.getElementById('k-calls'), calls, 500);
   animateNum(document.getElementById('k-models'), Object.keys(mtot).length, 400);
   document.getElementById('k-dom').textContent = dom!=='—' ? pretty(dom) : '—';
+  document.getElementById('k-dom-share').textContent = dom!=='—'&&total>0 ? pct(mtot[dom],total) : '';
   // 主力卡色点与模型身份色对齐；无数据时隐藏
   const domDot=document.getElementById('k-dom-dot');
   if(domDot){domDot.hidden=dom==='—';domDot.style.background=dom==='—'?'':modelColor(dom);}

@@ -474,6 +474,15 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_dominant_model_card_shows_share(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            # 主 fixture：model-a 300 / 450 = 66.7%
+            self.assertEqual("66.7%", page.locator("#k-dom-share").inner_text())
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
     def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
         context, page, page_errors, console_errors = self.new_page()
         try:
