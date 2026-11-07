@@ -723,19 +723,18 @@ function deltaWindowInfo(rows){
   const prevTotal=(wholeCurrent?fullPreviousDays:previousDays).reduce((sum,day)=>sum+selectedDayTotal(day),0);
   return {label:label+(en?' · reference ':' · 参照 ')+fmtLabel(previous.period,state.gran),current,previous,currentDays:compareCurrent,previousDays,currTotal,prevTotal,reference:previous.period};
 }
-function periodDelta(rows){
-  const window=deltaWindowInfo(rows);return window&&window.prevTotal>0?{value:(window.currTotal-window.prevTotal)/window.prevTotal*100,label:window.label}:null;
+function windowModelTotals(row,days){
+  if(!days)return row.models||{};
+  const out={};days.forEach(day=>{const v=selectedDayModelTotals(day);Object.keys(v).forEach(model=>out[model]=(out[model]||0)+(v[model]||0));});return out;
 }
 function attributionFor(rows){
   const window=deltaWindowInfo(rows);if(!window||window.prevTotal<=0)return null;
-  const totals=(row,days)=>{if(!days)return Object.fromEntries(DATA.models.map(model=>[model,state.models.has(model)?(row.models?.[model]||0):0]));const out=Object.fromEntries(DATA.models.map(model=>[model,0]));days.forEach(day=>{const values=selectedDayModelTotals(day);DATA.models.forEach(model=>out[model]+=values[model]||0);});return out;};
-  const curr=totals(window.current,window.currentDays),prev=totals(window.previous,window.previousDays),parts=DATA.models.filter(model=>state.models.has(model)).map(model=>({model,curr:curr[model]||0,prev:prev[model]||0,delta:(curr[model]||0)-(prev[model]||0)})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)||a.model.localeCompare(b.model));
+  const curr=windowModelTotals(window.current,window.currentDays),prev=windowModelTotals(window.previous,window.previousDays),parts=DATA.models.filter(model=>state.models.has(model)).map(model=>({model,curr:curr[model]||0,prev:prev[model]||0,delta:(curr[model]||0)-(prev[model]||0)})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)||a.model.localeCompare(b.model));
   return {label:window.label,currTotal:window.currTotal,prevTotal:window.prevTotal,parts};
 }
 function dominantShift(rows){
   const window=deltaWindowInfo(rows);if(!window||!window.prevTotal||!window.currTotal)return null;
-  const totals=(row,days)=>days?days.reduce((m,d)=>{const v=selectedDayModelTotals(d);Object.keys(v).forEach(model=>m[model]=(m[model]||0)+(v[model]||0));return m;},{}):(row.models||{});
-  const prevTop=topModelOf(totals(window.previous,window.previousDays)),currTop=topModelOf(totals(window.current,window.currentDays));
+  const prevTop=topModelOf(windowModelTotals(window.previous,window.previousDays)),currTop=topModelOf(windowModelTotals(window.current,window.currentDays));
   if(!prevTop||!currTop||prevTop[0]===currTop[0])return null;
   return {from:prevTop[0],to:currTop[0],label:window.label};
 }
@@ -746,11 +745,12 @@ function renderDominantShift(rows=selectedRows()){
   else shiftEl.hidden=true;
 }
 function renderDelta(rows=selectedRows()){
-  const comparison=periodDelta(rows),dEl=document.getElementById('k-delta');
-  if(comparison){
-    const d=comparison.value;dEl.style.display='';dEl.className='delta '+(d>=0?'up':'down');
-    dEl.textContent=(d>=0?'▲ ':'▼ ')+Math.abs(d).toFixed(1)+'% '+comparison.label;
-  } else dEl.style.display='none';
+  const window=deltaWindowInfo(rows),dEl=document.getElementById('k-delta');
+  if(window&&window.prevTotal>0){
+    const d=(window.currTotal-window.prevTotal)/window.prevTotal*100;dEl.style.display='';dEl.className='delta '+(d>=0?'up':'down');
+    dEl.textContent=(d>=0?'▲ ':'▼ ')+Math.abs(d).toFixed(1)+'% '+window.label;
+    dEl.title=(dashboardLanguage==='en'?'Previous ':'上期 ')+fmt(window.prevTotal)+' → '+(dashboardLanguage==='en'?'current ':'本期 ')+fmt(window.currTotal)+' tk';
+  } else {dEl.style.display='none';dEl.title='';}
 }
 
 function completeIntervalRows(){
@@ -867,7 +867,7 @@ document.getElementById('section-delta').addEventListener('keydown',event=>{if(e
 function renderAttribution(){
   const pair=intervalResult(),result=intervalState.active?(pair?{label:'等长时段',currTotal:pair.bTotal,prevTotal:pair.aTotal,parts:pair.parts}:null):attributionFor(selectedRows()),list=document.getElementById('delta-list'),story=document.getElementById('delta-story'),total=document.getElementById('delta-total'),windowLabel=document.getElementById('delta-window');if(!list)return;
   renderIntervalUI();
-  if(!result){closeDeltaEvidence();windowLabel.textContent=intervalState.active?intervalPrompt():'需要连续两期且上期 Token 大于 0';total.textContent='暂无可比窗口';story.textContent=intervalState.active?'仅比较同粒度、连续且完整的等长周期。':'当前范围无法形成可靠归因；切换到有连续数据的周或月再看。';list.innerHTML='<div class=delta-empty role=listitem>没有足够的同期数据可拆解。</div>';return;}
+  if(!result){closeDeltaEvidence();windowLabel.textContent=intervalState.active?intervalPrompt():costT('需要连续两期且上期 Token 大于 0','Requires two consecutive periods and a previous total above 0');total.textContent=costT('暂无可比窗口','No comparable window');story.textContent=intervalState.active?costT('仅比较同粒度、连续且完整的等长周期。','Only equal-length windows of consecutive complete periods at the same granularity can be compared.'):costT('当前范围无法形成可靠归因；切换到有连续数据的周或月再看。','This range cannot support reliable attribution. Switch to a week or month with consecutive data.');list.innerHTML='<div class=delta-empty role=listitem>'+costT('没有足够的同期数据可拆解。','Not enough comparable data to attribute.')+'</div>';return;}
   const net=result.currTotal-result.prevTotal,changed=result.parts.filter(part=>part.delta!==0),shown=changed,max=Math.max(1,...shown.map(part=>Math.abs(part.delta))),leader=changed[0],scope=attributionScope(pair),scopeKey=scope?JSON.stringify([state.gran,[...state.models].sort(),scope.aDays,scope.bDays]):null;
   const otherPart=result.parts.find(part=>part.model==='other'),before=scope?otherModelTotals(scope.aDays):{},after=scope?otherModelTotals(scope.bDays):{};
   const overflowNames=[...new Set([...Object.keys(before),...Object.keys(after)])].sort((a,b)=>Math.abs((after[b]||0)-(before[b]||0))-Math.abs((after[a]||0)-(before[a]||0))||a.localeCompare(b));
@@ -878,7 +878,7 @@ function renderAttribution(){
   const rowHTML=part=>{const width=Math.abs(part.delta)/max*50,side=part.delta>=0?'pos':'neg',color=modelColor(part.model),name=pretty(part.model),content='<span class=delta-name><i style="background:'+esc(color)+'"></i><span title="'+esc(name)+'">'+esc(name)+'</span></span><span class=delta-track><i class=delta-zero></i><b style="width:'+width.toFixed(1)+'%;--delta-color:'+esc(color)+'"></b></span><span class=delta-value>'+(part.delta>0?'+':'')+fmt(part.delta)+'</span>';return part.model==='other'?'<div role=listitem class="delta-row '+side+'">'+content+'</div>':'<div role=listitem><button type=button class="delta-row '+side+'" data-delta-model="'+esc(part.model)+'" aria-label="'+esc(name)+' · 查看项目证据" aria-controls=delta-evidence aria-expanded=false>'+content+'</button></div>';};
   const overflowHTML=otherPart&&overflowNames.length?'<div role=listitem><details class=delta-other-details><summary>'+(dashboardLanguage==='en'?'Models within Other':'Other 内具体模型')+' · '+overflowNames.length+'</summary><p class=delta-evidence-note>'+(dashboardLanguage==='en'?'These totals share the Other chart color. Project totals are only available for the combined bucket; parallel aggregates do not prove causality.':'这些用量共用 Other 图表颜色；项目仅有合并值，并行聚合不能证明因果。')+'</p><div class=delta-other-scroll><table><thead><tr><th>'+(dashboardLanguage==='en'?'Model':'模型')+'</th><th>A · Token</th><th>B · Token</th><th>'+(dashboardLanguage==='en'?'Change':'变化')+'</th></tr></thead><tbody>'+overflowNames.map(name=>'<tr><th scope=row>'+esc(name)+'</th><td>'+fmt(before[name]||0)+'</td><td>'+fmt(after[name]||0)+'</td><td>'+((after[name]||0)>(before[name]||0)?'+':'')+fmt((after[name]||0)-(before[name]||0))+'</td></tr>').join('')+(beforeRest||afterRest?'<tr><th scope=row>'+(dashboardLanguage==='en'?'Unidentified remainder':'未识别的剩余量')+'</th><td>'+fmt(beforeRest)+'</td><td>'+fmt(afterRest)+'</td><td>'+(afterRest>beforeRest?'+':'')+fmt(afterRest-beforeRest)+'</td></tr>':'')+'</tbody></table></div></details></div>':'';
   const listOpen=!!list.querySelector('.delta-other-details[open]');
-  list.innerHTML=shown.map(part=>rowHTML(part)).join('')+overflowHTML||'<div class=delta-empty role=listitem>各模型与上一比较窗口持平。</div>';
+  list.innerHTML=shown.map(part=>rowHTML(part)).join('')+overflowHTML||'<div class=delta-empty role=listitem>'+costT('各模型与上一比较窗口持平。','All models are unchanged from the previous comparison window.')+'</div>';
   if(listOpen)list.querySelector('.delta-other-details')?.setAttribute('open','');
   renderDeltaEvidence(scope,shown);
 }

@@ -30,6 +30,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - A dominant-model shift badge on the overview's top-model card: when the current period's leading model differs from the previous period's over the same comparable window used by the period-over-period delta, the card shows a small `主力换人 X → Y` pill. Informational only — statistics, filters, and exports are unchanged, and the badge hides when both periods share a leader or no comparable window exists.
 - A "copy text summary" action in the current-view popover: one click copies a short readable summary of the current scope (granularity, models, range, total tokens, calls, and top model) to the clipboard for pasting into notes or messages. Local only, using the existing clipboard fallback.
 - The overview top-model card now shows the leading model's share of the current total token usage beside its name (e.g. `66.7%`), so the dominant model's weight reads at a glance without opening the per-model trend.
+- The overview period-over-period delta exposes the exact prior and current totals in a hover title (e.g. `上期 250 → 本期 200 tk`), complementing the percentage label; the one-line `periodDelta` forwarder was folded into `renderDelta`.
 
 ### Changed
 
@@ -68,6 +69,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - `glm-5.3` and `glm-5.3-flash`, when present under those exact recorded names, retain separate filter identities even when model capacity overflows. They share the existing seven-identity capacity with the latest backend and usage-ranked models; no historical records are relabeled and no absent Flash usage is inferred.
 - The lazy-section error glyph ("!") uses a lighter amber in the dark theme so its contrast against the error panel clears the 3:1 non-text threshold; the light theme keeps the darker amber.
 - The period-over-period delta label (`环比` / `较上期同期` / `部分范围 · 同历日对比`) now follows the selected language instead of staying Chinese in English mode; the same label is reused by the change-attribution panel and the top-model shift badge.
+- The change-attribution empty states (`需要连续两期且上期 Token 大于 0` / `暂无可比窗口` / `没有足够的同期数据可拆解` / `各模型与上一比较窗口持平`) now follow the selected language instead of staying Chinese in English mode.
 - The full session table retains an independent replay button for every row, including sessions outside the current card page.
 - Report-level source metadata retains the requested sources instead of being overwritten by the last session's sources, including when another source has records without session IDs.
 - Model filters now show the names and token totals inside `Other` without requiring an expanded chart legend. These names follow the current period and share the `Other` color and group filter; they are not independent model filters. Anonymous reports do not invent or expose missing names.

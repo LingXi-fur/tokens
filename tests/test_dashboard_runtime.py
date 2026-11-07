@@ -496,6 +496,18 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_delta_title_shows_exact_prior_and_current(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("setGran('day')")
+            page.wait_for_function("()=>state.gran==='day'")
+            title = page.locator("#k-delta").get_attribute("title")
+            self.assertIn("250", title)
+            self.assertIn("200", title)
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
     def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
         context, page, page_errors, console_errors = self.new_page()
         try:
