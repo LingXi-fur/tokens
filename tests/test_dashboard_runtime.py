@@ -479,6 +479,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         try:
             # 主 fixture：model-a 300 / 450 = 66.7%
             self.assertEqual("66.7%", page.locator("#k-dom-share").inner_text())
+            self.assertIn("66.7%", page.locator("#k-dom-share-fill").get_attribute("style"))
             self.assertEqual([], page_errors + console_errors)
         finally:
             context.close()

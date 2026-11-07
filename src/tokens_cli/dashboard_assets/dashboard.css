@@ -164,6 +164,8 @@ h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.1px;background:var(--
 .kpi-dom-dot[hidden]{display:none}
 .kpi .dom-shift{margin-top:8px;display:inline-block;padding:3px 8px;border-radius:6px;font-size:11.5px;font-weight:700;background:color-mix(in srgb,var(--accent-2) 14%,transparent);color:var(--accent-2);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .kpi .dom-shift[hidden]{display:none}
+.kpi .dom-share-bar{height:4px;border-radius:2px;background:color-mix(in srgb,var(--accent) 14%,transparent);margin-top:8px;overflow:hidden}
+.kpi .dom-share-bar i{display:block;height:100%;width:0;border-radius:2px;background:var(--accent-2);transition:width .5s ease}
 @media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)} .kpi .spark{display:none}}
 /* KPI 数字涨跌闪动：涨绿跌红，filter 对渐变文字同样生效 */
 .flash-up{animation:metricFlashUp .7s ease}.flash-down{animation:metricFlashDown .7s ease}
