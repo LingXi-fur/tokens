@@ -483,6 +483,19 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_delta_label_is_english_in_english_mode(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("setGran('day')")
+            page.wait_for_function("()=>state.gran==='day'")
+            page.evaluate("applyLanguage('en',false)")
+            delta = page.locator("#k-delta").inner_text()
+            self.assertIn("vs prior period", delta)
+            self.assertNotIn("环比", delta)
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
     def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
         context, page, page_errors, console_errors = self.new_page()
         try:

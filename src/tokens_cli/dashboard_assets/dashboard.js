@@ -409,7 +409,7 @@ function applyLanguage(language,persist=true){
     if(blockNow)blockNow.textContent=dashboardLanguage==='en'?'Fixed window · six hourly buckets ending at generation time; not filtered by the date range':'固定窗口 · 生成时刻往前 6 个小时桶；不受日期范围筛选';
     const achScope=document.getElementById('ach-scope');
     if(achScope)achScope.textContent=dashboardLanguage==='en'?'Full report · history and achievements use the complete report, not the date range':'全报告 · 历史与成就按完整报告统计，不受日期范围筛选';
-    renderDonut();renderAttribution();renderOtherModelSummary();renderProvenance();renderDominantShift();
+    renderDonut();renderAttribution();renderOtherModelSummary();renderProvenance();renderDominantShift();renderDelta();
     localizeTree(document.getElementById('section-provenance'));
     localizeTree(document.getElementById('freshness-beacon'));
     renderBudget();
@@ -682,7 +682,7 @@ function selectedDayModelTotals(day){
 }
 function selectedDayTotal(day){return sumList(Object.values(selectedDayModelTotals(day)));}
 function deltaWindowInfo(rows){
-  const rangeOn=typeof rangeActive==='function'?rangeActive():false;
+  const rangeOn=typeof rangeActive==='function'?rangeActive():false,en=dashboardLanguage==='en';
   /* 既有默认“全部”语义以报告生成时刻判断 open period；calendar_day 仅用于
      日期范围的相对日锚点。保留 DATA.generated 优先，避免整月被当成已结束。 */
   const stampDay=String(DATA.generated||'').slice(0,10);
@@ -691,12 +691,12 @@ function deltaWindowInfo(rows){
     if(rows.length<2)return null;
     const current=rows[rows.length-1],previous=rows[rows.length-2],generated=genDay,until=DATA.range?.until;
     const currentDays=periodDays(current.period,state.gran),open=!!generated&&currentDays.includes(generated)&&(!until||until>=generated);
-    if(!open)return {label:'环比',current,previous,currentDays:null,previousDays:null,currTotal:current.total,prevTotal:previous.total};
+    if(!open)return {label:en?'vs prior period':'环比',current,previous,currentDays:null,previousDays:null,currTotal:current.total,prevTotal:previous.total};
     if(state.gran==='day')return null;
     const elapsed=currentDays.filter(day=>day<generated).length;if(!elapsed)return null;
     const previousDays=periodDays(previous.period,state.gran).slice(0,elapsed),comparableDays=currentDays.slice(0,elapsed);
     const currTotal=comparableDays.reduce((sum,day)=>sum+selectedDayTotal(day),0),prevTotal=previousDays.reduce((sum,day)=>sum+selectedDayTotal(day),0);
-    return {label:'较上期同期',current,previous,currentDays:comparableDays,previousDays,currTotal,prevTotal};
+    return {label:en?'vs same point in prior period':'较上期同期',current,previous,currentDays:comparableDays,previousDays,currTotal,prevTotal};
   }
   if(!rows.length)return null;
   const current=rows[rows.length-1],full=DATA[state.gran]||[];
@@ -709,19 +709,19 @@ function deltaWindowInfo(rows){
   const open=!!generated&&currentDays.includes(generated)&&(!coverageUntil||coverageUntil>=generated);
   if(open&&state.gran==='day')return null;
   const clipped=currentDays.length<fullCurrentDays.length;
-  let compareCurrent=currentDays,label='环比';
+  let compareCurrent=currentDays,label=en?'vs prior period':'环比';
   if(open){
     compareCurrent=currentDays.filter(day=>day<generated);
     if(!compareCurrent.length)return null;
-    label='较上期同期';
-  }else if(clipped){label='部分范围 · 同历日对比';}
+    label=en?'vs same point in prior period':'较上期同期';
+  }else if(clipped){label=en?'partial range · same calendar-day':'部分范围 · 同历日对比';}
   const offsets=new Map(fullCurrentDays.map((day,offset)=>[day,offset])),fullPreviousDays=periodDays(previous.period,state.gran);
   const previousDays=compareCurrent.map(day=>{const offset=offsets.get(day);return offset==null?null:fullPreviousDays[offset];}).filter(Boolean);
   if(!previousDays.length)return null;
   const wholeCurrent=!open&&!clipped;
   const currTotal=wholeCurrent?current.total:compareCurrent.reduce((sum,day)=>sum+selectedDayTotal(day),0);
   const prevTotal=(wholeCurrent?fullPreviousDays:previousDays).reduce((sum,day)=>sum+selectedDayTotal(day),0);
-  return {label:label+' · 参照 '+fmtLabel(previous.period,state.gran),current,previous,currentDays:compareCurrent,previousDays,currTotal,prevTotal,reference:previous.period};
+  return {label:label+(en?' · reference ':' · 参照 ')+fmtLabel(previous.period,state.gran),current,previous,currentDays:compareCurrent,previousDays,currTotal,prevTotal,reference:previous.period};
 }
 function periodDelta(rows){
   const window=deltaWindowInfo(rows);return window&&window.prevTotal>0?{value:(window.currTotal-window.prevTotal)/window.prevTotal*100,label:window.label}:null;
@@ -744,6 +744,13 @@ function renderDominantShift(rows=selectedRows()){
   if(!shiftEl)return;
   if(shift){shiftEl.hidden=false;shiftEl.textContent=(dashboardLanguage==='en'?'Top model changed ':'主力换人 ')+pretty(shift.from)+' → '+pretty(shift.to);}
   else shiftEl.hidden=true;
+}
+function renderDelta(rows=selectedRows()){
+  const comparison=periodDelta(rows),dEl=document.getElementById('k-delta');
+  if(comparison){
+    const d=comparison.value;dEl.style.display='';dEl.className='delta '+(d>=0?'up':'down');
+    dEl.textContent=(d>=0?'▲ ':'▼ ')+Math.abs(d).toFixed(1)+'% '+comparison.label;
+  } else dEl.style.display='none';
 }
 
 function completeIntervalRows(){
@@ -866,8 +873,8 @@ function renderAttribution(){
   const overflowNames=[...new Set([...Object.keys(before),...Object.keys(after)])].sort((a,b)=>Math.abs((after[b]||0)-(before[b]||0))-Math.abs((after[a]||0)-(before[a]||0))||a.localeCompare(b));
   const beforeRest=otherPart?otherPart.prev-sumWhere(Object.values(before),value=>value):0,afterRest=otherPart?otherPart.curr-sumWhere(Object.values(after),value=>value):0;
   if(deltaEvidenceState.scope!==scopeKey){deltaEvidenceState.model=null;deltaEvidenceState.scope=scopeKey;}
-  windowLabel.textContent=pair?'A '+pair.a[0].period+' → '+pair.a.at(-1).period+' ('+pair.a.length+' 期) · B '+pair.b[0].period+' → '+pair.b.at(-1).period+' ('+pair.b.length+' 期) · '+fmt(result.prevTotal)+' vs '+fmt(result.currTotal):result.label+' · 当前 '+fmt(result.currTotal)+' vs 上期 '+fmt(result.prevTotal);total.innerHTML='<b>'+(net>0?'+':'')+fmt(net)+'</b><span> Token</span>';
-  story.textContent=leader?(pretty(leader.model)+' 是最大变化来源，'+(leader.delta>=0?'增加 ':'减少 ')+fmt(Math.abs(leader.delta))+' Token；全部模型合计'+(net>=0?'增加 ':'减少 ')+fmt(Math.abs(net))+'。'):'各模型与'+(pair?'A 时段':'上一比较窗口')+'持平。';
+  windowLabel.textContent=pair?'A '+pair.a[0].period+' → '+pair.a.at(-1).period+' ('+pair.a.length+(dashboardLanguage==='en'?' periods) · B ':' 期) · B ')+pair.b[0].period+' → '+pair.b.at(-1).period+' ('+pair.b.length+(dashboardLanguage==='en'?' periods) · ':' 期) · ')+fmt(result.prevTotal)+' vs '+fmt(result.currTotal):result.label+(dashboardLanguage==='en'?' · current ':' · 当前 ')+fmt(result.currTotal)+(dashboardLanguage==='en'?' vs previous ':' vs 上期 ')+fmt(result.prevTotal);total.innerHTML='<b>'+(net>0?'+':'')+fmt(net)+'</b><span> Token</span>';
+  story.textContent=leader?(pretty(leader.model)+(dashboardLanguage==='en'?' drove the largest change, ':' 是最大变化来源，')+(leader.delta>=0?(dashboardLanguage==='en'?'adding ':'增加 '):(dashboardLanguage==='en'?'dropping ':'减少 '))+fmt(Math.abs(leader.delta))+' Token'+(dashboardLanguage==='en'?'; all models ':'；全部模型合计')+(net>=0?(dashboardLanguage==='en'?'added ':'增加 '):(dashboardLanguage==='en'?'dropped ':'减少 '))+fmt(Math.abs(net))+(dashboardLanguage==='en'?'.':'。')):(dashboardLanguage==='en'?'All models ':'各模型与')+(pair?(dashboardLanguage==='en'?'window A':'A 时段'):(dashboardLanguage==='en'?'the prior comparison window':'上一比较窗口'))+(dashboardLanguage==='en'?' are unchanged.':'持平。');
   const rowHTML=part=>{const width=Math.abs(part.delta)/max*50,side=part.delta>=0?'pos':'neg',color=modelColor(part.model),name=pretty(part.model),content='<span class=delta-name><i style="background:'+esc(color)+'"></i><span title="'+esc(name)+'">'+esc(name)+'</span></span><span class=delta-track><i class=delta-zero></i><b style="width:'+width.toFixed(1)+'%;--delta-color:'+esc(color)+'"></b></span><span class=delta-value>'+(part.delta>0?'+':'')+fmt(part.delta)+'</span>';return part.model==='other'?'<div role=listitem class="delta-row '+side+'">'+content+'</div>':'<div role=listitem><button type=button class="delta-row '+side+'" data-delta-model="'+esc(part.model)+'" aria-label="'+esc(name)+' · 查看项目证据" aria-controls=delta-evidence aria-expanded=false>'+content+'</button></div>';};
   const overflowHTML=otherPart&&overflowNames.length?'<div role=listitem><details class=delta-other-details><summary>'+(dashboardLanguage==='en'?'Models within Other':'Other 内具体模型')+' · '+overflowNames.length+'</summary><p class=delta-evidence-note>'+(dashboardLanguage==='en'?'These totals share the Other chart color. Project totals are only available for the combined bucket; parallel aggregates do not prove causality.':'这些用量共用 Other 图表颜色；项目仅有合并值，并行聚合不能证明因果。')+'</p><div class=delta-other-scroll><table><thead><tr><th>'+(dashboardLanguage==='en'?'Model':'模型')+'</th><th>A · Token</th><th>B · Token</th><th>'+(dashboardLanguage==='en'?'Change':'变化')+'</th></tr></thead><tbody>'+overflowNames.map(name=>'<tr><th scope=row>'+esc(name)+'</th><td>'+fmt(before[name]||0)+'</td><td>'+fmt(after[name]||0)+'</td><td>'+((after[name]||0)>(before[name]||0)?'+':'')+fmt((after[name]||0)-(before[name]||0))+'</td></tr>').join('')+(beforeRest||afterRest?'<tr><th scope=row>'+(dashboardLanguage==='en'?'Unidentified remainder':'未识别的剩余量')+'</th><td>'+fmt(beforeRest)+'</td><td>'+fmt(afterRest)+'</td><td>'+(afterRest>beforeRest?'+':'')+fmt(afterRest-beforeRest)+'</td></tr>':'')+'</tbody></table></div></details></div>':'';
   const listOpen=!!list.querySelector('.delta-other-details[open]');
@@ -904,11 +911,7 @@ function renderKPI(){
   if(domDot){domDot.hidden=dom==='—';domDot.style.background=dom==='—'?'':modelColor(dom);}
   renderDominantShift(rows);
   // 完整周期做整期环比；进行中的周/月只比较双方相同数量的完整天。
-  const comparison=periodDelta(rows),dEl=document.getElementById('k-delta');
-  if(comparison){
-    const d=comparison.value;dEl.style.display='';dEl.className='delta '+(d>=0?'up':'down');
-    dEl.textContent=(d>=0?'▲ ':'▼ ')+Math.abs(d).toFixed(1)+'% '+comparison.label;
-  } else dEl.style.display='none';
+  renderDelta(rows);
   // 缓存命中：cache_read 占当前 Token 总量的比例；下方显示读取量，不推断货币节省
   const detail=focusDetail();
   const cr=detail?detail.cache_read:selectedCacheRead(), hit=total?(cr/total*100):0;
