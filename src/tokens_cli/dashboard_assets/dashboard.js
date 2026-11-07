@@ -409,7 +409,7 @@ function applyLanguage(language,persist=true){
     if(blockNow)blockNow.textContent=dashboardLanguage==='en'?'Fixed window · six hourly buckets ending at generation time; not filtered by the date range':'固定窗口 · 生成时刻往前 6 个小时桶；不受日期范围筛选';
     const achScope=document.getElementById('ach-scope');
     if(achScope)achScope.textContent=dashboardLanguage==='en'?'Full report · history and achievements use the complete report, not the date range':'全报告 · 历史与成就按完整报告统计，不受日期范围筛选';
-    renderDonut();renderAttribution();renderOtherModelSummary();renderProvenance();
+    renderDonut();renderAttribution();renderOtherModelSummary();renderProvenance();renderDominantShift();
     localizeTree(document.getElementById('section-provenance'));
     localizeTree(document.getElementById('freshness-beacon'));
     renderBudget();
@@ -732,6 +732,19 @@ function attributionFor(rows){
   const curr=totals(window.current,window.currentDays),prev=totals(window.previous,window.previousDays),parts=DATA.models.filter(model=>state.models.has(model)).map(model=>({model,curr:curr[model]||0,prev:prev[model]||0,delta:(curr[model]||0)-(prev[model]||0)})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)||a.model.localeCompare(b.model));
   return {label:window.label,currTotal:window.currTotal,prevTotal:window.prevTotal,parts};
 }
+function dominantShift(rows){
+  const window=deltaWindowInfo(rows);if(!window||!window.prevTotal||!window.currTotal)return null;
+  const totals=(row,days)=>days?days.reduce((m,d)=>{const v=selectedDayModelTotals(d);Object.keys(v).forEach(model=>m[model]=(m[model]||0)+(v[model]||0));return m;},{}):(row.models||{});
+  const prevTop=topModelOf(totals(window.previous,window.previousDays)),currTop=topModelOf(totals(window.current,window.currentDays));
+  if(!prevTop||!currTop||prevTop[0]===currTop[0])return null;
+  return {from:prevTop[0],to:currTop[0],label:window.label};
+}
+function renderDominantShift(rows=selectedRows()){
+  const shift=dominantShift(rows),shiftEl=document.getElementById('k-dom-shift');
+  if(!shiftEl)return;
+  if(shift){shiftEl.hidden=false;shiftEl.textContent=(dashboardLanguage==='en'?'Top model changed ':'主力换人 ')+pretty(shift.from)+' → '+pretty(shift.to);}
+  else shiftEl.hidden=true;
+}
 
 function completeIntervalRows(){
   const info=rangeInfo(),today=generatedDay(),since=info.since||DATA.range?.since,until=info.until||DATA.range?.until;
@@ -888,6 +901,7 @@ function renderKPI(){
   // 主力卡色点与模型身份色对齐；无数据时隐藏
   const domDot=document.getElementById('k-dom-dot');
   if(domDot){domDot.hidden=dom==='—';domDot.style.background=dom==='—'?'':modelColor(dom);}
+  renderDominantShift(rows);
   // 完整周期做整期环比；进行中的周/月只比较双方相同数量的完整天。
   const comparison=periodDelta(rows),dEl=document.getElementById('k-delta');
   if(comparison){

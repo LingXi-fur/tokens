@@ -437,6 +437,31 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_dominant_model_shift_badge_reports_change(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            # 主 fixture：07-01 主力 model-b(150) → 07-02 主力 model-a(200)
+            page.evaluate("setGran('day')")
+            page.wait_for_function("()=>state.gran==='day'")
+            badge = page.locator("#k-dom-shift")
+            self.assertTrue(badge.is_visible())
+            text = badge.inner_text()
+            self.assertIn("model-b", text)
+            self.assertIn("model-a", text)
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
+    def test_dominant_model_shift_badge_hidden_when_same(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._interval_path)
+        try:
+            # interval fixture：最后两个完整月 05/06 主力同为 model-b
+            badge = page.locator("#k-dom-shift")
+            self.assertFalse(badge.is_visible())
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
     def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
         context, page, page_errors, console_errors = self.new_page()
         try:
