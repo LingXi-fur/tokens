@@ -509,6 +509,17 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_delta_tracks_value_for_flash(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("setGran('day')")
+            page.wait_for_function("()=>state.gran==='day'")
+            value = page.evaluate("document.getElementById('k-delta').__deltaValue")
+            self.assertIsNotNone(value)
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
     def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
         context, page, page_errors, console_errors = self.new_page()
         try:

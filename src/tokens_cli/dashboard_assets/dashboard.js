@@ -750,7 +750,9 @@ function renderDelta(rows=selectedRows()){
     const d=(window.currTotal-window.prevTotal)/window.prevTotal*100;dEl.style.display='';dEl.className='delta '+(d>=0?'up':'down');
     dEl.textContent=(d>=0?'▲ ':'▼ ')+Math.abs(d).toFixed(1)+'% '+window.label;
     dEl.title=(dashboardLanguage==='en'?'Previous ':'上期 ')+fmt(window.prevTotal)+' → '+(dashboardLanguage==='en'?'current ':'本期 ')+fmt(window.currTotal)+' tk';
-  } else {dEl.style.display='none';dEl.title='';}
+    if(dEl.__deltaValue!==undefined&&dEl.__deltaValue!==d&&!motionDisabled()){dEl.classList.remove('flash-up','flash-down');void dEl.offsetWidth;dEl.classList.add(d>dEl.__deltaValue?'flash-up':'flash-down');}
+    dEl.__deltaValue=d;
+  } else {dEl.style.display='none';dEl.title='';dEl.__deltaValue=undefined;}
 }
 
 function completeIntervalRows(){

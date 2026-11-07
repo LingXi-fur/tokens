@@ -30,7 +30,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - A dominant-model shift badge on the overview's top-model card: when the current period's leading model differs from the previous period's over the same comparable window used by the period-over-period delta, the card shows a small `主力换人 X → Y` pill. Informational only — statistics, filters, and exports are unchanged, and the badge hides when both periods share a leader or no comparable window exists.
 - A "copy text summary" action in the current-view popover: one click copies a short readable summary of the current scope (granularity, models, range, total tokens, calls, and top model) to the clipboard for pasting into notes or messages. Local only, using the existing clipboard fallback.
 - The overview top-model card now shows the leading model's share of the current total token usage beside its name (e.g. `66.7%`), so the dominant model's weight reads at a glance without opening the per-model trend. The share also renders as a thin progress bar under the label.
-- The overview period-over-period delta exposes the exact prior and current totals in a hover title (e.g. `上期 250 → 本期 200 tk`), complementing the percentage label; the one-line `periodDelta` forwarder was folded into `renderDelta`.
+- The overview period-over-period delta exposes the exact prior and current totals in a hover title (e.g. `上期 250 → 本期 200 tk`), complementing the percentage label; the one-line `periodDelta` forwarder was folded into `renderDelta`. The delta also flashes green/red when its value changes (rising vs falling), matching the KPI number flash and respecting reduced motion.
 
 ### Changed
 
