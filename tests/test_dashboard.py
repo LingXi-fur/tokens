@@ -90,21 +90,21 @@ class DashboardTests(unittest.TestCase):
         css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         template = (ASSETS / "template.html").read_text(encoding="utf-8")
-        # 主 KPI 渐变呼吸：仅 primary 卡流动，keyframes 收尾回到 0 位避免接缝
-        self.assertIn("animation:gradFlow 6s ease-in-out infinite alternate", css)
-        self.assertIn("@keyframes gradFlow{from{background-position:0% 50%}", css)
-        self.assertIn("to{background-position:100% 50%}", css)
-        self.assertIn(".kpi.is-primary .v .grad", css)
-        # 渐变底必须放大铺满 clip 区域，防止流动时露出底色断层
-        self.assertIn(".kpi.is-primary .v .grad{background-size:220% 100%", css)
+        # 扁平设计：主数字为纯墨色，不再使用渐变文字或呼吸动画
+        self.assertIn(".grad{color:var(--ink)}", css)
+        self.assertNotIn("gradFlow", css)
+        self.assertNotIn("background-clip:text", css)
+        # 图表 <rect class="seg"> 与头部 .seg 胶囊同名：胶囊规则不得设置 SVG 几何属性
+        pill = re.search(r"\n\.seg\{([^}]*)\}", css).group(1)
+        properties = {decl.split(":", 1)[0].strip() for decl in pill.split(";") if ":" in decl}
+        self.assertFalse(properties & {"width", "height", "x", "y", "rx", "ry"}, properties)
+        self.assertIn("rect.seg{", css)
         # 趋势柱错峰生长：JS 按序封顶延迟 + inline animation-delay，不动全局 grow
         self.assertIn("const barStagger=motionDisabled()||document.documentElement.dataset.motion==='low'?0:Math.min(i*28,260);", script)
         self.assertIn("style=\"animation-delay:'+barStagger+'ms\"", script)
-        # h1 渐变文字与主题变量走同一 hero 渐变
-        self.assertIn('h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.1px', css)
-        self.assertIn("background:var(--hero-grad)", css)
+        # 标题使用纯墨色
+        self.assertIn("h1{font-size:17px;margin:0;font-weight:650;letter-spacing:-.01em;color:var(--ink)}", css)
         # motion 档位击杀：off 全局禁、low 关呼吸+错峰归零；reduced-motion 由全局通配击杀覆盖
-        self.assertIn(":root[data-motion=low] .kpi.is-primary .v .grad{animation:none}", css)
         self.assertIn("@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}*,*::before,*::after{animation:none!important", css)
         # 模板侧：主数字挂渐变类，柱状图容器存在
         self.assertIn('<span class=grad id=k-total></span>', template)
@@ -476,8 +476,20 @@ class DashboardTests(unittest.TestCase):
         self.assertIn('data-dest-view="table"', template)
         self.assertIn(".tl-item,.chip,#tabs button{min-height:44px}", template)
         self.assertIn(".trend-legend{flex-wrap:nowrap;overflow-x:auto", template)
-        self.assertIn("--faint:#4f5a68", template)
-        self.assertIn("--faint:#8b949e", template)
+        # 弱化文字仍需在各自主题表面达到 WCAG AA（≥4.5:1）
+        def luminance(hex_color):
+            channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+        def contrast(a, b):
+            hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+            return (hi + 0.05) / (lo + 0.05)
+        self.assertIn("--faint:#6b6b74", template)
+        self.assertIn("--faint:#8a8a93", template)
+        self.assertGreaterEqual(contrast("#6b6b74", "#ffffff"), 4.5)
+        self.assertGreaterEqual(contrast("#6b6b74", "#f4f4f5"), 4.5)
+        self.assertGreaterEqual(contrast("#8a8a93", "#111113"), 4.5)
+        self.assertGreaterEqual(contrast("#8a8a93", "#18181b"), 4.5)
         self.assertIn("dest-viewswitch", template)
         self.assertIn("project_model", template)
         self.assertIn("model_session", template)

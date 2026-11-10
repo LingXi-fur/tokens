@@ -995,7 +995,7 @@ function renderBar(){
   // 整图锁定单一单位，避免 y 轴/标签 万与亿混用造成「629→7.5」歧义
   const U = vmax>=1e8?['亿',1e8]:vmax>=1e4?['万',1e4]:['',1];
   const vfmt = nn => { const v=nn/U[1]; return U[0] ? (v<10?v.toFixed(1):String(Math.round(v)))+U[0] : String(Math.round(nn)); };
-  const bw=Math.max(3,Math.min(54,step*0.6));
+  const bw=Math.max(3,Math.min(40,step*0.46));
   const showVal = n<=12;
   const p=['<svg viewBox="0 0 '+W+' '+H+'" class="chart" preserveAspectRatio="xMidYMid meet">'];
   for(let i=0;i<=4;i++){
