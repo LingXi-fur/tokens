@@ -24,6 +24,7 @@ LOGIC_TESTS = (
     "tests.test_cli", "tests.test_config_doctor", "tests.test_readers",
     "tests.test_claude_json", "tests.test_codex_usage", "tests.test_collection_integrity",
     "tests.test_large_claude_logs", "tests.test_dashboard_range", "tests.test_budget_core", "tests.test_period_core",
+    "tests.test_insight_core",
     "tests.test_dashboard_budget.BudgetIntegrationContracts",
     "tests.test_cost_core", "tests.test_cost_payload",
     "tests.test_cost_end_to_end.PipelineTests", "tests.test_dashboard",
@@ -38,6 +39,7 @@ BROWSER_TESTS = (
     "tests.test_dashboard_runtime", "tests.test_dashboard_crossbrowser",
     "tests.test_dashboard_live_runtime", "tests.test_dashboard_cost",
     "tests.test_dashboard_cost_actions",
+    "tests.test_dashboard_insights_runtime",
     "tests.test_dashboard_budget.DashboardBudgetTests",
     "tests.test_cost_end_to_end.CostEndToEndUiTests",
 )

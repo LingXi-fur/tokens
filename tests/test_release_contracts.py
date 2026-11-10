@@ -165,7 +165,7 @@ class ReleaseContractsTests(unittest.TestCase):
 
     def test_dashboard_assets_exist_and_are_embedded(self):
         assets = SRC / "tokens_cli" / "dashboard_assets"
-        for name in ("template.html", "dashboard.css", "cost_core.js", "calendar_core.js", "budget_core.js", "period_core.js", "dashboard.js"):
+        for name in ("template.html", "dashboard.css", "cost_core.js", "calendar_core.js", "budget_core.js", "period_core.js", "insight_core.js", "dashboard.js"):
             with self.subTest(asset=name):
                 self.assertTrue((assets / name).is_file())
                 self.assertGreater((assets / name).stat().st_size, 0)
