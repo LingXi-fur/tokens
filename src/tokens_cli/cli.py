@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Command-line interface for local AI CLI token analytics."""
 import argparse
+import json
 import sys
 from datetime import date, datetime, timedelta
 
@@ -57,6 +58,10 @@ def build_parser():
     parser.add_argument("--lang", choices=lang_module.SUPPORTED,
                         help="terminal and static HTML language (en or zh; default: system locale)")
     parser.add_argument("--no-cache", action="store_true", help="ignore the file cache and re-read logs")
+    parser.add_argument("--models", action="store_true",
+                        help="with doctor, show how Claude request names map to models")
+    parser.add_argument("--json", action="store_true",
+                        help="with doctor --models, print machine-readable JSON")
     parser.add_argument("--interval", type=_positive_float, default=300.0,
                         help="live Dashboard check interval in seconds (default: 300)")
     parser.add_argument("--port", type=_port, default=8765,
@@ -115,6 +120,10 @@ def _configure(args, parser):
         args.dashboard or args.range in ("dashboard", "demo", "serve")
     ):
         parser.error("--anonymize requires dashboard, demo, or serve mode")
+    if args.models and args.range != "doctor":
+        parser.error("--models requires doctor mode")
+    if args.json and not (args.range == "doctor" and args.models):
+        parser.error("--json requires doctor --models")
 
 
 def _open_generated(path):
@@ -155,7 +164,27 @@ def main(argv=None):
     sources = args.source or config.DEFAULT_SOURCES
 
     if args.range == "doctor":
-        doctor.print_report(doctor.collect(sources=args.source))
+        if not args.models:
+            doctor.print_report(doctor.collect(sources=args.source))
+            return 0
+        try:
+            report = doctor.collect_models(
+                sources=sources,
+                since=args.since,
+                until=args.until,
+                use_cache=not args.no_cache,
+            )
+        except readers.CollectionIncompleteError:
+            print(
+                "Local log collection is incomplete; no model attribution was produced. "
+                "Check log readability and collection limits, then retry.",
+                file=sys.stderr,
+            )
+            return 1
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            doctor.print_models(report, lang=args.lang)
         return 0
 
     if args.range == "serve":
