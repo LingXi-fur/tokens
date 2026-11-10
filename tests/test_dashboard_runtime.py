@@ -470,6 +470,19 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertIn("主力", summary)
             self.assertIn("model-a", summary)
             self.assertEqual(1, page.locator("#view-summary-copy").count())
+            page.evaluate("applyLanguage('en',false)")
+            self.assertIn("Copy text summary", page.locator("#view-summary-copy").inner_text())
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
+    def test_view_summary_includes_delta_on_day_granularity(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("setGran('day')")
+            page.wait_for_function("()=>state.gran==='day'")
+            summary = page.evaluate("viewSummaryText()")
+            self.assertIn("环比", summary)
             self.assertEqual([], page_errors + console_errors)
         finally:
             context.close()

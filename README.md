@@ -32,7 +32,7 @@ Open the [interactive synthetic demo](https://lingxi-fur.github.io/tokens/demo/)
 AI coding tools already leave usage records on your machine, but each tool stores and counts them differently. `tokens` gives you one inspectable local view:
 
 - **See usage from Claude Code, Gemini CLI, and Codex** in one report while keeping each source's reported token semantics visible.
-- **Find changes worth inspecting:** daily, weekly, and monthly trends, two-period comparisons (with a dominant-model shift badge when the top model changes), and peak periods.
+- **Find changes worth inspecting:** daily, weekly, and monthly trends, two-period comparisons (with a dominant-model shift badge when the top model changes), and peak periods. Copy a compact text summary of the current view—with its delta when available—into notes or messages.
 - **Follow token destinations:** a project and model overview beside per-session cards, tracing model, source, project, and session details where the logs provide them.
 - **Keep results under your control:** exact tables, CSV and Markdown exports, local live refresh, or a self-contained offline HTML snapshot.
 
