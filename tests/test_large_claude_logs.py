@@ -255,7 +255,7 @@ class LargeClaudeLogsTests(unittest.TestCase):
         for name, value in expected.items():
             with self.subTest(limit=name):
                 self.assertEqual(value, getattr(readers, name))
-        self.assertEqual(20, readers.CACHE_VERSION)
+        self.assertEqual(21, readers.CACHE_VERSION)
 
     @unittest.skipUnless(sys.platform == "win32", "Windows-only failure-field capture")
     def test_capture_stat_fields_at_failing_safe_open(self):

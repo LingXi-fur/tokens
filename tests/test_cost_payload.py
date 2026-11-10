@@ -690,7 +690,7 @@ class CostPayloadTests(unittest.TestCase):
 
 class CacheVersionTests(unittest.TestCase):
     def test_cache_version_and_filename(self):
-        self.assertEqual(20, readers.CACHE_VERSION)
+        self.assertEqual(21, readers.CACHE_VERSION)
         self.assertTrue(config.CACHE_FILE.endswith("records-v8.json"))
 
     def test_v5_cache_left_in_place_and_v6_rebuilds(self):

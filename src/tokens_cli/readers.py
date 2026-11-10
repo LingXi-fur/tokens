@@ -61,7 +61,10 @@ from . import _claude_json, config
 #         仍保留编码原名
 #   v20 = hex 解码值剥除 provider 前缀（zhipu/glm-5.3-flash → glm-5.3-flash），
 #         与历史 router 裸名合一身份，避免身份容量折叠溢出 other
-CACHE_VERSION = 20
+#   v21 = 带 Anthropic 原生证据（requestId 为 req_*、message.id 为 msg_ + 24 位
+#         base62）的 Claude 记录不再经当前 CCR 规则改写：直连 Opus 不再被追溯
+#         记为路由后端；原生 ID 归一为点号版本（claude-opus-5-5 → claude-opus-5.5）
+CACHE_VERSION = 21
 
 # ---------- Billing evidence (schema 1) ----------
 # 独立计费证据：只读源头分量、字段是否实际存在及口径异常原因，绝不改写既有
@@ -656,6 +659,33 @@ def _tier_of(model):
     return match.group(1).lower() if match else None
 
 
+# Anthropic 直连证据：Claude Code 记录 API 响应头 request-id（req_*）与原生
+# message.id（msg_ + 24 位 base62）。经 CCR 转发到第三方后端的响应两者都不具备，
+# 因此只对缺少原生证据的记录套用当前路由规则；路由文件只描述"现在"，不能把
+# 已直连 Anthropic 的历史/当前请求改写成路由后端。
+_ANTHROPIC_MESSAGE_ID_RE = re.compile(r"msg_[A-Za-z0-9]{24}")
+_ANTHROPIC_NATIVE_MODEL_RE = re.compile(
+    r"^claude-(opus|sonnet|haiku)-(\d+)-(\d{1,2})(?:-\d{8})?$"
+)
+
+
+def _anthropic_native(event, message):
+    """True only when both the request id and message id are Anthropic-native."""
+    request_id = event.get("requestId")
+    message_id = message.get("id")
+    return (isinstance(request_id, str) and request_id.startswith("req_")
+            and isinstance(message_id, str)
+            and _ANTHROPIC_MESSAGE_ID_RE.fullmatch(message_id) is not None)
+
+
+def _native_model_identity(model):
+    """claude-opus-5-5 / claude-haiku-4-5-20251001 → claude-opus-5.5 / claude-haiku-4.5."""
+    match = _ANTHROPIC_NATIVE_MODEL_RE.fullmatch(model)
+    if not match:
+        return model
+    return f"claude-{match.group(1)}-{match.group(2)}.{match.group(3)}"
+
+
 def _resolve_model(model):
     """Resolve a Claude request alias through the current user's router.
 
@@ -736,7 +766,8 @@ def _claude_event_record(o, *, _memo_proof=None):
     if not date:
         return None
     request_model = model
-    model = _resolve_model(model)
+    model = (_native_model_identity(model) if _anthropic_native(o, msg)
+             else _resolve_model(model))
     inp = usage.get("input_tokens", 0)
     outp = usage.get("output_tokens", 0)
     cread = usage.get("cache_read_input_tokens", 0)

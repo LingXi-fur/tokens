@@ -463,6 +463,63 @@ if (model.includes('sonnet')) { return 'provider-b,backend-balanced'; }
         # fallback 去重键用解析后的 backend 名（provider 前缀已剥）。
         self.assertEqual("glm-5.3-flash", dkey[1])
 
+    def _tier_event(self, request_id, message_id, model="claude-opus-5-5"):
+        return {
+            "type": "assistant",
+            "timestamp": "2026-11-10T02:00:00.000Z",
+            "sessionId": "native-session",
+            "cwd": "/synthetic/native",
+            "requestId": request_id,
+            "message": {
+                "model": model,
+                "id": message_id,
+                "usage": {"input_tokens": 5, "output_tokens": 7,
+                          "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+            },
+        }
+
+    def test_anthropic_native_record_is_not_rewritten_by_current_router(self):
+        # 路由文件写着 opus → backend-large，但这条记录有 Anthropic 原生
+        # requestId 与 message.id：它是直连 Opus，不能被追溯改写成路由后端。
+        event = self._tier_event("req_011CVsyntheticRequest01", "msg_01AbCdEfGhIjKlMnOpQrStUv")
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp):
+            record, _, _ = readers._claude_event_record(event)
+        self.assertEqual("claude-opus-5.5", record["model"])
+        self.assertEqual("claude-opus-5-5", record["request_model"])
+
+    def test_router_still_resolves_tier_alias_without_native_evidence(self):
+        cases = [
+            (None, "msg_01AbCdEfGhIjKlMnOpQrStUv"),        # 无 requestId（CCR 转发）
+            ("req_011CVsyntheticRequest01", "a1b2c3d4-uuid-like-message-id"),  # 非原生 id
+            ("req_011CVsyntheticRequest01", None),          # 缺 message.id
+            ("other-request", "msg_01AbCdEfGhIjKlMnOpQrStUv"),
+        ]
+        for request_id, message_id in cases:
+            with self.subTest(request_id=request_id, message_id=message_id):
+                event = self._tier_event(request_id, message_id)
+                with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp):
+                    record, _, _ = readers._claude_event_record(event)
+                self.assertEqual("backend-large", record["model"])
+
+    def test_native_model_identity_normalizes_versions_only(self):
+        self.assertEqual("claude-opus-5.5", readers._native_model_identity("claude-opus-5-5"))
+        self.assertEqual("claude-haiku-4.5", readers._native_model_identity("claude-haiku-4-5-20251001"))
+        self.assertEqual("claude-opus-5", readers._native_model_identity("claude-opus-5"))
+        self.assertEqual("claude-sonnet-5", readers._native_model_identity("claude-sonnet-5"))
+        self.assertEqual("glm-5.3", readers._native_model_identity("glm-5.3"))
+
+    def test_native_evidence_survives_file_projection(self):
+        # 全部 Claude 行都经流式投影器；投影若丢 requestId，直连判定会静默失效。
+        native = self._tier_event("req_011CVsyntheticRequest01", "msg_01AbCdEfGhIjKlMnOpQrStUv")
+        routed = self._tier_event(None, "msg_02AbCdEfGhIjKlMnOpQrStUv")
+        del routed["requestId"]
+        with tempfile.TemporaryDirectory() as tmp, self._router_at(tmp):
+            path = Path(tmp) / "session.jsonl"
+            path.write_text(json.dumps(native) + "\n" + json.dumps(routed) + "\n", encoding="utf-8")
+            state = readers._claude_parse_state(str(path))
+        records = state[0] if isinstance(state, tuple) else state["records"]
+        self.assertEqual(["claude-opus-5.5", "backend-large"], [r["model"] for r in records])
+
     def test_gemini_and_codex_models_are_not_resolved_through_claude_router(self):
         router = """if (model.includes('sonnet')) { return 'provider-a,backend-balanced'; }
 if (model.includes('opus')) { return 'provider-b,backend-large'; }

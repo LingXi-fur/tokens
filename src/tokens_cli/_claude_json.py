@@ -31,7 +31,7 @@ class ProjectionLimit(ValueError):
 _DROP, _FULL, _ROOT, _MESSAGE, _USAGE = range(5)
 _CODEX_ROOT, _CODEX_PAYLOAD, _CODEX_INFO, _CODEX_USAGE = range(5, 9)
 _FIELDS = {
-    _ROOT: ("type", "timestamp", "sessionId", "cwd", "message"),
+    _ROOT: ("type", "timestamp", "sessionId", "cwd", "requestId", "message"),
     _MESSAGE: ("model", "id", "usage"),
     _USAGE: (
         "input_tokens", "output_tokens", "cache_read_input_tokens",
