@@ -15,7 +15,7 @@
 
 源码白名单暂存区（clean staging）：
 
-- [ ] 建立全新临时构建目录，**只**按明确文件白名单拷贝：`pyproject.toml`、`README.md`、`README.zh-CN.md`、`CHANGELOG.md`、`LICENSE`、`src/tokens_cli/` 下 16 个已列明 Python 模块，以及 `dashboard_assets/` 下六个资产 `template.html`、`dashboard.css`、`cost_core.js`、`calendar_core.js`、`budget_core.js`、`dashboard.js`（费用、日历与预算纯核心必须先于 Dashboard 脚本内联）。禁止整目录复制；本轮 `run`、`tests/`、`docs/` 不进入暂存区或 sdist，不承诺 source dist 可复现测试与文档。
+- [ ] 建立全新临时构建目录，**只**按明确文件白名单拷贝：`pyproject.toml`、`README.md`、`README.zh-CN.md`、`CHANGELOG.md`、`LICENSE`、`src/tokens_cli/` 下 16 个已列明 Python 模块，以及 `dashboard_assets/` 下七个资产 `template.html`、`dashboard.css`、`cost_core.js`、`calendar_core.js`、`budget_core.js`、`period_core.js`、`dashboard.js`（费用、日历、预算与环比纯核心必须先于 Dashboard 脚本内联）。禁止整目录复制；本轮 `run`、`tests/`、`docs/` 不进入暂存区或 sdist，不承诺 source dist 可复现测试与文档。
 - [ ] 使用冻结后的精确路径→SHA256 manifest 核对源文件；原保护基线另行核验，不以计划内改动覆盖旧证据。拒绝源符号链接、仓库外解析路径或任何哈希漂移。
 - [ ] 不使用 `git archive`（会丢失必要未跟踪改动）；不拷贝旧 `build/`、`*.egg-info`、`out/`、`__pycache__`、缓存、失败日志、冻结报告或任何私人产物。
 - [ ] 白名单之外发现「必须打包」的新文件时，先停下更新白名单并说明，不得整目录拷贝。

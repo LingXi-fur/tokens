@@ -34,6 +34,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- Period-over-period comparison math moved into a new pure `period_core.js` (`PeriodCore`), inlined before `dashboard.js` like the cost, calendar, and budget cores. It owns day/week/month expansion, the whole / same-point / partial window choice, percent change, delta attribution ordering, and the dominant-model shift; the KPI delta, shift badge, attribution panel, and copied view summary now share one implementation instead of repeating the percent math. 环比计算抽成纯核心 `period_core.js`，KPI 环比、主力换人徽章、归因面板与视图摘要共用同一实现。
 - KPI headline numbers flash on change — rising values glow green and falling values glow red for a moment — so a refresh reads at a glance without consulting the delta text. Respects the reduced-motion and low-motion settings.
 - A fixed scroll-progress bar at the very top fills with the theme gradient as the page scrolls, giving a persistent sense of position across the long dashboard; it is pointer-transparent and sits above the ambient canvas but below modals.
 - The cost ledger and price-editor pagers now show the total entry count beside the page position (e.g. `1 / 2 · 共 14 条` / `1 / 2 · 14 entries`), matching the session pager idiom.
@@ -56,6 +57,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- With a date range active and a whole current period, delta attribution and the dominant-model shift now use the full previous period, matching the headline total. Previously previous-period days were mapped by calendar offset, so a 28-day February dropped January 29–31 from the per-model split while the total still counted them. 日期范围下完整本期的归因与主力对比改用完整上期，与总量同口径（此前 2 月对 1 月会漏掉 29–31 日）。
+- Two dashboard logic tests still extracted the removed `periodDelta` helper and used `YYYY-MM` month keys that never occur in real payloads (months are `YYYY-MM-01`); they now exercise `deltaWindowInfo`/`deltaPercent` with real keys. 两个仍引用已删除 `periodDelta` 的逻辑测试改用真实月键与新接口。
 - Collection-wide resource ceilings were raised to match real local history: total retained data 256 MiB to 1 GiB, total records 500,000 to 1,000,000, and the record-cache file ceiling 64 MiB to 512 MiB. Counting semantics, record format, per-file limits, and the cache version are unchanged; this is a capacity adjustment, not a statistics change. Actual local history previously exceeded the old ceiling, so every scan failed with `total_retained_bytes_limit` before any snapshot could be published.
 - Cache permission setup now checks `os.fchmod` availability instead of raising `AttributeError` on older Windows Python versions. Supported descriptor permissions, bounded writes, atomic replacement, and preservation of an existing cache on save failure remain in place; Windows permissions are not claimed to provide POSIX `0600` or a user-only ACL.
 - Synthetic safety tests gate only FIFO-specific cases on `os.mkfifo` capability. Node contract tests decode stdout as UTF-8, and title-cleaning examples use non-home synthetic paths without weakening release-content scanning.

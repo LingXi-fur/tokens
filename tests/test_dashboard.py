@@ -851,23 +851,28 @@ class DashboardTests(unittest.TestCase):
         helpers = "\n".join(extract_function(name) for name in (
             "isoDayValid",
             "selectedDayModelTotals", "selectedDayTotal", "deltaWindowInfo",
-            "periodDelta", "attributionFor",
+            "deltaPercent", "windowModelTotals", "attributionFor", "dominantShift",
         ))
         iso_day_re = next(line for line in script.splitlines() if line.startswith("const ISO_DAY_RE="))
-        node_script = iso_day_re + "\n" + script[agg_start:agg_end] + "\n" + r'''
+        period_core = (ASSETS / "period_core.js").read_text(encoding="utf-8")
+        node_script = period_core + "\n" + iso_day_re + "\n" + script[agg_start:agg_end] + "\n" + r'''
 const DATA={models:['alpha','beta'],generated:'2026-07-31 12:00',range:{until:'2026-07-31'},day_details:{}};
 const state={gran:'month',models:new Set(DATA.models)};
-function periodDays(){return [];}
+let dashboardLanguage='zh';
 ''' + helpers + r'''
 const rows=[
-  {period:'2026-06',total:100,models:{alpha:80,beta:20}},
-  {period:'2026-07',total:145,models:{alpha:90,beta:55}},
+  {period:'2026-05-01',total:100,models:{alpha:80,beta:20}},
+  {period:'2026-06-01',total:145,models:{alpha:90,beta:55}},
 ];
 const result=attributionFor(rows);
 if(!result)throw new Error('missing attribution');
 const sum=result.parts.reduce((total,part)=>total+part.delta,0);
 if(sum!==result.currTotal-result.prevTotal)throw new Error(`parts ${sum} != net ${result.currTotal-result.prevTotal}`);
-if(periodDelta(rows).value!==45)throw new Error('headline window drift');
+if(Math.abs(deltaPercent(deltaWindowInfo(rows))-45)>1e-9)throw new Error('headline window drift');
+if(dominantShift(rows)!==null)throw new Error('no top-model change expected');
+const swapped=[{period:'2026-05-01',total:100,models:{alpha:80,beta:20}},{period:'2026-06-01',total:100,models:{alpha:30,beta:70}}];
+const shift=dominantShift(swapped);
+if(!shift||shift.from!=='alpha'||shift.to!=='beta'||shift.label!=='环比')throw new Error('dominant shift drift '+JSON.stringify(shift));
 state.models=new Set(['beta']);
 const filtered=attributionFor(rows);
 if(filtered.parts.length!==1||filtered.parts[0].model!=='beta'||filtered.parts[0].delta!==35)throw new Error('model filter drift');
@@ -1456,13 +1461,14 @@ if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical
             "selectedDayModelTotals",
             "selectedDayTotal",
             "deltaWindowInfo",
-            "periodDelta",
+            "deltaPercent",
         ))
         agg_start = script.index("const sumList=")
         agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
         iso_day_re = next(line for line in script.splitlines() if line.startswith("const ISO_DAY_RE="))
-        node_script = iso_day_re + "\n" + script[agg_start:agg_end] + "\n" + helpers + r'''
-let DATA, state;
+        period_core = (ASSETS / "period_core.js").read_text(encoding="utf-8")
+        node_script = period_core + "\n" + iso_day_re + "\n" + script[agg_start:agg_end] + "\n" + helpers + r'''
+let DATA, state, dashboardLanguage='zh';
 function detail(total){return {hourly_models:{a:[total,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}};}
 state={gran:'month',models:new Set(['a'])};
 DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
@@ -1472,13 +1478,16 @@ for(let day=1;day<=25;day++){
   DATA.day_details[current]=detail(200);
   DATA.day_details[previous]=detail(100);
 }
-let result=periodDelta([{period:'2026-07',total:3100},{period:'2026-08',total:5050}]);
-if(!result||result.label!=='较上期同期'||Math.abs(result.value-100)>.0001)throw new Error('open month comparison');
+let win=deltaWindowInfo([{period:'2026-07-01',total:3100},{period:'2026-08-01',total:5050}]);
+if(!win||win.label!=='较上期同期'||win.mode!=='same-point'||win.currentDays.length!==25||Math.abs(deltaPercent(win)-100)>.0001)throw new Error('open month comparison');
 DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:'2026-07-31'},day_details:{}};
-result=periodDelta([{period:'2026-06',total:100},{period:'2026-07',total:125}]);
-if(!result||result.label!=='环比'||Math.abs(result.value-25)>.0001)throw new Error('complete period comparison');
+win=deltaWindowInfo([{period:'2026-06-01',total:100},{period:'2026-07-01',total:125}]);
+if(!win||win.label!=='环比'||win.mode!=='whole'||Math.abs(deltaPercent(win)-25)>.0001)throw new Error('complete period comparison');
+dashboardLanguage='en';
+if(deltaWindowInfo([{period:'2026-06-01',total:100},{period:'2026-07-01',total:125}]).label!=='vs prior period')throw new Error('english label');
 state.gran='day';DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
-if(periodDelta([{period:'2026-08-25',total:100},{period:'2026-08-26',total:50}])!==null)throw new Error('partial day should be hidden');
+if(deltaWindowInfo([{period:'2026-08-25',total:100},{period:'2026-08-26',total:50}])!==null)throw new Error('partial day should be hidden');
+if(deltaPercent(null)!==null)throw new Error('null window percent');
 '''
         result = subprocess.run(
             ["node", "-e", node_script],
@@ -2140,6 +2149,7 @@ if(projects.length!==2||projects[0][2]!=='beta'||projects[0][1]!==90||projects[1
             "trailScope", "trailDeltaText", "trailModelPrevious",
             "trailEntityEvidence", "trailReuseEvidence",
         ))
+        helpers = (ASSETS / "period_core.js").read_text(encoding="utf-8") + "\n" + helpers
         node_script = r'''
 let stateRevision=0,derivedRevision=-1,derivedCache={};
 const state={gran:'day',models:new Set(['a','b']),focusPeriod:'2026-07-02'};

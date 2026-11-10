@@ -583,14 +583,8 @@ const CALIBER_NOTES=Object.freeze({
 function caliberNote(id){const copy=CALIBER_NOTES[id];return copy?'<details class="caliber"><summary data-i18n-key="Caliber">Caliber</summary><p data-i18n-key="'+esc(copy)+'">'+esc(copy)+'</p></details>':'';}
 function renderCaliberNotes(){[['caliber-cache','cache'],['caliber-ledger','ledger'],['caliber-block','block']].forEach(([target,id])=>{const el=document.getElementById(target);if(el)el.innerHTML=caliberNote(id);});localizeKeyedElements(document);}
 
-function periodDays(period, gran){
-  if(gran==='day') return [period];
-  const start=new Date(period+'T00:00:00'), out=[];
-  if(Number.isNaN(start.getTime())) return out;
-  if(gran==='week'){ for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);out.push(localISO(d));} }
-  else { const y=start.getFullYear(),m=start.getMonth(); for(let d=1;d<=new Date(y,m+1,0).getDate();d++) out.push(localISO(new Date(y,m,d))); }
-  return out;
-}
+/* 周期日展开与环比窗口由 PeriodCore 纯核心计算；本脚本只负责 DATA/state 取数与文案。 */
+function periodDays(period, gran){return PeriodCore.periodDays(period,gran);}
 function localISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function focusDays(){
   const info=rangeInfo();
@@ -687,56 +681,41 @@ function deltaWindowInfo(rows){
      日期范围的相对日锚点。保留 DATA.generated 优先，避免整月被当成已结束。 */
   const stampDay=String(DATA.generated||'').slice(0,10);
   const genDay=isoDayValid(stampDay)?stampDay:(typeof generatedDay==='function'?generatedDay():null);
+  let current,previous;
   if(!rangeOn){
     if(rows.length<2)return null;
-    const current=rows[rows.length-1],previous=rows[rows.length-2],generated=genDay,until=DATA.range?.until;
-    const currentDays=periodDays(current.period,state.gran),open=!!generated&&currentDays.includes(generated)&&(!until||until>=generated);
-    if(!open)return {label:en?'vs prior period':'环比',current,previous,currentDays:null,previousDays:null,currTotal:current.total,prevTotal:previous.total};
-    if(state.gran==='day')return null;
-    const elapsed=currentDays.filter(day=>day<generated).length;if(!elapsed)return null;
-    const previousDays=periodDays(previous.period,state.gran).slice(0,elapsed),comparableDays=currentDays.slice(0,elapsed);
-    const currTotal=comparableDays.reduce((sum,day)=>sum+selectedDayTotal(day),0),prevTotal=previousDays.reduce((sum,day)=>sum+selectedDayTotal(day),0);
-    return {label:en?'vs same point in prior period':'较上期同期',current,previous,currentDays:comparableDays,previousDays,currTotal,prevTotal};
+    current=rows[rows.length-1];previous=rows[rows.length-2];
+  }else{
+    if(!rows.length)return null;
+    current=rows[rows.length-1];
+    const full=DATA[state.gran]||[],index=full.findIndex(row=>row.period===current.period);
+    previous=index>0?full[index-1]:null;
+    if(!previous)return null;
   }
-  if(!rows.length)return null;
-  const current=rows[rows.length-1],full=DATA[state.gran]||[];
-  const index=full.findIndex(row=>row.period===current.period);
-  const previous=index>0?full[index-1]:null;
-  if(!previous)return null;
-  const fullCurrentDays=periodDays(current.period,state.gran),currentDays=typeof periodScopeDays==='function'?periodScopeDays(current.period,state.gran):fullCurrentDays;
-  if(!currentDays.length)return null;
-  const generated=genDay,coverageUntil=DATA.range&&DATA.range.until;
-  const open=!!generated&&currentDays.includes(generated)&&(!coverageUntil||coverageUntil>=generated);
-  if(open&&state.gran==='day')return null;
-  const clipped=currentDays.length<fullCurrentDays.length;
-  let compareCurrent=currentDays,label=en?'vs prior period':'环比';
-  if(open){
-    compareCurrent=currentDays.filter(day=>day<generated);
-    if(!compareCurrent.length)return null;
-    label=en?'vs same point in prior period':'较上期同期';
-  }else if(clipped){label=en?'partial range · same calendar-day':'部分范围 · 同历日对比';}
-  const offsets=new Map(fullCurrentDays.map((day,offset)=>[day,offset])),fullPreviousDays=periodDays(previous.period,state.gran);
-  const previousDays=compareCurrent.map(day=>{const offset=offsets.get(day);return offset==null?null:fullPreviousDays[offset];}).filter(Boolean);
-  if(!previousDays.length)return null;
-  const wholeCurrent=!open&&!clipped;
-  const currTotal=wholeCurrent?current.total:compareCurrent.reduce((sum,day)=>sum+selectedDayTotal(day),0);
-  const prevTotal=(wholeCurrent?fullPreviousDays:previousDays).reduce((sum,day)=>sum+selectedDayTotal(day),0);
-  return {label:label+(en?' · reference ':' · 参照 ')+fmtLabel(previous.period,state.gran),current,previous,currentDays:compareCurrent,previousDays,currTotal,prevTotal,reference:previous.period};
+  const win=PeriodCore.comparisonWindow({gran:state.gran,currentPeriod:current.period,previousPeriod:previous.period,
+    generated:genDay,coverageUntil:DATA.range?.until||null,scopeDays:rangeOn?periodScopeDays(current.period,state.gran):null});
+  if(!win)return null;
+  const daySum=days=>days.reduce((sum,day)=>sum+selectedDayTotal(day),0);
+  const currTotal=win.mode==='whole'?current.total:daySum(win.currentDays),prevTotal=win.previousDays?daySum(win.previousDays):previous.total;
+  const base=({whole:en?'vs prior period':'环比','same-point':en?'vs same point in prior period':'较上期同期',
+    partial:en?'partial range · same calendar-day':'部分范围 · 同历日对比'})[win.mode];
+  const label=rangeOn?base+(en?' · reference ':' · 参照 ')+fmtLabel(previous.period,state.gran):base;
+  return {label,mode:win.mode,current,previous,currentDays:win.currentDays,previousDays:win.previousDays,currTotal,prevTotal};
 }
+function deltaPercent(window){return window?PeriodCore.percentChange(window.currTotal,window.prevTotal):null;}
 function windowModelTotals(row,days){
   if(!days)return row.models||{};
   const out={};days.forEach(day=>{const v=selectedDayModelTotals(day);Object.keys(v).forEach(model=>out[model]=(out[model]||0)+(v[model]||0));});return out;
 }
 function attributionFor(rows){
   const window=deltaWindowInfo(rows);if(!window||window.prevTotal<=0)return null;
-  const curr=windowModelTotals(window.current,window.currentDays),prev=windowModelTotals(window.previous,window.previousDays),parts=DATA.models.filter(model=>state.models.has(model)).map(model=>({model,curr:curr[model]||0,prev:prev[model]||0,delta:(curr[model]||0)-(prev[model]||0)})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)||a.model.localeCompare(b.model));
+  const parts=PeriodCore.attributionParts(windowModelTotals(window.current,window.currentDays),windowModelTotals(window.previous,window.previousDays),DATA.models.filter(model=>state.models.has(model)));
   return {label:window.label,currTotal:window.currTotal,prevTotal:window.prevTotal,parts};
 }
 function dominantShift(rows){
   const window=deltaWindowInfo(rows);if(!window||!window.prevTotal||!window.currTotal)return null;
-  const prevTop=topModelOf(windowModelTotals(window.previous,window.previousDays)),currTop=topModelOf(windowModelTotals(window.current,window.currentDays));
-  if(!prevTop||!currTop||prevTop[0]===currTop[0])return null;
-  return {from:prevTop[0],to:currTop[0],label:window.label};
+  const shift=PeriodCore.dominantShift(windowModelTotals(window.current,window.currentDays),windowModelTotals(window.previous,window.previousDays));
+  return shift&&{...shift,label:window.label};
 }
 function renderDominantShift(rows=selectedRows()){
   const shift=dominantShift(rows),shiftEl=document.getElementById('k-dom-shift');
@@ -746,8 +725,9 @@ function renderDominantShift(rows=selectedRows()){
 }
 function renderDelta(rows=selectedRows()){
   const window=deltaWindowInfo(rows),dEl=document.getElementById('k-delta');
-  if(window&&window.prevTotal>0){
-    const d=(window.currTotal-window.prevTotal)/window.prevTotal*100;dEl.style.display='';dEl.className='delta '+(d>=0?'up':'down');
+  const d=deltaPercent(window);
+  if(d!==null){
+    dEl.style.display='';dEl.className='delta '+(d>=0?'up':'down');
     dEl.textContent=(d>=0?'▲ ':'▼ ')+Math.abs(d).toFixed(1)+'% '+window.label;
     dEl.title=(dashboardLanguage==='en'?'Previous ':'上期 ')+fmt(window.prevTotal)+' → '+(dashboardLanguage==='en'?'current ':'本期 ')+fmt(window.currTotal)+' tk';
     if(dEl.__deltaValue!==undefined&&dEl.__deltaValue!==d&&!motionDisabled()){dEl.classList.remove('flash-up','flash-down');void dEl.offsetWidth;dEl.classList.add(d>dEl.__deltaValue?'flash-up':'flash-down');}
@@ -2174,7 +2154,8 @@ function viewSummaryText(){
   const models=en?(state.models.size===DATA.models.length?'All models':state.models.size+' / '+DATA.models.length+' models'):(state.models.size===DATA.models.length?'全部模型':state.models.size+' / '+DATA.models.length+' 个模型');
   const parts=[(en?'Token Usage Dashboard':'Token 用量 Dashboard'),gran,models,rangeLabel(),(en?'Total':'总')+' '+human(sumBy(rows,'total'))+' tk',(en?'Calls':'调用')+' '+fmt(sumBy(rows,'calls')),dom?(en?'Top model ':'主力 ')+pretty(dom[0]):''];
   const win=deltaWindowInfo(rows);
-  if(win&&win.prevTotal>0){const d=(win.currTotal-win.prevTotal)/win.prevTotal*100;parts.push((en?'Δ ':'环比 ')+(d>=0?'+':'')+d.toFixed(1)+'%');}
+  const d=deltaPercent(win);
+  if(d!==null){parts.push((en?'Δ ':'环比 ')+(d>=0?'+':'')+d.toFixed(1)+'%');}
   return parts.filter(Boolean).join(' · ');
 }
 function copyViewSummary(){copyText(viewSummaryText()).then(ok=>toast(ok?(dashboardLanguage==='en'?'View summary copied':'视图摘要已复制'):(dashboardLanguage==='en'?'Copy failed':'复制失败')));}

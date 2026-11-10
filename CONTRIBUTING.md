@@ -26,11 +26,14 @@ Check the JavaScript assets when changing either interface (requires Node.js 22 
 node --check src/tokens_cli/dashboard_assets/cost_core.js
 node --check src/tokens_cli/dashboard_assets/calendar_core.js
 node --check src/tokens_cli/dashboard_assets/budget_core.js
+node --check src/tokens_cli/dashboard_assets/period_core.js
 node --check src/tokens_cli/dashboard_assets/dashboard.js
 node --check docs/assets/site.js
 ```
 
 The calendar core contains pure derivations only. It receives the dashboard's shared date and safe-integer helpers; keep DOM, storage, current time, and view state in the dashboard. Tests load the production core instead of copying its functions.
+
+The period core (`PeriodCore`) is self-contained: it carries its own UTC date arithmetic and takes period keys, the generated day, coverage end, and range days as arguments. Keep labels, `DATA`/`state` reads, and per-day summing in the dashboard; `tests/test_period_core.py` loads the production file directly.
 
 The budget core reuses CostCore pricing and CalendarCore dates. Keep budget settings in browser-local `tk-budget-v1` storage, separate by month and currency; loading must not write or repair stored values. Never add budget amounts to snapshot payloads, URLs, exports, or share cards. Synthetic browser tests cover these boundaries; a passing layout check is not visual approval.
 

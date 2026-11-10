@@ -11,6 +11,7 @@ ASSETS = ROOT / "src" / "tokens_cli" / "dashboard_assets"
 SCRIPT = ASSETS / "dashboard.js"
 COST_CORE = ASSETS / "cost_core.js"
 CALENDAR_CORE = ASSETS / "calendar_core.js"
+PERIOD_CORE = ASSETS / "period_core.js"
 HAVE_NODE = shutil.which("node") is not None
 
 
@@ -66,7 +67,7 @@ def _range_harness(source):
     start = source.index("const RANGE_PRESETS")
     end = source.index("function compareActive", start)
     range_source = source[start:end]
-    period_days = _extract_function(source, "periodDays")
+    period_days = PERIOD_CORE.read_text(encoding="utf-8") + "\n" + _extract_function(source, "periodDays")
     local_iso = _extract_function(source, "localISO")
     return f"""
 const DATA={{
@@ -164,6 +165,8 @@ if(periodScopeDays('2026-02-09','week').join(',')!=='2026-02-09,2026-02-10,2026-
         range_end = source.index("function compareActive", range_start)
         range_source = (
             _extract_function(source, "localISO")
+            + "\n"
+            + PERIOD_CORE.read_text(encoding="utf-8")
             + "\n"
             + _extract_function(source, "periodDays")
             + "\n"
