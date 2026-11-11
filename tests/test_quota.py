@@ -310,6 +310,75 @@ class ClaudeQuotaTests(unittest.TestCase):
         self.assertEqual("beyond_estimate", current["projection"]["status"])
         self.assertIsNone(current["projection"]["projected_at"])
 
+    def test_safe_floor_forecast_uses_past_floor_without_warning(self):
+        direct = [
+            {"at": (NOW - timedelta(hours=14)).timestamp(), "total": 100},
+            {"at": (NOW - timedelta(hours=6)).timestamp(), "total": 400},
+            {"at": (NOW - timedelta(hours=5)).timestamp(), "total": 400},
+            {"at": (NOW - timedelta(minutes=40)).timestamp(), "total": 100},
+            {"at": (NOW - timedelta(minutes=20)).timestamp(), "total": 100},
+        ]
+        events = [{"at": (NOW - timedelta(hours=10)).timestamp(), "type": "five_hour",
+                   "resets_at": (NOW - timedelta(hours=9)).timestamp()}]
+        summary = quota.summarize_claude(events, direct, NOW)
+        self.assertEqual("safe_floor", summary["samples"]["basis"])
+        current = summary["current"]
+        self.assertEqual("past_floor", current["projection"]["status"])
+        self.assertIsNotNone(current["projection"]["projected_at"])
+        report = {
+            "generated_at": NOW.isoformat(), "timezone": "Asia/Shanghai",
+            "sources": ["claude"], "unsupported": [],
+            "codex": {"selected": False, "kind": "official", "snapshot_count": 0,
+                      "files": 0, "plans": []},
+            "claude": {"selected": True, "files": 1, **summary},
+            "opencode": {"selected": False, "kind": "none", "available": False,
+                         "reason": "no_official_quota_data"},
+            "parsed_files": 1,
+        }
+        stdout = io.StringIO()
+        with mock.patch("sys.stdout", stdout):
+            quota.print_report(report, lang="zh")
+        text = stdout.getvalue()
+        self.assertIn("不代表会撞线", text)
+        self.assertIn("ℹ", text)
+        self.assertNotIn("⚠", text)
+        self.assertIn("按最近 1 小时速度", text)
+
+    def test_hits_basis_forecast_still_reports_hit(self):
+        direct = [
+            {"at": (NOW - timedelta(hours=14)).timestamp(), "total": 1000},
+            {"at": (NOW - timedelta(minutes=40)).timestamp(), "total": 100},
+            {"at": (NOW - timedelta(minutes=20)).timestamp(), "total": 100},
+        ]
+        events = [{"at": (NOW - timedelta(hours=10)).timestamp(), "type": "five_hour",
+                   "resets_at": (NOW - timedelta(hours=9)).timestamp()}]
+        current = quota.summarize_claude(events, direct, NOW)["current"]
+        self.assertEqual("hit", current["projection"]["status"])
+
+    def test_window_younger_than_fifteen_minutes_is_insufficient(self):
+        young = [
+            {"at": (NOW - timedelta(minutes=10)).timestamp(), "total": 100},
+            {"at": (NOW - timedelta(minutes=5)).timestamp(), "total": 100},
+            {"at": NOW.timestamp(), "total": 100},
+        ]
+        current = quota.summarize_claude([], young, NOW)["current"]
+        self.assertTrue(current["window_too_new"])
+        self.assertIsNone(current["velocity_per_hour"])
+        self.assertEqual("insufficient", current["projection"]["status"])
+
+        older = [
+            {"at": (NOW - timedelta(hours=14)).timestamp(), "total": 1000},
+            {"at": (NOW - timedelta(minutes=20)).timestamp(), "total": 10},
+            {"at": (NOW - timedelta(minutes=10)).timestamp(), "total": 10},
+            {"at": NOW.timestamp(), "total": 10},
+        ]
+        events = [{"at": (NOW - timedelta(hours=10)).timestamp(), "type": "five_hour",
+                   "resets_at": (NOW - timedelta(hours=9)).timestamp()}]
+        current = quota.summarize_claude(events, older, NOW)["current"]
+        self.assertFalse(current["window_too_new"])
+        self.assertIsNotNone(current["velocity_per_hour"])
+        self.assertNotEqual("insufficient", current["projection"]["status"])
+
     def test_current_window_with_hit_event_reports_hit(self):
         direct = [{"at": (NOW - timedelta(hours=4)).timestamp(), "total": 200}]
         events = [{"at": (NOW - timedelta(hours=1)).timestamp(), "type": "five_hour",
