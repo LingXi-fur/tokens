@@ -1,13 +1,15 @@
+import io
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from tokens_cli import report_term
+from tokens_cli import aggregate, readers, report_term
 
 
 def _summary(*models):
@@ -72,6 +74,31 @@ class ReportTermModelSortingTests(unittest.TestCase):
         expected = ["model-a", "model-b", "model-c"]
         self.assertEqual(expected, report_term._top_model_columns(forward))
         self.assertEqual(expected, report_term._top_model_columns(reversed_input))
+
+    def test_opencode_records_render_without_source_specific_labels(self):
+        # OpenCode totals include reasoning in output while billing keeps it
+        # separate; the terminal report only consumes normalized records.
+        billing = readers._opencode_billing({
+            "input": 10, "output": 15, "reasoning": 5,
+            "cache_read": 3, "cache_write": 2,
+        })
+        record = {
+            "source": "opencode", "date": "2026-11-10",
+            "model": "deepseek-v4.1-flash",
+            "input": 10, "output": 20, "cache_read": 3, "cache_write": 2,
+            "total": 35, "session": "synthetic-session",
+            "cwd": "/synthetic/private-project", "billing": billing,
+        }
+        rows = [("2026-11-10", aggregate.summarize([record]))]
+        stdout = io.StringIO()
+        with mock.patch("sys.stdout", stdout):
+            report_term.print_report("day", rows, "2026-11-10", "Today", lang="en")
+        text = stdout.getvalue()
+        self.assertIn("deepseek-v4.1-flash", text)
+        self.assertIn("Total tokens", text)
+        self.assertIn("1 calls", text)
+        self.assertNotIn("/synthetic/private-project", text)
+        self.assertNotIn("synthetic-session", text)
 
 
 if __name__ == "__main__":

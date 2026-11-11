@@ -1,4 +1,6 @@
 import io
+import json
+import re
 import tempfile
 import unittest
 from datetime import date
@@ -11,7 +13,7 @@ SRC = ROOT / "src"
 import sys
 sys.path.insert(0, str(SRC))
 
-from tokens_cli import cli, config, demo, lang as lang_module, report_html, report_term
+from tokens_cli import cli, config, dashboard_wire, demo, lang as lang_module, report_html, report_term
 
 
 class CliTests(unittest.TestCase):
@@ -180,13 +182,42 @@ class CliTests(unittest.TestCase):
         self.assertEqual(first, second)
         records = first["records"]
         self.assertGreater(len(records), 250)
-        self.assertEqual({"claude", "gemini", "codex"}, {row["source"] for row in records})
+        # OpenCode is now the fourth synthetic source; the other source names
+        # and the demo's stable shape are unchanged.
+        self.assertEqual({"claude", "gemini", "codex", "opencode"},
+                         {row["source"] for row in records})
         self.assertGreater(len({row["model"] for row in records}), 4)
+        self.assertLessEqual(len({row["model"] for row in records}), 8)
         self.assertGreater(len({row["cwd"] for row in records}), 4)
         self.assertGreater(len({row["session"] for row in records}), 10)
         self.assertTrue(all(row["cwd"].startswith("/synthetic/") for row in records))
         self.assertTrue(all(row["ts"][-6] in ("+", "-") for row in records))
         self.assertGreater(sum(row["cache_read"] for row in records), 0)
+
+        opencode = [row for row in records if row["source"] == "opencode"]
+        self.assertTrue(opencode)
+        self.assertEqual({"deepseek-v4.1-flash", "kimi-k2.6"},
+                         {row["model"] for row in opencode})
+        for row in opencode:
+            billing = row["billing"]
+            self.assertFalse(billing["uncertain"])
+            self.assertEqual(row["total"], sum(billing["parts"]))
+            # output keeps reasoning while billing lists it as thoughts.
+            self.assertGreater(billing["parts"][4], 0)
+            self.assertGreater(row["output"], billing["parts"][1])
+
+    def test_demo_command_publishes_opencode_source_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = cli.main(["demo", "--output", tmp, "--timezone", "UTC"])
+            self.assertEqual(0, result)
+            html = (Path(tmp) / "dashboard-demo.html").read_text(encoding="utf-8")
+        self.assertIn("OpenCode", html)
+        match = re.search(r"^const WIRE = (.*);$", html, re.MULTILINE)
+        self.assertIsNotNone(match)
+        payload = dashboard_wire.decode_payload(json.loads(match.group(1)))
+        self.assertIn("opencode", payload["source"])
+        self.assertIn("deepseek-v4.1-flash", payload["models"])
+        self.assertIn("kimi-k2.6", payload["models"])
 
     @mock.patch("tokens_cli.cli.readers.read_all", return_value=[{"date": "2026-07-01"}])
     @mock.patch("tokens_cli.cli.report_dashboard.open_path", return_value=False)
@@ -244,6 +275,30 @@ class CliTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as caught:
             cli.main(["month", "--html", "--anonymize"])
         self.assertEqual(2, caught.exception.code)
+
+    def test_static_html_footer_follows_enabled_sources(self):
+        rows = [("2026-07-01", {
+            "total": 10, "calls": 1,
+            "by_model": [("deepseek-v4.1-flash", 10)],
+            "by_source": [("opencode", 10)],
+        })]
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(config, "OUT_DIR", tmp):
+            english = Path(report_html.write_report(
+                "day", rows, "2026-07-01", "Today", ["opencode"], lang="en",
+            )).read_text(encoding="utf-8")
+            chinese = Path(report_html.write_report(
+                "day", rows, "2026-07-01", "今天", ["opencode"], lang="zh",
+            )).read_text(encoding="utf-8")
+            all_sources = Path(report_html.write_report(
+                "day", rows, "2026-07-01", "Today",
+                ["claude", "gemini", "codex", "opencode"], lang="en",
+            )).read_text(encoding="utf-8")
+        self.assertIn("~/.local/share/opencode", english)
+        self.assertNotIn("~/.claude", english)
+        self.assertIn("~/.local/share/opencode", chinese)
+        for path in ("~/.claude", "~/.gemini", "~/.codex", "~/.local/share/opencode"):
+            self.assertIn(path, all_sources)
 
 
 if __name__ == "__main__":
