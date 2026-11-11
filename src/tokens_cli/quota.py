@@ -393,27 +393,59 @@ def _median(values):
 
 
 def _dedupe_events(events):
-    """Drop exact retry duplicates: same second, type, and reset time."""
+    """Drop exact retries; merge no-reset events within 60 seconds."""
     seen = set()
     unique = []
+    last_no_reset = {}
     for event in sorted(events, key=lambda row: row.get("at", 0)):
         at = event.get("at")
         if isinstance(at, bool) or not isinstance(at, (int, float)):
             continue
         resets_at = event.get("resets_at")
-        key = (int(at), event.get("type"),
-               None if resets_at is None else int(resets_at))
-        if key in seen:
-            continue
-        seen.add(key)
+        kind = event.get("type")
+        if resets_at is None:
+            previous = last_no_reset.get(kind)
+            last_no_reset[kind] = at
+            if previous is not None and at - previous < 60:
+                continue
+        else:
+            key = (int(at), kind, int(resets_at))
+            if key in seen:
+                continue
+            seen.add(key)
         unique.append(event)
     return unique
 
 
-def _claude_capacity(events, direct):
-    """One capacity sample per reset window, using five-hour events only."""
+def _claude_windows(direct, until=None):
+    """Split direct records into five-hour windows, starting at first record."""
+    windows = []
+    for row in direct:
+        if until is not None and row["at"] > until:
+            break
+        if not windows or row["at"] >= windows[-1]["end"]:
+            windows.append({
+                "start": row["at"],
+                "end": row["at"] + CLAUDE_WINDOW_SECONDS,
+                "rows": [],
+            })
+        windows[-1]["rows"].append(row)
+    return windows
+
+
+def _window_tokens(window):
+    return sum(row["total"] for row in window["rows"])
+
+
+def _window_has_hit(window, events):
+    return any(window["start"] <= event["at"] <= window["end"] for event in events)
+
+
+def _claude_capacity(events, direct, now_ts):
+    """Capacity from hit windows plus a safe floor from ended clean windows."""
+    events = _dedupe_events(events)
     by_reset = {}
-    for event in _dedupe_events(events):
+    for event in events:
         resets_at = event.get("resets_at")
         if resets_at is None:
             continue
@@ -437,25 +469,47 @@ def _claude_capacity(events, direct):
                 "resets_at": resets_at,
                 "tokens": tokens,
             })
+
+    safe_windows = [
+        window for window in _claude_windows(direct, until=now_ts)
+        if window["end"] <= now_ts and not _window_has_hit(window, events)
+    ]
+    safe_floor = max((_window_tokens(window) for window in safe_windows), default=None)
     values = [sample["tokens"] for sample in samples]
+    median = _median(values)
+    maximum = max(values) if values else None
+    if safe_floor is not None and (median is None or safe_floor > maximum):
+        capacity = safe_floor
+        basis = "safe_floor"
+    elif median is not None:
+        capacity = median
+        basis = "hits"
+    elif safe_floor is not None:
+        capacity = safe_floor
+        basis = "safe_floor"
+    else:
+        capacity = None
+        basis = "none"
     return samples, {
         "count": len(values),
-        "median": _median(values),
+        "median": median,
         "min": min(values) if values else None,
-        "max": max(values) if values else None,
+        "max": maximum,
+        "safe_floor": safe_floor,
+        "safe_windows": len(safe_windows),
+        "basis": basis,
     }
 
 
-def _claude_current(direct, capacity, now_ts):
-    recent = [row for row in direct
-              if now_ts - CLAUDE_WINDOW_SECONDS <= row["at"] <= now_ts]
-    if not recent:
+def _claude_current(direct, capacity, events, now_ts):
+    windows = _claude_windows(direct, until=now_ts)
+    if not windows or windows[-1]["end"] <= now_ts:
         return None
-    start = recent[0]["at"]
-    end = start + CLAUDE_WINDOW_SECONDS
-    used = sum(row["total"] for row in direct
-               if start <= row["at"] <= min(end, now_ts))
+    window = windows[-1]
+    start, end = window["start"], window["end"]
+    used = _window_tokens(window)
     percent = (used / capacity * 100) if capacity else None
+    has_hit = _window_has_hit(window, events)
 
     hour_rows = [row for row in direct
                  if now_ts - VELOCITY_WINDOW_SECONDS <= row["at"] <= now_ts]
@@ -470,8 +524,10 @@ def _claude_current(direct, capacity, now_ts):
                 velocity = sum(row["total"] for row in hour_rows) / (denominator / 3600)
 
     projection = {"status": "no_estimate", "projected_at": None}
-    if capacity and used >= capacity:
+    if has_hit:
         projection = {"status": "hit", "projected_at": now_ts}
+    elif capacity and used >= capacity:
+        projection = {"status": "beyond_estimate", "projected_at": None}
     elif capacity and velocity and velocity > 0:
         projected = now_ts + (capacity - used) / velocity * 3600
         projection = {
@@ -490,6 +546,7 @@ def _claude_current(direct, capacity, now_ts):
         "estimated_percent": percent,
         "capacity_tokens": capacity,
         "velocity_per_hour": velocity,
+        "has_hit": has_hit,
         "projection": {
             "status": projection["status"],
             "projected_at": _iso(projection["projected_at"]),
@@ -500,8 +557,12 @@ def _claude_current(direct, capacity, now_ts):
 def summarize_claude(events, direct, now):
     now_ts = now.timestamp()
     events = _dedupe_events(events)
-    samples, capacity = _claude_capacity(events, direct)
-    current = _claude_current(direct, capacity["median"], now_ts)
+    samples, capacity = _claude_capacity(events, direct, now_ts)
+    capacity_value = capacity["median"]
+    if capacity["safe_floor"] is not None and (
+            capacity_value is None or capacity["safe_floor"] > capacity_value):
+        capacity_value = capacity["safe_floor"]
+    current = _claude_current(direct, capacity_value, events, now_ts)
     history = sorted(events, key=lambda event: event["at"], reverse=True)[:RECENT_EVENTS]
     return {
         "kind": "estimate",
@@ -546,7 +607,9 @@ def collect(sources=None, use_cache=True, now=None):
             **(summarize_claude(scan["claude_events"], direct, now)
                if "claude" in selected else
                {"kind": "estimate", "samples": {"count": 0, "median": None,
-                                                "min": None, "max": None},
+                                                "min": None, "max": None,
+                                                "safe_floor": None, "safe_windows": 0,
+                                                "basis": "none"},
                 "current": None, "events": []}),
         },
         "opencode": {
@@ -580,12 +643,15 @@ _TEXT = {
         "hit": "→ about {time} ⚠",
         "reached": "already at 100%",
         "claude": "Claude (estimate, based on {count} rate-limit windows)",
+        "claude_floor": "Claude (estimate, capacity floor from {safe} safe windows)",
         "claude_none": "Claude (estimate): no rate-limit samples yet; cannot estimate",
         "current": "current 5h window {start} → {end}  direct tokens {used} / estimated capacity {capacity} ({low}–{high}) ≈ {percent}%",
+        "current_floor": "current 5h window {start} → {end}  direct tokens {used} / capacity at least {capacity} (highest recorded safe window) ≈ {percent}% (hit samples are stale)",
         "current_no_capacity": "current 5h window {start} → {end}  direct tokens {used}",
         "no_current": "no direct Anthropic records in the last 5 hours",
         "velocity": "velocity {rate}%/h",
         "claude_velocity": "velocity {rate}/h",
+        "beyond_estimate": "past the estimate without a limit hit (estimate is low)",
         "recent": "recent rate limits:",
         "recent_item": "  {at} {type} (reset {reset})",
         "recent_item_no_reset": "  {at} {type} (reset unknown)",
@@ -610,12 +676,15 @@ _TEXT = {
         "hit": "→ 约 {time} 撞线 ⚠",
         "reached": "已达 100%",
         "claude": "Claude（估算，依据 {count} 个撞线窗口）",
+        "claude_floor": "Claude（估算，容量下限来自 {safe} 个安全窗口）",
         "claude_none": "Claude（估算）：尚无撞线样本，无法估算",
         "current": "当前 5h 窗口 起 {start} → 止 {end}   直连 token {used} / 估算容量 {capacity}（{low}–{high}）≈ {percent}%",
+        "current_floor": "当前 5h 窗口 起 {start} → 止 {end}   直连 token {used} / 容量至少 {capacity}（历史最高未撞线用量）≈ {percent}%（撞线样本已过时）",
         "current_no_capacity": "当前 5h 窗口 起 {start} → 止 {end}   直连 token {used}",
         "no_current": "最近 5 小时没有直连 Anthropic 记录",
         "velocity": "速度 {rate}%/h",
         "claude_velocity": "速度 {rate}/h",
+        "beyond_estimate": "已超过历史估算，仍未撞线（估算偏低）",
         "recent": "最近撞线：",
         "recent_item": "  {at} {type}（重置 {reset}）",
         "recent_item_no_reset": "  {at} {type}（重置时间未知）",
@@ -719,9 +788,14 @@ def _print_codex(report, text, lang, now):
 def _print_claude(report, text, lang, now):
     claude = report["claude"]
     print()
-    count = claude["samples"]["count"]
-    print(text["claude"].format(count=count) if count
-          else text["claude_none"])
+    samples = claude["samples"]
+    basis = samples.get("basis", "none")
+    if basis == "safe_floor":
+        print(text["claude_floor"].format(safe=samples.get("safe_windows", 0)))
+    elif samples["count"]:
+        print(text["claude"].format(count=samples["count"]))
+    else:
+        print(text["claude_none"])
     current = claude.get("current")
     if not current:
         print(f"  {text['no_current']}")
@@ -730,22 +804,33 @@ def _print_claude(report, text, lang, now):
         end = _fmt_time(_epoch(current["end"]), now, text)
         human = _human if lang == "zh" else _human_en
         if current.get("capacity_tokens"):
-            samples = claude["samples"]
-            print("  " + text["current"].format(
-                start=start, end=end, used=human(current["direct_tokens"]),
-                capacity=human(current["capacity_tokens"]),
-                low=human(samples["min"]), high=human(samples["max"]),
-                percent=f"{current['estimated_percent']:.0f}",
-            ))
+            if basis == "safe_floor":
+                print("  " + text["current_floor"].format(
+                    start=start, end=end, used=human(current["direct_tokens"]),
+                    capacity=human(current["capacity_tokens"]),
+                    percent=f"{current['estimated_percent']:.0f}",
+                ))
+            else:
+                print("  " + text["current"].format(
+                    start=start, end=end, used=human(current["direct_tokens"]),
+                    capacity=human(current["capacity_tokens"]),
+                    low=human(samples["min"]), high=human(samples["max"]),
+                    percent=f"{current['estimated_percent']:.0f}",
+                ))
         else:
             print("  " + text["current_no_capacity"].format(
                 start=start, end=end, used=human(current["direct_tokens"])))
         velocity = current.get("velocity_per_hour")
+        projection = current["projection"]
         if velocity is None:
             print(f"  {text['no_velocity']}")
+            if projection["status"] == "hit":
+                print("  " + text["hit"].format(
+                    time=_fmt_time(_epoch(projection["projected_at"]), now, text)))
+            elif projection["status"] == "beyond_estimate":
+                print("  " + text["beyond_estimate"])
         else:
             line = "  " + text["claude_velocity"].format(rate=human(velocity))
-            projection = current["projection"]
             if projection["status"] == "hit":
                 line += "  " + text["hit"].format(
                     time=_fmt_time(_epoch(projection["projected_at"]), now, text))
@@ -756,6 +841,8 @@ def _print_claude(report, text, lang, now):
                 line += "  " + text["flat"]
             elif projection["status"] == "insufficient":
                 line += "  " + text["no_velocity"]
+            elif projection["status"] == "beyond_estimate":
+                line += "  " + text["beyond_estimate"]
             print(line)
     events = claude.get("events") or []
     if events:

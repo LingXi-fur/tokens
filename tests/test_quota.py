@@ -283,6 +283,68 @@ class ClaudeQuotaTests(unittest.TestCase):
         self.assertAlmostEqual(300, current["velocity_per_hour"])
         self.assertLessEqual(current["velocity_per_hour"], 300 * 10)
 
+    def test_safe_floor_can_raise_capacity_above_hit_samples(self):
+        direct = [
+            {"at": (NOW - timedelta(hours=12)).timestamp(), "total": 100},
+            {"at": (NOW - timedelta(hours=11)).timestamp(), "total": 50},
+            {"at": (NOW - timedelta(hours=4)).timestamp(), "total": 10},
+        ]
+        events = [{"at": (NOW - timedelta(hours=3)).timestamp(), "type": "five_hour",
+                   "resets_at": (NOW - timedelta(hours=2)).timestamp()}]
+        summary = quota.summarize_claude(events, direct, NOW)
+        samples = summary["samples"]
+        self.assertEqual("safe_floor", samples["basis"])
+        self.assertEqual(150, samples["safe_floor"])
+        self.assertEqual(1, samples["safe_windows"])
+        self.assertEqual(150, summary["current"]["capacity_tokens"])
+
+    def test_beyond_estimate_without_current_hit_has_no_projection(self):
+        direct = [
+            {"at": (NOW - timedelta(hours=12)).timestamp(), "total": 10},
+            {"at": (NOW - timedelta(hours=4)).timestamp(), "total": 200},
+        ]
+        events = [{"at": (NOW - timedelta(hours=10)).timestamp(), "type": "five_hour",
+                   "resets_at": (NOW - timedelta(hours=9)).timestamp()}]
+        current = quota.summarize_claude(events, direct, NOW)["current"]
+        self.assertFalse(current["has_hit"])
+        self.assertEqual("beyond_estimate", current["projection"]["status"])
+        self.assertIsNone(current["projection"]["projected_at"])
+
+    def test_current_window_with_hit_event_reports_hit(self):
+        direct = [{"at": (NOW - timedelta(hours=4)).timestamp(), "total": 200}]
+        events = [{"at": (NOW - timedelta(hours=1)).timestamp(), "type": "five_hour",
+                   "resets_at": (NOW + timedelta(hours=4)).timestamp()}]
+        current = quota.summarize_claude(events, direct, NOW)["current"]
+        self.assertTrue(current["has_hit"])
+        self.assertEqual("hit", current["projection"]["status"])
+
+    def test_no_reset_events_merge_within_sixty_seconds(self):
+        start = (NOW - timedelta(hours=1)).timestamp()
+        events = [
+            {"at": start, "type": None, "resets_at": None},
+            {"at": start + 30, "type": None, "resets_at": None},
+            {"at": start + 90, "type": None, "resets_at": None},
+            {"at": start + 30, "type": "five_hour", "resets_at": None},
+        ]
+        deduped = quota._dedupe_events(events)
+        self.assertEqual(3, len(deduped))
+        self.assertEqual([start, start + 30, start + 90],
+                         [event["at"] for event in deduped])
+
+    def test_window_split_opens_new_window_at_exactly_five_hours(self):
+        start = (NOW - timedelta(hours=10)).timestamp()
+        direct = [
+            {"at": start, "total": 1},
+            {"at": start + quota.CLAUDE_WINDOW_SECONDS - 1, "total": 1},
+            {"at": start + quota.CLAUDE_WINDOW_SECONDS, "total": 1},
+        ]
+        windows = quota._claude_windows(direct, until=NOW.timestamp())
+        self.assertEqual(2, len(windows))
+        self.assertEqual(start, windows[0]["start"])
+        self.assertEqual(start + quota.CLAUDE_WINDOW_SECONDS, windows[1]["start"])
+        self.assertEqual(2, len(windows[0]["rows"]))
+        self.assertEqual(1, len(windows[1]["rows"]))
+
     def test_no_samples_and_current_window_inference(self):
         summary = quota.summarize_claude([], [], NOW)
         self.assertEqual(0, summary["samples"]["count"])
