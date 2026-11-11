@@ -7,6 +7,7 @@ render without leftovers, motion is gated, and narrow viewports neither overflow
 nor shrink touch targets.
 """
 
+import json
 import re
 import sys
 import tempfile
@@ -63,7 +64,7 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         cls._tmp.cleanup()
 
     def open(self, *, path=None, viewport=None, color_scheme="light", reduced_motion="no-preference",
-             has_touch=False, language=None):
+             has_touch=False, language=None, theme=None):
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 900},
             color_scheme=color_scheme, reduced_motion=reduced_motion, has_touch=has_touch,
@@ -72,7 +73,7 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         errors = []
         page.on("pageerror", lambda exc: errors.append(str(exc)))
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
-        page.goto((path or self._path).as_uri())
+        page.goto((path or self._path).as_uri() + (f"?t={theme}" if theme else ""))
         page.wait_for_function("() => document.getElementById('share-stream') && !document.getElementById('share-stream').hidden")
         if language:
             page.evaluate("lang => applyLanguage(lang)", language)
@@ -217,16 +218,63 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
     def test_share_stream_follows_theme_palette(self):
         for scheme in ("light", "dark"):
             with self.subTest(scheme=scheme):
-                page, errors = self.open(color_scheme=scheme)
+                # 默认主题是暗色；显式 ?t=auto 时才跟随系统配色
+                page, errors = self.open(color_scheme=scheme, theme="auto")
                 self.assertEqual(scheme, page.evaluate("() => effectiveTheme()"))
                 self.assertEqual([], page.evaluate(self.PALETTE_MISMATCH))
                 self.assertEqual([], errors)
-        page, errors = self.open(color_scheme="light")
+        page, errors = self.open(color_scheme="light", theme="auto")
         fills = "() => [...document.querySelectorAll('#share-stream-svg .ss-layer')].map(l=>getComputedStyle(l).fill)"
         before = page.evaluate(fills)
         page.evaluate("() => applyTheme('dark')")
         self.assertNotEqual(before, page.evaluate(fills), "theme switch repaints the stream")
         self.assertEqual([], page.evaluate(self.PALETTE_MISMATCH))
+        self.assertEqual([], errors)
+
+    # ---- today HUD ---------------------------------------------------------
+
+    HUD_STATE = """() => {const h=document.getElementById('hud');return {hidden:h.hidden,away:h.classList.contains('away'),
+      inert:h.hasAttribute('inert'),collapsed:h.classList.contains('collapsed'),
+      expanded:document.getElementById('hud-toggle').getAttribute('aria-expanded'),
+      saved:localStorage.getItem('tk-hud-v1')}}"""
+
+    def test_today_hud_yields_to_overview_collapses_and_persists_layout_only(self):
+        page, errors = self.open()
+        state = page.evaluate(self.HUD_STATE)
+        self.assertFalse(state["hidden"])
+        self.assertTrue(state["away"] and state["inert"], "HUD 让位于可见的总览 KPI")
+        page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+        page.wait_for_function("() => !document.getElementById('hud').classList.contains('away')")
+        self.assertFalse(page.evaluate(self.HUD_STATE)["inert"])
+        # 口径复用：与按模型筛选后的今日合计一致
+        page.wait_for_function("() => document.getElementById('hud-total').textContent===human(selectedDayTotal(generatedDay()))")
+        page.focus("#hud-toggle")
+        page.keyboard.press("Escape")
+        state = page.evaluate(self.HUD_STATE)
+        self.assertTrue(state["collapsed"])
+        self.assertEqual("false", state["expanded"])
+        self.assertEqual(["b", "c", "r"], sorted(json.loads(state["saved"])))
+        page.evaluate("() => setHudCollapsed(false)")
+        page.focus("#hud-grip")
+        before = page.evaluate("() => hudPrefs.r")
+        page.keyboard.press("ArrowLeft")
+        self.assertEqual(before + 16, page.evaluate("() => hudPrefs.r"))
+        page.evaluate("() => setHudCollapsed(true)")
+        page.reload()
+        page.wait_for_function("() => document.getElementById('share-stream') && !document.getElementById('share-stream').hidden")
+        self.assertTrue(page.evaluate(self.HUD_STATE)["collapsed"])
+        self.assertEqual([], errors)
+
+    def test_today_hud_starts_collapsed_on_narrow_screens_without_overflow(self):
+        page, errors = self.open(viewport={"width": 390, "height": 844}, has_touch=True)
+        page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+        page.wait_for_function("() => !document.getElementById('hud').classList.contains('away')")
+        state = page.evaluate(self.HUD_STATE)
+        self.assertTrue(state["collapsed"])
+        box = page.locator("#hud").bounding_box()
+        self.assertLessEqual(box["x"] + box["width"], 390)
+        self.assertGreaterEqual(page.locator("#hud-toggle").bounding_box()["height"], 44)
+        self.assertLessEqual(page.evaluate("() => document.documentElement.scrollWidth"), 390)
         self.assertEqual([], errors)
 
     # ---- activity calendar -----------------------------------------------

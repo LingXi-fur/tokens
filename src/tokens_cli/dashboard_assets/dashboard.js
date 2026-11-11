@@ -2116,7 +2116,7 @@ function viewParams(){
   if(intervalState.active){p.set('interval','1');if(intervalState.start)p.set('a',intervalState.start);if(intervalState.end)p.set('aEnd',intervalState.end);if(intervalState.bStart)p.set('b',intervalState.bStart);}
   if(peakState.period)p.set('peak',peakState.period);
   if(auxView==='achievements')p.set('view','achievements');
-  const theme=currentTheme();if(theme!=='auto'||new URLSearchParams(location.search).get('t')==='auto')p.set('t',theme);
+  const theme=currentTheme();if(theme!=='dark'||new URLSearchParams(location.search).get('t')==='dark')p.set('t',theme);/* 默认主题为暗色，URL 只记录偏离默认的选择 */
   return p;
 }
 function viewURL(){const u=new URL(location.href);u.search=viewParams().toString();u.hash='';return u.toString();}
@@ -2523,7 +2523,70 @@ function calShow(day,announce){
 }
 function calCommit(day){const c=calCell(day);if(c&&!c.outside)insightCommitDay(day);}
 
-function renderInsights(){if(!insightState)return;renderPaceRace();renderShareStream();renderActivityCalendar();}
+function renderInsights(){if(!insightState)return;renderPaceRace();renderShareStream();renderActivityCalendar();renderHud();}
+/* ---- 今日 HUD：右下角玻璃浮窗。口径全部复用已有计算：
+   token 来自 selectedDayModelTotals（跟随模型筛选），对比来自 renderPaceRace 的 insightState.race。
+   localStorage 只存折叠状态与位置，不存任何用量数据。 */
+var hudPrefs=(function(){let saved=null;try{saved=JSON.parse(localStorage.getItem('tk-hud-v1')||'null');}catch(e){}
+  const ok=saved&&typeof saved==='object';
+  return {c:ok&&typeof saved.c==='boolean'?saved.c:innerWidth<760,r:ok&&Number.isFinite(saved.r)?saved.r:20,b:ok&&Number.isFinite(saved.b)?saved.b:76};})();
+function saveHudPrefs(){try{localStorage.setItem('tk-hud-v1',JSON.stringify({c:hudPrefs.c,r:Math.round(hudPrefs.r),b:Math.round(hudPrefs.b)}));}catch(e){}}
+function placeHud(){
+  const hud=document.getElementById('hud');if(!hud||hud.hidden)return;
+  const maxR=Math.max(8,innerWidth-hud.offsetWidth-8),maxB=Math.max(8,innerHeight-hud.offsetHeight-8);
+  hudPrefs.r=Math.min(Math.max(8,hudPrefs.r),maxR);hudPrefs.b=Math.min(Math.max(8,hudPrefs.b),maxB);
+  hud.style.setProperty('--hud-r',hudPrefs.r+'px');hud.style.setProperty('--hud-b',hudPrefs.b+'px');
+}
+function setHudCollapsed(collapsed,persist=true){
+  const hud=document.getElementById('hud');if(!hud)return;
+  hudPrefs.c=!!collapsed;hud.classList.toggle('collapsed',hudPrefs.c);
+  document.getElementById('hud-toggle').setAttribute('aria-expanded',hudPrefs.c?'false':'true');
+  if(persist)saveHudPrefs();placeHud();
+}
+function renderHud(){
+  const hud=document.getElementById('hud');if(!hud||!hudPrefs)return;
+  const today=generatedDay(),until=DATA.range?.until,rows=insightRowsByDay();
+  if(!today||(isoDayValid(until)&&today>until)||!(DATA.day||[]).length){hud.hidden=true;return;}
+  const en=insightEn(),totals=selectedDayModelTotals(today),total=sumList(Object.values(totals));
+  const row=rows[today],calls=insightSelected().reduce((sum,model)=>sum+(Number(row?.model_calls?.[model])||0),0);
+  let top=null;Object.entries(totals).forEach(([model,value])=>{if(value>0&&(!top||value>top[1]))top=[model,value];});
+  hud.hidden=false;hud.setAttribute('aria-label',en?'Today usage HUD':'今日用量浮窗');
+  document.getElementById('hud-title').textContent=en?'Today':'今日';
+  document.getElementById('hud-calls-k').textContent=en?'Calls':'调用';
+  document.getElementById('hud-top-k').textContent=en?'Top model':'主力模型';
+  document.getElementById('hud-grip').setAttribute('aria-label',en?'Move HUD (arrow keys nudge)':'拖动浮窗（方向键微调）');
+  document.getElementById('hud-grip').title=en?'Drag to move':'拖动浮窗';
+  animateNum(document.getElementById('hud-total'),total,600,human);
+  document.getElementById('hud-mini').textContent=human(total);
+  document.getElementById('hud-calls').textContent=row?fmt(calls):'—';
+  const topEl=document.getElementById('hud-top'),dot=document.getElementById('hud-dot');
+  topEl.textContent=top?pretty(top[0]):'—';topEl.title=top?pretty(top[0]):'';dot.style.background=top?modelColor(top[0]):'var(--border-2)';
+  const race=insightState.race,deltaEl=document.getElementById('hud-delta');
+  if(race&&race.delta!==null){deltaEl.dataset.lead=race.lead;deltaEl.textContent=(race.lead==='ahead'?'▲ ':race.lead==='behind'?'▼ ':'')+insightSignedPct(race.delta)+(en?' vs yesterday, same time':' 较昨日同一时刻');}
+  else{delete deltaEl.dataset.lead;deltaEl.textContent=race?(en?'No usage by this time yesterday':'昨日此时尚无用量'):'';}
+  setHudCollapsed(hudPrefs.c,false);
+}
+(function initHud(){
+  const hud=document.getElementById('hud'),grip=document.getElementById('hud-grip');if(!hud||!grip)return;
+  document.getElementById('hud-toggle').addEventListener('click',()=>setHudCollapsed(!hudPrefs.c));
+  hud.addEventListener('keydown',event=>{if(event.key==='Escape'&&!hudPrefs.c){event.stopPropagation();setHudCollapsed(true);document.getElementById('hud-toggle').focus();}});
+  let drag=null;
+  grip.addEventListener('pointerdown',event=>{if(event.button!==0)return;drag={x:event.clientX,y:event.clientY,r:hudPrefs.r,b:hudPrefs.b};grip.setPointerCapture(event.pointerId);hud.classList.add('dragging');event.preventDefault();});
+  grip.addEventListener('pointermove',event=>{if(!drag)return;hudPrefs.r=drag.r-(event.clientX-drag.x);hudPrefs.b=drag.b-(event.clientY-drag.y);placeHud();});
+  const end=()=>{if(!drag)return;drag=null;hud.classList.remove('dragging');saveHudPrefs();};
+  grip.addEventListener('pointerup',end);grip.addEventListener('pointercancel',end);
+  grip.addEventListener('keydown',event=>{const step=event.shiftKey?64:16,moves={ArrowLeft:[step,0],ArrowRight:[-step,0],ArrowUp:[0,step],ArrowDown:[0,-step]}[event.key];if(!moves)return;event.preventDefault();hudPrefs.r+=moves[0];hudPrefs.b+=moves[1];placeHud();saveHudPrefs();});
+  let resizeT=0;addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(placeHud,120);},{passive:true});
+  /* 主 KPI 跟手柔光：只写 CSS 变量，样式由 CSS 决定 */
+  const primary=document.querySelector('.kpi.is-primary');
+  if(primary)primary.addEventListener('pointermove',event=>{const box=primary.getBoundingClientRect();primary.style.setProperty('--mx',Math.round(event.clientX-box.left)+'px');primary.style.setProperty('--my',Math.round(event.clientY-box.top)+'px');},{passive:true});
+  /* 总览 KPI 在视口内时 HUD 让位（信息重复）；滚离后滑入 */
+  const kpis=document.querySelector('.kpis');
+  if(kpis&&'IntersectionObserver' in window){
+    new IntersectionObserver(entries=>{entries.forEach(entry=>{const away=entry.isIntersecting;hud.classList.toggle('away',away);if(away){hud.setAttribute('inert','');hud.setAttribute('aria-hidden','true');}else{hud.removeAttribute('inert');hud.removeAttribute('aria-hidden');}});},{threshold:0}).observe(kpis);
+  }
+  try{renderHud();}catch(e){}
+})();
 (function(){
   const paceSvg=document.getElementById('pace-chart');
   if(paceSvg){
@@ -2647,10 +2710,10 @@ document.getElementById('motion-select').addEventListener('change',e=>applyMotio
 let motionChoice='auto';try{motionChoice=localStorage.getItem('tk-motion')||'auto';}catch(e){}applyMotion(motionChoice,false);
 const motionMedia=window.matchMedia('(prefers-reduced-motion: reduce)');if(motionMedia.addEventListener)motionMedia.addEventListener('change',()=>applyMotion(document.getElementById('motion-select').value,false));
 let motionResizeT=0;addEventListener('resize',()=>{if(document.getElementById('motion-select').value!=='auto')return;clearTimeout(motionResizeT);motionResizeT=setTimeout(()=>applyMotion('auto',false),120);},{passive:true});
-// 初始主题：URL ?t=auto|light|dark 优先，否则 localStorage，否则跟随系统
+// 初始主题：URL ?t=auto|light|dark 优先，否则 localStorage，否则默认暗色（auto 才跟随系统）
 (function(){
   const q=(new URLSearchParams(location.search).get('t')||'').toLowerCase();
-  let saved='auto';try{saved=localStorage.getItem('tk-theme')||'auto';}catch(e){}
+  let saved='dark';try{saved=localStorage.getItem('tk-theme')||'dark';}catch(e){}
   applyTheme(['auto','light','dark'].includes(q)?q:saved,false);
 })();
 

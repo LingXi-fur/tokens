@@ -1,13 +1,18 @@
 :root{
-  --bg:#fafafa; --surface:#ffffff; --surface-2:#f4f4f5;
-  --ink:#18181b; --muted:#52525b; --faint:#6b6b74;
-  --border:#e4e4e7; --border-2:#d4d4d8;
-  --accent:#2563eb; --accent-2:#3b6fe0; --accent-solid:#2563eb; --accent-soft:rgba(37,99,235,.10);
-  --track:#f1f1f3; --good:#0f9d6e; --bad:#dc2626;
-  --shadow:0 1px 2px rgba(24,24,27,.04);
-  --shadow-pop:0 12px 32px -8px rgba(24,24,27,.18),0 2px 6px rgba(24,24,27,.06);
-  --r-card:12px; --r-tile:10px; --r-bar:3px;
+  /* 柔光亮色：暖浅灰底，表面不用纯白，峰值亮度约为纯白的 85%；文字仍满足 WCAG AA */
+  --bg:#e6e4df; --surface:#efede8; --surface-2:#e7e5e0;
+  --ink:#25252b; --muted:#4b4b54; --faint:#5c5c66;
+  --border:#d8d5ce; --border-2:#c9c5bd;
+  --accent:#2559c9; --accent-2:#3b6fe0; --accent-solid:#2559c9; --accent-soft:rgba(37,89,201,.10);
+  --track:#e1ded8; --good:#0b8a60; --bad:#c42020;
+  --shadow:0 1px 2px rgba(40,36,28,.05);
+  --shadow-pop:0 14px 34px -10px rgba(40,36,28,.22),0 2px 6px rgba(40,36,28,.06);
+  --shadow-lift:0 12px 28px -14px rgba(40,36,28,.30),0 0 0 1px rgba(37,89,201,.08);
+  --r-card:14px; --r-tile:11px; --r-bar:3px;
   --glass:var(--surface); --glass-2:var(--surface-2); --glass-brd:var(--border);
+  --chrome:rgba(239,237,232,.66); --chrome-strong:rgba(239,237,232,.86); --chrome-brd:rgba(60,52,40,.10);
+  --aurora-a:rgba(37,99,235,.10); --aurora-b:rgba(139,92,246,.08); --aurora-c:rgba(20,184,166,.06);
+  --ring:linear-gradient(135deg,#2559c9,#7c5cd6 52%,#0f9d8a);
   --blob-a:transparent; --blob-b:transparent; --blob-c:transparent;
   --hero-grad:linear-gradient(var(--ink),var(--ink));
   --flow-project:#3f6f9f; --flow-session:#8659a5; --mode-ink:#345b85;
@@ -17,30 +22,38 @@
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme=light]){
-  --bg:#09090b; --surface:#111113; --surface-2:#18181b;
-    --ink:#ededef; --muted:#a1a1aa; --faint:#8a8a93;
-    --border:#232327; --border-2:#303036;
-    --accent:#5b8def; --accent-2:#7aa2f7; --accent-solid:#2f6fd6; --accent-soft:rgba(91,141,239,.14);
-    --track:#1a1a1e; --good:#34d399; --bad:#f87171;
+  --bg:#0b0b12; --surface:#12121b; --surface-2:#191923;
+    --ink:#ebebf2; --muted:#a4a4b4; --faint:#8c8c9c;
+    --border:#23232f; --border-2:#30303f;
+    --accent:#6f9cf5; --accent-2:#7aa2f7; --accent-solid:#2f6fd6; --accent-soft:rgba(111,156,245,.14);
+    --track:#1b1b26; --good:#34d399; --bad:#f87171;
     --shadow:0 0 0 1px rgba(255,255,255,.02);
-    --shadow-pop:0 16px 40px -10px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.04);
+    --shadow-pop:0 18px 44px -12px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.05);
+    --shadow-lift:0 14px 34px -14px rgba(0,0,0,.8),0 0 0 1px rgba(122,162,247,.10);
     --glass:var(--surface); --glass-2:var(--surface-2); --glass-brd:var(--border);
+    --chrome:rgba(18,18,27,.62); --chrome-strong:rgba(20,20,30,.82); --chrome-brd:rgba(255,255,255,.08);
+    --aurora-a:rgba(79,124,240,.26); --aurora-b:rgba(146,98,240,.20); --aurora-c:rgba(34,190,190,.11);
+    --ring:linear-gradient(135deg,#6f9cf5,#a78bfa 52%,#2dd4bf);
     --blob-a:transparent; --blob-b:transparent; --blob-c:transparent;
     --hero-grad:linear-gradient(var(--ink),var(--ink));
     --flow-project:#6f9bc9; --flow-session:#b07bc9; --mode-ink:#6f9bc9;
     color-scheme:dark;
   }
 }
-/* 手动强制暗色（覆盖系统） */
+/* 手动强制暗色（覆盖系统）；未保存偏好时默认即为暗色 */
 :root[data-theme=dark]{
-  --bg:#09090b; --surface:#111113; --surface-2:#18181b;
-  --ink:#ededef; --muted:#a1a1aa; --faint:#8a8a93;
-  --border:#232327; --border-2:#303036;
-  --accent:#5b8def; --accent-2:#7aa2f7; --accent-solid:#2f6fd6; --accent-soft:rgba(91,141,239,.14);
-  --track:#1a1a1e; --good:#34d399; --bad:#f87171;
+  --bg:#0b0b12; --surface:#12121b; --surface-2:#191923;
+  --ink:#ebebf2; --muted:#a4a4b4; --faint:#8c8c9c;
+  --border:#23232f; --border-2:#30303f;
+  --accent:#6f9cf5; --accent-2:#7aa2f7; --accent-solid:#2f6fd6; --accent-soft:rgba(111,156,245,.14);
+  --track:#1b1b26; --good:#34d399; --bad:#f87171;
   --shadow:0 0 0 1px rgba(255,255,255,.02);
-  --shadow-pop:0 16px 40px -10px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.04);
+  --shadow-pop:0 18px 44px -12px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.05);
+  --shadow-lift:0 14px 34px -14px rgba(0,0,0,.8),0 0 0 1px rgba(122,162,247,.10);
   --glass:var(--surface); --glass-2:var(--surface-2); --glass-brd:var(--border);
+  --chrome:rgba(18,18,27,.62); --chrome-strong:rgba(20,20,30,.82); --chrome-brd:rgba(255,255,255,.08);
+  --aurora-a:rgba(79,124,240,.26); --aurora-b:rgba(146,98,240,.20); --aurora-c:rgba(34,190,190,.11);
+  --ring:linear-gradient(135deg,#6f9cf5,#a78bfa 52%,#2dd4bf);
   --blob-a:transparent; --blob-b:transparent; --blob-c:transparent;
   --hero-grad:linear-gradient(var(--ink),var(--ink));
   --flow-project:#6f9bc9; --flow-session:#b07bc9; --mode-ink:#6f9bc9;
@@ -942,3 +955,92 @@ body[data-live=prepare] #meta{display:none}
   .activity-stats .ac-stat:last-child{grid-column:1/-1}
 }
 @media(pointer:coarse){.share-stream-modes .ghostbtn{min-height:44px}}
+
+/* ===== 玻璃外壳与极光（暗色优先）=====
+   规则：玻璃只用于外壳（吸顶导航、浮窗、弹层、提示）；承载图表的卡片表面保持不透明，
+   数据配色不受光斑影响。光斑层固定在最底层、不接收指针，动画只改 transform。 */
+body::before{content:"";position:fixed;inset:-18vmax;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(36vmax 28vmax at 16% 10%,var(--aurora-a),transparent 70%),
+    radial-gradient(32vmax 26vmax at 86% 6%,var(--aurora-b),transparent 70%),
+    radial-gradient(42vmax 30vmax at 62% 96%,var(--aurora-c),transparent 70%);
+  animation:aurora 42s ease-in-out infinite alternate}
+@keyframes aurora{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-3vmax,2vmax,0) scale(1.06)}100%{transform:translate3d(2vmax,-2vmax,0) scale(1.02)}}
+:root[data-motion=low] body::before,:root[data-motion=off] body::before{animation:none}
+@media(prefers-reduced-motion:reduce){body::before{animation:none}}
+
+.card{background:var(--surface);box-shadow:inset 0 1px 0 rgba(255,255,255,.035),var(--shadow);transition:border-color .2s ease}
+.card:hover{border-color:var(--border-2)}
+.card h2::before{content:"";display:inline-block;width:4px;height:12px;margin-right:8px;border-radius:2px;background:var(--ring);vertical-align:-1px}
+
+.section-dock{background:var(--chrome);border-bottom-color:var(--chrome-brd);backdrop-filter:saturate(1.5) blur(18px);-webkit-backdrop-filter:saturate(1.5) blur(18px)}
+#toast,.popover,.palette{background:var(--chrome-strong);border-color:var(--chrome-brd);box-shadow:var(--shadow-pop);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4)}
+
+.logo{background:var(--ring);color:#fff;box-shadow:0 6px 18px -8px rgba(111,156,245,.7)}
+
+/* 主 KPI：渐变描边 + 跟随指针的柔光（JS 只写 --mx/--my） */
+.kpi{transition:border-color .15s ease,transform .2s ease,box-shadow .2s ease}
+.kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+.kpi.is-primary{isolation:isolate}
+.kpi.is-primary::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;padding:1px;background:var(--ring);opacity:.8;pointer-events:none;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)}
+.kpi.is-primary::after{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(240px circle at var(--mx,24%) var(--my,0%),var(--accent-soft),transparent 68%)}
+
+/* 日期浏览：日历式徽章，选中态渐变描边 */
+.daily-date-strip .date-strip-day{border-radius:12px;transition:transform .18s ease,box-shadow .18s ease}
+.daily-date-strip .date-strip-day::before{content:"";position:absolute;left:10px;right:10px;top:0;height:3px;border-radius:0 0 3px 3px;background:var(--border-2);opacity:.7;pointer-events:none}
+.daily-date-strip .date-strip-day:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+.daily-date-strip .date-strip-day.is-selected::before{background:var(--ring);opacity:1}
+.daily-date-strip .date-strip-day.is-selected::after{content:"";position:absolute;inset:-1px;border-radius:13px;padding:1.5px;background:var(--ring);pointer-events:none;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)}
+.date-strip-number{font-size:24px;letter-spacing:-.02em}
+
+:root[data-motion=off] .kpi:hover,:root[data-motion=off] .daily-date-strip .date-strip-day:hover{transform:none}
+@media(prefers-reduced-motion:reduce){.kpi:hover,.daily-date-strip .date-strip-day:hover{transform:none}}
+
+/* 今日 HUD：右下角可拖动、可折叠的玻璃浮窗；默认停在返回顶部按钮 #rocket 上方 */
+.hud{position:fixed;right:var(--hud-r,20px);bottom:var(--hud-b,76px);z-index:60;width:248px;max-width:calc(100vw - 24px);
+  background:var(--chrome-strong);border:1px solid var(--chrome-brd);border-radius:16px;box-shadow:var(--shadow-pop);color:var(--ink);
+  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);font-size:12px;overflow:hidden}
+.hud[hidden]{display:none}
+.hud{transition:opacity .25s ease,transform .25s ease}.hud.away{opacity:0;transform:translateY(14px);pointer-events:none}
+:root[data-motion=off] .hud{transition:none}
+.hud::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--ring);opacity:.9;pointer-events:none}
+.hud-head{display:flex;align-items:center;gap:4px;padding:6px 6px 0 6px}
+.hud-toggle{flex:1;min-width:0;display:flex;align-items:center;gap:8px;min-height:32px;padding:4px 8px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:600 11.5px/1 var(--font-sans);cursor:pointer;text-align:left}
+.hud-toggle:hover{color:var(--ink);background:var(--accent-soft)}
+.hud-led{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.16);flex:none}
+.hud-mini{margin-left:auto;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap;display:none}
+.hud-grip{flex:none;width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:var(--faint);cursor:grab;touch-action:none;font:700 12px/1 var(--font-sans);letter-spacing:-2px}
+.hud-grip:hover{color:var(--ink);background:var(--accent-soft)}
+.hud.dragging .hud-grip{cursor:grabbing}
+.hud-body{padding:4px 14px 13px}
+.hud-total{display:flex;align-items:baseline;gap:5px;margin-top:2px}
+.hud-total b{font-size:30px;font-weight:680;letter-spacing:-.035em;font-variant-numeric:tabular-nums;line-height:1.1}
+.hud-total small{color:var(--faint);font-size:11px}
+.hud-delta{min-height:18px;margin-top:3px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--muted)}
+.hud-delta[data-lead=ahead]{color:var(--good)}.hud-delta[data-lead=behind]{color:var(--bad)}
+.hud-stats{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 14px;margin:10px 0 0;padding-top:10px;border-top:1px solid var(--chrome-brd)}
+.hud-stats div{min-width:0}.hud-stats dt{color:var(--faint);font-size:10.5px}.hud-stats dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:6px;min-width:0}
+.hud-stats dd span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hud-dot{width:8px;height:8px;border-radius:3px;flex:none;background:var(--accent)}
+.hud.collapsed{width:auto;border-radius:999px}
+.hud.collapsed .hud-body{display:none}
+.hud.collapsed .hud-head{padding:4px}
+.hud.collapsed .hud-mini{display:inline}
+@media(max-width:760px){
+  .hud{right:auto!important;left:12px;bottom:12px!important}/* 右下角留给 #rocket */
+  .hud .hud-grip{display:none}
+  .hud-toggle{min-height:44px}
+}
+
+/* 无 backdrop-filter 或用户要求降低透明度时，外壳退回不透明表面 */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .section-dock,#toast,.popover,.palette,.hud{background:var(--surface)}
+}
+@media(prefers-reduced-transparency:reduce){
+  .section-dock,#toast,.popover,.palette,.hud{background:var(--surface);backdrop-filter:none;-webkit-backdrop-filter:none}
+  body::before{display:none}
+}
+@media(forced-colors:active){body::before,.kpi.is-primary::before,.kpi.is-primary::after,.card h2::before{display:none}}

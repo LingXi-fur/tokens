@@ -466,6 +466,32 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(flow_ids, set(payload["session_series"]))
         self.assertEqual([992], payload["session_series"]["session-8"])
 
+    def test_glass_shell_is_limited_to_chrome_and_degrades(self):
+        css = (Path(report_dashboard.__file__).parent / "dashboard_assets" / "dashboard.css").read_text(encoding="utf-8")
+        css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        template = report_dashboard._TEMPLATE
+        # 默认暗色：无 URL 参数、无保存偏好时首帧即为暗色
+        self.assertIn("(localStorage.getItem('tk-theme')||'dark')", template)
+        self.assertIn("let saved='dark';try{saved=localStorage.getItem('tk-theme')||'dark';}", template)
+        # backdrop-filter 只出现在外壳选择器上（≤5 个元素），图表卡片保持不透明
+        rules = re.findall(r"([^{}]+)\{[^{}]*(?<!-webkit-)backdrop-filter:(?!none)[^{}]*\}", css)
+        selectors = {sel.strip() for rule in rules for sel in rule.split(",")}
+        self.assertLessEqual(selectors, {".section-dock", "#toast", ".popover", ".palette", ".hud"})
+        self.assertIn(".card{background:var(--surface);", css)
+        # 光斑层：固定、置底、不接收指针；只用 transform 动画；减少动效时静止
+        aurora = re.search(r"body::before\{[^}]*\}", css).group(0)
+        for token in ("position:fixed", "z-index:-1", "pointer-events:none"):
+            self.assertIn(token, aurora)
+        keyframes = re.search(r"@keyframes aurora\{.*?\}\}", css).group(0)
+        self.assertNotRegex(keyframes, r"(?:left|top|width|height|background)\s*:")
+        self.assertIn("@media(prefers-reduced-motion:reduce){body::before{animation:none}}", css)
+        # 降低透明度 / 不支持模糊时，外壳退回不透明表面
+        self.assertIn("@media(prefers-reduced-transparency:reduce){", css)
+        self.assertIn("@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){", css)
+        # 渐变只用于描边/装饰，不用于文字
+        self.assertNotIn("background-clip:text", css)
+        self.assertIn("aria-controls=hud-body", template)
+
     def test_template_filters_flow_and_keeps_mobile_targets_and_status_cases(self):
         template = report_dashboard._TEMPLATE
         self.assertIn("state.models.has(x[2])", template)
@@ -484,12 +510,18 @@ class DashboardTests(unittest.TestCase):
         def contrast(a, b):
             hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
             return (hi + 0.05) / (lo + 0.05)
-        self.assertIn("--faint:#6b6b74", template)
-        self.assertIn("--faint:#8a8a93", template)
-        self.assertGreaterEqual(contrast("#6b6b74", "#ffffff"), 4.5)
-        self.assertGreaterEqual(contrast("#6b6b74", "#f4f4f5"), 4.5)
-        self.assertGreaterEqual(contrast("#8a8a93", "#111113"), 4.5)
-        self.assertGreaterEqual(contrast("#8a8a93", "#18181b"), 4.5)
+        # 柔光亮色：底/表面都不是纯白，峰值亮度明显低于 #fff；暗色为蓝紫调深底
+        self.assertIn("--bg:#e6e4df; --surface:#efede8; --surface-2:#e7e5e0;", template)
+        self.assertIn("--bg:#0b0b12; --surface:#12121b; --surface-2:#191923;", template)
+        self.assertLess(luminance("#efede8"), 0.9)
+        for ink in ("#25252b", "#4b4b54", "#5c5c66", "#2559c9"):
+            for surface in ("#e6e4df", "#efede8", "#e7e5e0"):
+                self.assertGreaterEqual(contrast(ink, surface), 4.5, (ink, surface))
+        for ink in ("#ebebf2", "#a4a4b4", "#8c8c9c", "#6f9cf5"):
+            for surface in ("#0b0b12", "#12121b", "#191923"):
+                self.assertGreaterEqual(contrast(ink, surface), 4.5, (ink, surface))
+        self.assertIn("--faint:#5c5c66", template)
+        self.assertIn("--faint:#8c8c9c", template)
         self.assertIn("dest-viewswitch", template)
         self.assertIn("project_model", template)
         self.assertIn("model_session", template)
@@ -2281,9 +2313,10 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
         storage_keys = set(re.findall(r"tk-[a-z0-9-]+", report_dashboard._TEMPLATE))
         storage_keys.discard("tk-motion-change")
         self.assertEqual(
-            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang", "tk-cost-v1", "tk-budget-v1"},
+            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang", "tk-cost-v1", "tk-budget-v1", "tk-hud-v1"},
             storage_keys,
         )
+        self.assertIn("JSON.stringify({c:hudPrefs.c,r:Math.round(hudPrefs.r),b:Math.round(hudPrefs.b)})", script)
         self.assertNotIn("localStorage.setItem('tk-trail", script)
         self.assertNotIn("localStorage.getItem('tk-trail", script)
         self.assertIn("项目和会话是平行聚合，不是已证明的关联", script)

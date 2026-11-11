@@ -2276,7 +2276,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             page.locator("#delta-list button[data-delta-model]").first.click()
             self.assertFalse(page.locator("#delta-evidence").is_hidden())
             before = page.locator("#delta-list .delta-name i").first.evaluate("el => el.style.background")
-            page.evaluate("applyTheme('dark')")
+            page.evaluate("applyTheme('light')")  # 默认已是暗色，切到亮色验证重绘
             after = page.locator("#delta-list .delta-name i").first.evaluate("el => el.style.background")
             self.assertNotEqual(before, after)
             self.assertFalse(page.locator("#delta-evidence").is_hidden())

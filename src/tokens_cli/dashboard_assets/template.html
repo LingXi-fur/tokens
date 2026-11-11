@@ -5,7 +5,7 @@
 __HEAD_META__
 <style>__STYLE__</style>
 <script>/* Apply persisted display preferences before rendering. */
-try{var q=(new URLSearchParams(location.search).get('t')||'').toLowerCase();var t=['light','dark','auto'].includes(q)?q:localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}
+try{var q=(new URLSearchParams(location.search).get('t')||'').toLowerCase();var t=['light','dark','auto'].includes(q)?q:(localStorage.getItem('tk-theme')||'dark');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}
 try{var l=localStorage.getItem('tk-lang');if(l==='zh')document.documentElement.lang='zh-CN';else if(l==='en')document.documentElement.lang='en';}catch(e){}
 </script></head><body>
 <script>/* 首帧前即进入准备态，避免 JS 渲染前闪现伪造的 0 值。 */
@@ -486,6 +486,21 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  </div>
 </div>
 
+<aside class=hud id=hud data-i18n-skip hidden aria-label="今日用量浮窗">
+ <div class=hud-head>
+  <button type=button class=hud-toggle id=hud-toggle aria-expanded=true aria-controls=hud-body><span class=hud-led aria-hidden=true></span><span id=hud-title>今日</span><b class=hud-mini id=hud-mini></b></button>
+  <button type=button class=hud-grip id=hud-grip aria-label="拖动浮窗（方向键微调）" title="拖动浮窗">⋮⋮</button>
+ </div>
+ <div class=hud-body id=hud-body>
+  <div class=hud-total><b id=hud-total>—</b><small>tk</small></div>
+  <div class=hud-delta id=hud-delta aria-live=polite></div>
+  <dl class=hud-stats>
+   <div><dt id=hud-calls-k>调用</dt><dd id=hud-calls>—</dd></div>
+   <div><dt id=hud-top-k>主力模型</dt><dd><i class=hud-dot id=hud-dot aria-hidden=true></i><span id=hud-top>—</span></dd></div>
+  </dl>
+  <div class=hud-quota id=hud-quota hidden></div>
+ </div>
+</aside>
 <script>
 __SCRIPT__</script>
 </body></html>
