@@ -66,7 +66,7 @@ class _ScanProgress:
         self.flush(force=True)
 
     def observe(self, event, source):
-        if source not in ("claude", "codex", "gemini"):
+        if source not in ("claude", "codex", "gemini", "opencode"):
             return
         if event == "discovered":
             self.state["discovered"] += 1

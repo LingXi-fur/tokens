@@ -17,6 +17,7 @@
 total 口径说明：
   claude : input + output + cache_read + cache_write
   gemini : tokens.total（= input + output + cached + thoughts + tool）
+  opencode: input + output + reasoning + cache.read + cache.write（output 不含 reasoning）
   codex  : total_tokens（input_tokens 已含 cached_input_tokens，故不重复加）
 """
 import glob
@@ -24,6 +25,7 @@ import json
 import math
 import os
 import re
+import sqlite3
 import stat
 import sys
 import tempfile
@@ -274,7 +276,7 @@ MAX_CACHE_BYTES = 512 * 1024 * 1024
 class CollectionIncompleteError(Exception):
     """受控失败码；不得把路径、日志内容或底层异常插入公开错误文本。"""
 
-    SOURCES = frozenset(("claude", "gemini", "codex", "all"))
+    SOURCES = frozenset(("claude", "gemini", "codex", "opencode", "all"))
     REASONS = frozenset((
         "discovery_failed", "stat_failed", "unsafe_file", "open_failed",
         "read_failed", "file_changed", "line_too_long", "record_limit",
@@ -565,6 +567,33 @@ def parse_local_dt(iso_ts):
         return datetime.fromisoformat(iso_ts.replace("Z", "+00:00")).astimezone(config.TZ)
     except ValueError:
         return None
+
+
+# OpenCode assistant tokens：input/output/reasoning 必填；cache.read/cache.write
+# 缺失按「未使用缓存」= 0。OpenCode 的 input 已扣除缓存读写、output 不含
+# reasoning（实测 reasoning 可大于 output），reasoning 单列为 thoughts 计费分量。
+_OPENCODE_BILLING_KEYS = {
+    "input": "input",
+    "output": "output",
+    "thoughts": "reasoning",
+    "cache_read": "cache_read",
+    "cache_write": "cache_write",
+}
+
+
+def _opencode_billing(tokens):
+    present, values = _field_evidence(tokens, _OPENCODE_BILLING_KEYS)
+    reasons = []
+    _missing_or_invalid(present, values, ("input", "output", "thoughts"), reasons)
+    for name in ("cache_read", "cache_write"):
+        if present[name] and values[name] is None:
+            reasons.append("invalid_" + name)
+    parts = None
+    if not reasons:
+        cache_read = values["cache_read"] if present["cache_read"] else 0
+        cache_write = values["cache_write"] if present["cache_write"] else 0
+        parts = [values["input"], values["output"], cache_read, cache_write, values["thoughts"]]
+    return _billing_result(present, values, parts, reasons)
 
 
 # ---------- Optional CCR model resolution ----------
@@ -1028,6 +1057,105 @@ def gemini_parse(path):
     return out
 
 
+# ---------- OpenCode ----------
+# 只读打开 SQLite（mode=ro），用 json_extract 只取 tokens/model/time，不把消息
+# 正文载入 Python；库处于 WAL 模式，新写入先落 -wal，缓存签名需同时覆盖它。
+
+_OPENCODE_QUERY = """
+SELECT m.id, m.session_id, s.directory,
+       json_extract(m.data, '$.tokens'),
+       json_extract(m.data, '$.model.id'),
+       json_extract(m.data, '$.model.providerID'),
+       json_extract(m.data, '$.time.created')
+FROM session_message AS m
+LEFT JOIN session_v2 AS s ON s.id = m.session_id
+WHERE m.type = 'assistant' AND json_valid(m.data)
+  AND json_type(m.data, '$.tokens') = 'object'
+ORDER BY m.time_created, m.id
+"""
+
+
+def opencode_files():
+    path = config.OPENCODE_DB
+    return [path] if os.path.isfile(path) else []
+
+
+def _opencode_connect(path):
+    from urllib.parse import quote
+    uri = "file:" + quote(os.path.abspath(path)) + "?mode=ro"
+    try:
+        return sqlite3.connect(uri, uri=True, timeout=2)
+    except sqlite3.Error:
+        # 无 -shm 且目录不可写时 WAL 只读会失败；此时没有未检查点写入，按不可变打开。
+        return sqlite3.connect(uri + "&immutable=1", uri=True, timeout=2)
+
+
+def _opencode_tokens(raw):
+    try:
+        tokens = json.loads(raw)
+    except (TypeError, ValueError, RecursionError):
+        return None
+    if not isinstance(tokens, dict):
+        return None
+    cache = tokens.get("cache")
+    flat = {key: tokens[key] for key in ("input", "output", "reasoning") if key in tokens}
+    if isinstance(cache, dict):
+        flat.update({"cache_" + key: cache[key] for key in ("read", "write") if key in cache})
+    return flat
+
+
+def opencode_parse(path):
+    out = []
+    try:
+        con = _opencode_connect(path)
+    except sqlite3.Error:
+        return out
+    try:
+        rows = con.execute(_OPENCODE_QUERY).fetchall()
+    except sqlite3.Error:
+        return out
+    finally:
+        con.close()
+    for _message_id, session, directory, raw_tokens, model, _provider, created in rows:
+        tokens = _opencode_tokens(raw_tokens)
+        if tokens is None or type(created) is not int or created <= 0:
+            continue
+        try:
+            ts = datetime.fromtimestamp(created / 1000, tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        except (OverflowError, OSError, ValueError):
+            continue
+        date = _to_local_date(ts)
+        if not date:
+            continue
+        billing = _opencode_billing(tokens)
+        values = [_safe_tokens(tokens.get(key, 0)) for key in
+                  ("input", "output", "reasoning", "cache_read", "cache_write")]
+        if any(value is None for value in values):
+            continue
+        inp, outp, reasoning, cache_read, cache_write = values
+        out.append({
+            "source": "opencode", "ts": ts, "date": date,
+            "model": (model if isinstance(model, str) and model else "opencode-unknown"),
+            "input": inp,
+            "output": outp + reasoning,  # 与 Gemini 一致：生成侧合计，thoughts 另在 billing 单列
+            "cache_read": cache_read, "cache_write": cache_write,
+            "total": inp + outp + reasoning + cache_read + cache_write,
+            "session": session if isinstance(session, str) else None,
+            "cwd": directory if isinstance(directory, str) else None,
+            "billing": billing,
+        })
+    return out
+
+
+def _opencode_wal_key(path):
+    try:
+        st = os.stat(path + "-wal")
+    except OSError:
+        return "nowal"
+    return f"{st.st_mtime_ns}|{st.st_size}"
+
+
 # ---------- Codex ----------
 
 def codex_files():
@@ -1049,6 +1177,7 @@ SOURCES = {
     "claude": (claude_files, claude_parse),
     "gemini": (gemini_files, gemini_parse),
     "codex": (codex_files, codex_parse),
+    "opencode": (opencode_files, opencode_parse),
 }
 
 
@@ -1061,7 +1190,8 @@ def _safe_to_parse(path, st, source=None):
     """默认沿用旧资格规则；只有明确 Claude 来源免整文件大小上限。"""
     if os.path.islink(path) or not stat.S_ISREG(st.st_mode):
         return False
-    if source not in ("claude", "codex") and st.st_size > MAX_FILE_BYTES:
+    # OpenCode SQLite 含图片 blob，体积与用量无关；按 SQL 投影读取，不整文件载入。
+    if source not in ("claude", "codex", "opencode") and st.st_size > MAX_FILE_BYTES:
         return False
     return True
 
@@ -1141,6 +1271,7 @@ _BILLING_VALIDATORS = {
     "claude": (_CLAUDE_BILLING_KEYS, _claude_billing),
     "gemini": (_GEMINI_BILLING_KEYS, _gemini_billing),
     "codex": (_CODEX_BILLING_KEYS, _codex_billing),
+    "opencode": (_OPENCODE_BILLING_KEYS, _opencode_billing),
 }
 
 
@@ -1205,7 +1336,7 @@ def _cached_billing_valid(billing, source):
 def _cached_records_valid(records, source):
     if not isinstance(records, list):
         return False
-    fields = _RECORD_FIELDS | {"cwd"} if source == "claude" else _RECORD_FIELDS
+    fields = _RECORD_FIELDS | {"cwd"} if source in ("claude", "opencode") else _RECORD_FIELDS
     if source == "claude":
         fields = fields | {"request_model"}
     for record in records:
@@ -1638,6 +1769,8 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                     notify("skipped", src)
                     continue
                 key = f"{st.st_mtime_ns}|{st.st_size}"
+                if src == "opencode":
+                    key += "|wal:" + _opencode_wal_key(path)
                 ckey = src + "::" + path
                 seen_keys.add(ckey)
                 cached = cache.get(ckey)

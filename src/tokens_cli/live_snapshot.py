@@ -686,7 +686,7 @@ class SnapshotStore:
         self._valid = False
         try:
             _require(type(sources) in (list, tuple) and bool(sources))
-            _require(all(type(source) is str and source in {"claude", "gemini", "codex"}
+            _require(all(type(source) is str and source in {"claude", "gemini", "codex", "opencode"}
                          for source in sources))
             _require(len(set(sources)) == len(sources))
             _date(since, optional=True)
@@ -711,6 +711,7 @@ class SnapshotStore:
             "timezone": tz,
             "roots": {name: os.path.abspath(os.fspath(getattr(config, name))) for name in (
                 "CLAUDE_PROJECTS", "GEMINI_TMP", "CODEX_SESSIONS", "CODEX_ARCHIVED_SESSIONS",
+                "OPENCODE_DB",
             )},
             "router": _path_signature(config.CCR_ROUTER_FILE),
             "title_sidecar": _path_signature(config.SESSION_SUMMARY_FILE),

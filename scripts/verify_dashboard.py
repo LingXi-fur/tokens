@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LOGIC_TESTS = (
     "tests.test_cli", "tests.test_config_doctor", "tests.test_readers",
     "tests.test_claude_json", "tests.test_codex_usage", "tests.test_collection_integrity",
-    "tests.test_large_claude_logs", "tests.test_dashboard_range", "tests.test_budget_core", "tests.test_period_core",
+    "tests.test_large_claude_logs", "tests.test_dashboard_range", "tests.test_budget_core", "tests.test_period_core", "tests.test_opencode_reader",
     "tests.test_dashboard_budget.BudgetIntegrationContracts",
     "tests.test_cost_core", "tests.test_cost_payload",
     "tests.test_cost_end_to_end.PipelineTests", "tests.test_dashboard",

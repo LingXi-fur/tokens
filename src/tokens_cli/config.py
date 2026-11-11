@@ -11,6 +11,11 @@ CLAUDE_PROJECTS = os.path.join(HOME, ".claude", "projects")
 GEMINI_TMP = os.path.join(HOME, ".gemini", "tmp")
 CODEX_SESSIONS = os.path.join(HOME, ".codex", "sessions")
 CODEX_ARCHIVED_SESSIONS = os.path.join(HOME, ".codex", "archived_sessions")
+# OpenCode（sst/opencode）把会话与逐条助手消息用量存进 XDG 数据目录下的 SQLite。
+OPENCODE_DB = os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"),
+    "opencode", "opencode.db",
+)
 
 
 def _cache_root():

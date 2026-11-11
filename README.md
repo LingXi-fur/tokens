@@ -182,6 +182,7 @@ Older offline snapshots without billing data must be regenerated to use the ledg
 | Claude Code | `~/.claude/projects/**/*.jsonl` | Yes | Yes | Total is input + output + cache read + cache write. |
 | Gemini CLI | `~/.gemini/tmp/*/chats/session-*.json` | Usually no | Yes | Uses source `tokens.total` when available. |
 | Codex | `~/.codex/{sessions,archived_sessions}/**/rollout-*.jsonl[.zst]` | Usually no | Usually no | Cached input is included in input; reasoning is included in output. Neither is added twice. Compressed archives require an existing local `zstd` executable. |
+| OpenCode | `~/.local/share/opencode/opencode.db` (SQLite, honors `XDG_DATA_HOME`) | Yes | Yes | Total is input + output + reasoning + cache read + cache write; OpenCode input excludes cache and output excludes reasoning. Read-only; only token, model, and time fields are queried, never message text. |
 
 Claude is the default source. Repeat `--source` to combine tools:
 
@@ -209,6 +210,7 @@ Collection stops without publishing partial totals; any last successful snapshot
   --source claude \
   --source gemini \
   --source codex \
+  --source opencode \
   --open
 ```
 

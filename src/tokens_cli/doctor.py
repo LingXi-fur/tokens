@@ -14,6 +14,7 @@ def collect(sources=None):
             "claude": config.CLAUDE_PROJECTS,
             "gemini": config.GEMINI_TMP,
             "codex": config.CODEX_SESSIONS,
+            "opencode": config.OPENCODE_DB,
         }[source]
         error = None
         try:
@@ -26,7 +27,7 @@ def collect(sources=None):
         source_rows.append({
             "source": source,
             "root": root,
-            "exists": os.path.isdir(root),
+            "exists": os.path.isfile(root) if source == "opencode" else os.path.isdir(root),
             "files": len(files),
             "readable": readable,
             **({"error": error} if error else {}),

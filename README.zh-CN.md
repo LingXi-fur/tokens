@@ -188,6 +188,7 @@ Token 增减只描述用量变化，不代表生产力或代码质量。Cache Re
 | Claude Code | `~/.claude/projects/**/*.jsonl` | 有 | 有 | 总量为 input + output + cache read + cache write。 |
 | Gemini CLI | `~/.gemini/tmp/*/chats/session-*.json` | 通常无 | 有 | 有来源 `tokens.total` 时优先使用。 |
 | Codex | `~/.codex/{sessions,archived_sessions}/**/rollout-*.jsonl[.zst]` | 通常无 | 通常无 | cached input 已包含在 input 中，reasoning 已包含在 output 中，均不重复相加；压缩归档需要本机已有 `zstd` 可执行文件。 |
+| OpenCode | `~/.local/share/opencode/opencode.db`（SQLite，遵循 `XDG_DATA_HOME`） | 有 | 有 | 总量为 input + output + reasoning + cache read + cache write；OpenCode 的 input 不含缓存、output 不含 reasoning。只读打开，只查询 token、模型与时间字段，从不读取消息正文。 |
 
 默认只扫描 Claude。重复指定 `--source` 可组合来源：
 
@@ -215,6 +216,7 @@ Codex 的 `.jsonl.zst` 压缩归档要求采集进程能通过 `PATH` 找到 `zs
   --source claude \
   --source gemini \
   --source codex \
+  --source opencode \
   --open
 ```
 

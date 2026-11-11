@@ -132,6 +132,7 @@ def _no_records_message(sources):
         "claude": config.CLAUDE_PROJECTS,
         "gemini": config.GEMINI_TMP,
         "codex": config.CODEX_SESSIONS,
+        "opencode": config.OPENCODE_DB,
     }
     print("No supported token logs were found.", file=sys.stderr)
     for source in sources:
