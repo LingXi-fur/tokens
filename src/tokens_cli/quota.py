@@ -309,7 +309,11 @@ def _codex_projection(used, resets_at, velocity, now_ts):
 
 
 def summarize_codex(snapshots, now):
-    """Group official Codex snapshots by plan, limit, and window."""
+    """Group official Codex snapshots by limit and window.
+
+    ``plan_type`` is display-only: the same quota can appear as null in older
+    snapshots and as ``plus`` later, so it must not split the group.
+    """
     now_ts = now.timestamp()
     groups = {}
     for snapshot in snapshots:
@@ -322,8 +326,7 @@ def summarize_codex(snapshots, now):
                 or isinstance(used, bool) or not isinstance(used, (int, float))
                 or isinstance(observed, bool) or not isinstance(observed, (int, float))):
             continue
-        key = (snapshot.get("plan_type"), snapshot.get("limit_id"),
-               snapshot.get("limit_name"), minutes)
+        key = (snapshot.get("limit_id"), snapshot.get("limit_name"), minutes)
         groups.setdefault(key, []).append(dict(
             snapshot,
             observed_at=float(observed),
@@ -331,44 +334,57 @@ def summarize_codex(snapshots, now):
             resets_at=_epoch(snapshot.get("resets_at")),
         ))
 
-    plans = {}
-    for (plan_type, limit_id, limit_name, minutes), rows in groups.items():
+    limits = {}
+    for (limit_id, limit_name, minutes), rows in groups.items():
         rows.sort(key=lambda row: row["observed_at"])
-        latest = rows[-1]
-        resets_at = latest.get("resets_at")
-        expired = resets_at is not None and resets_at <= now_ts
-        used = None if expired else float(latest["used_percent"])
-        velocity = None if expired else _velocity(rows, latest, now_ts)
-        projection = _codex_projection(used, resets_at, velocity, now_ts)
-        plan = plans.setdefault(plan_type, {})
-        limit = plan.setdefault((limit_id, limit_name), [])
-        limit.append({
-            "window_minutes": minutes,
-            "window": window_label(minutes),
-            "status": "expired" if expired else "current",
-            "used_percent": used,
-            "resets_at": _iso(resets_at),
-            "observed_at": _iso(latest["observed_at"]),
-            "velocity_per_hour": None if velocity is None else velocity["rate_per_hour"],
-            "projection": {
-                "status": projection["status"],
-                "projected_at": _iso(projection["projected_at"]),
-            },
+        limits.setdefault((limit_id, limit_name), []).append((minutes, rows))
+
+    plans = {}
+    for (limit_id, limit_name), window_groups in limits.items():
+        all_rows = sorted(
+            (row for _, rows in window_groups for row in rows),
+            key=lambda row: row["observed_at"], reverse=True,
+        )
+        plan_type = next(
+            (row.get("plan_type") for row in all_rows if row.get("plan_type")), None)
+        windows = []
+        for minutes, rows in sorted(window_groups, key=lambda item: item[0]):
+            latest = rows[-1]
+            resets_at = latest.get("resets_at")
+            expired = resets_at is not None and resets_at <= now_ts
+            used = None if expired else float(latest["used_percent"])
+            velocity = None if expired else _velocity(rows, latest, now_ts)
+            projection = _codex_projection(used, resets_at, velocity, now_ts)
+            windows.append({
+                "window_minutes": minutes,
+                "window": window_label(minutes),
+                "status": "expired" if expired else "current",
+                "used_percent": used,
+                "resets_at": _iso(resets_at),
+                "observed_at": _iso(latest["observed_at"]),
+                "velocity_per_hour": None if velocity is None else velocity["rate_per_hour"],
+                "projection": {
+                    "status": projection["status"],
+                    "projected_at": _iso(projection["projected_at"]),
+                },
+            })
+        plans.setdefault(plan_type, []).append({
+            "limit_id": limit_id,
+            "limit_name": limit_name,
+            "windows": windows,
         })
 
     result = []
     for plan_type in sorted(plans, key=lambda value: (value is not None, value or "")):
-        limits = []
-        for (limit_id, limit_name), windows in sorted(
-                plans[plan_type].items(),
-                key=lambda item: (item[0][1] is not None, item[0][1] or "",
-                                  item[0][0] or "")):
-            limits.append({
-                "limit_id": limit_id,
-                "limit_name": limit_name,
-                "windows": sorted(windows, key=lambda row: row["window_minutes"]),
-            })
-        result.append({"plan_type": plan_type, "limits": limits})
+        result.append({
+            "plan_type": plan_type,
+            "limits": sorted(
+                plans[plan_type],
+                key=lambda limit: (limit["limit_name"] is not None,
+                                   limit["limit_name"] or "",
+                                   limit["limit_id"] or ""),
+            ),
+        })
     return result
 
 
@@ -376,12 +392,39 @@ def _median(values):
     return statistics.median(values) if values else None
 
 
+def _dedupe_events(events):
+    """Drop exact retry duplicates: same second, type, and reset time."""
+    seen = set()
+    unique = []
+    for event in sorted(events, key=lambda row: row.get("at", 0)):
+        at = event.get("at")
+        if isinstance(at, bool) or not isinstance(at, (int, float)):
+            continue
+        resets_at = event.get("resets_at")
+        key = (int(at), event.get("type"),
+               None if resets_at is None else int(resets_at))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(event)
+    return unique
+
+
 def _claude_capacity(events, direct):
-    samples = []
-    for event in events:
+    """One capacity sample per reset window, using five-hour events only."""
+    by_reset = {}
+    for event in _dedupe_events(events):
         resets_at = event.get("resets_at")
         if resets_at is None:
             continue
+        kind = (event.get("type") or "").lower()
+        if kind not in ("", "five_hour"):
+            continue
+        key = int(resets_at)
+        if key not in by_reset or event["at"] > by_reset[key]["at"]:
+            by_reset[key] = event
+    samples = []
+    for resets_at, event in sorted(by_reset.items()):
         start = resets_at - CLAUDE_WINDOW_SECONDS
         end = event["at"]
         if end < start:
@@ -420,7 +463,11 @@ def _claude_current(direct, capacity, now_ts):
     if len(hour_rows) >= 2:
         span = hour_rows[-1]["at"] - hour_rows[0]["at"]
         if span >= MIN_VELOCITY_SPAN_SECONDS:
-            velocity = sum(row["total"] for row in hour_rows) / (span / 3600)
+            # Do not divide by a very short burst: cap the denominator at the
+            # current-window age as well as at one hour.
+            denominator = min(VELOCITY_WINDOW_SECONDS, max(0, now_ts - start))
+            if denominator > 0:
+                velocity = sum(row["total"] for row in hour_rows) / (denominator / 3600)
 
     projection = {"status": "no_estimate", "projected_at": None}
     if capacity and used >= capacity:
@@ -452,6 +499,7 @@ def _claude_current(direct, capacity, now_ts):
 
 def summarize_claude(events, direct, now):
     now_ts = now.timestamp()
+    events = _dedupe_events(events)
     samples, capacity = _claude_capacity(events, direct)
     current = _claude_current(direct, capacity["median"], now_ts)
     history = sorted(events, key=lambda event: event["at"], reverse=True)[:RECENT_EVENTS]
@@ -531,7 +579,7 @@ _TEXT = {
         "safe": "→ about {time} (after reset; safe this window)",
         "hit": "→ about {time} ⚠",
         "reached": "already at 100%",
-        "claude": "Claude (estimate, based on {count} rate-limit samples)",
+        "claude": "Claude (estimate, based on {count} rate-limit windows)",
         "claude_none": "Claude (estimate): no rate-limit samples yet; cannot estimate",
         "current": "current 5h window {start} → {end}  direct tokens {used} / estimated capacity {capacity} ({low}–{high}) ≈ {percent}%",
         "current_no_capacity": "current 5h window {start} → {end}  direct tokens {used}",
@@ -561,7 +609,7 @@ _TEXT = {
         "safe": "→ 约 {time} 撞线（晚于重置，本窗口安全）",
         "hit": "→ 约 {time} 撞线 ⚠",
         "reached": "已达 100%",
-        "claude": "Claude（估算，依据 {count} 次撞线样本）",
+        "claude": "Claude（估算，依据 {count} 个撞线窗口）",
         "claude_none": "Claude（估算）：尚无撞线样本，无法估算",
         "current": "当前 5h 窗口 起 {start} → 止 {end}   直连 token {used} / 估算容量 {capacity}（{low}–{high}）≈ {percent}%",
         "current_no_capacity": "当前 5h 窗口 起 {start} → 止 {end}   直连 token {used}",

@@ -71,6 +71,11 @@ def write_lines(path, objects):
 
 
 class CodexQuotaTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(quota.config, "TZ", TZ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_windows_follow_minutes_not_primary_secondary_labels(self):
         now = NOW
         snapshots = [
@@ -89,6 +94,20 @@ class CodexQuotaTests(unittest.TestCase):
         self.assertEqual(3, window_of(plans, 10080, limit_name="gpt-reserve")["used_percent"])
         self.assertEqual({"gpt-reserve", None},
                          {limit["limit_name"] for plan in plans for limit in plan["limits"]})
+
+    def test_plan_type_null_and_plus_share_one_limit_group(self):
+        now = NOW
+        plans = quota.summarize_codex([
+            snapshot(now - timedelta(days=5), 15, minutes=10080,
+                     resets=now + timedelta(days=1), plan=None),
+            snapshot(now, 94, minutes=10080,
+                     resets=now + timedelta(days=1), plan="plus"),
+        ], now)
+        self.assertEqual(1, len(plans))
+        self.assertEqual("plus", plans[0]["plan_type"])
+        self.assertEqual(1, len(plans[0]["limits"]))
+        self.assertEqual(94, window_of(plans, 10080)["used_percent"])
+        self.assertTrue(window_of(plans, 10080)["observed_at"].startswith("2026-11-10T18:00"))
 
     def test_epoch_and_iso_resets_are_both_supported(self):
         now = NOW
@@ -159,6 +178,11 @@ class CodexQuotaTests(unittest.TestCase):
 
 
 class ClaudeQuotaTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(quota.config, "TZ", TZ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_scanner_reads_quota_fields_and_passes_types_through(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "session.jsonl")
@@ -214,6 +238,50 @@ class ClaudeQuotaTests(unittest.TestCase):
         self.assertEqual(450, summary["samples"]["median"])
         self.assertEqual(300, summary["samples"]["min"])
         self.assertEqual(600, summary["samples"]["max"])
+
+    def test_duplicate_events_collapse_and_windows_count_once(self):
+        reset = NOW - timedelta(hours=1)
+        direct = [
+            {"at": (NOW - timedelta(hours=4)).timestamp(), "total": 100},
+            {"at": (NOW - timedelta(hours=2)).timestamp(), "total": 200},
+        ]
+        duplicate = {"at": (NOW - timedelta(hours=1)).timestamp(), "type": "five_hour",
+                     "resets_at": reset.timestamp()}
+        summary = quota.summarize_claude([
+            duplicate,
+            dict(duplicate),
+            {"at": (NOW - timedelta(minutes=50)).timestamp(), "type": "five_hour",
+             "resets_at": reset.timestamp()},
+        ], direct, NOW)
+        self.assertEqual(1, summary["samples"]["count"])
+        self.assertEqual(300, summary["samples"]["median"])
+        self.assertEqual(2, len(summary["events"]))
+
+    def test_only_five_hour_events_feed_five_hour_capacity(self):
+        reset = NOW - timedelta(hours=1)
+        direct = [{"at": (NOW - timedelta(hours=2)).timestamp(), "total": 500}]
+        summary = quota.summarize_claude([
+            {"at": (NOW - timedelta(hours=1)).timestamp(), "type": "seven_day",
+             "resets_at": reset.timestamp()},
+            {"at": (NOW - timedelta(hours=1)).timestamp(), "type": "five_hour",
+             "resets_at": reset.timestamp()},
+            {"at": (NOW - timedelta(hours=1)).timestamp(), "type": None,
+             "resets_at": (NOW - timedelta(minutes=30)).timestamp()},
+        ], direct, NOW)
+        self.assertEqual(2, summary["samples"]["count"])
+        self.assertEqual(3, len(summary["events"]))
+
+    def test_velocity_denominator_is_capped_at_one_hour(self):
+        direct = [
+            {"at": (NOW - timedelta(hours=2)).timestamp(), "total": 1},
+            {"at": (NOW - timedelta(minutes=6)).timestamp(), "total": 100},
+            {"at": (NOW - timedelta(minutes=3)).timestamp(), "total": 100},
+            {"at": NOW.timestamp(), "total": 100},
+        ]
+        current = quota.summarize_claude([], direct, NOW)["current"]
+        # 300 tokens over the capped one-hour denominator, not over six minutes.
+        self.assertAlmostEqual(300, current["velocity_per_hour"])
+        self.assertLessEqual(current["velocity_per_hour"], 300 * 10)
 
     def test_no_samples_and_current_window_inference(self):
         summary = quota.summarize_claude([], [], NOW)
