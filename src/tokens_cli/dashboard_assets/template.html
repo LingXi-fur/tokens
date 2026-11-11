@@ -142,6 +142,15 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
    <div class=kpi><div class=v><span id=k-models></span></div><div class=l>命中模型数</div></div>
    <div class="kpi is-dom"><div class=v><i class=kpi-dom-dot id=k-dom-dot aria-hidden=true></i><span id=k-dom></span><small id=k-dom-share></small></div><div class=l>主力模型</div><div class=dom-share-bar><i id=k-dom-share-fill></i></div><div class=dom-shift id=k-dom-shift hidden></div></div>
  </div>
+ <div class=pace-race id=pace-race data-i18n-skip hidden>
+  <div class=pace-copy>
+   <div class=pace-k id=pace-k></div>
+   <div class=pace-headline><strong class=pace-delta id=pace-delta></strong><span class=pace-lead id=pace-lead></span></div>
+   <dl class=pace-stats id=pace-stats></dl>
+   <p class=pace-note id=pace-note></p>
+  </div>
+  <div class=pace-plot id=pace-plot><svg class=pace-chart id=pace-chart role=img></svg><div class=pace-legend id=pace-legend aria-hidden=true></div><div class=insight-tip id=pace-tip hidden></div></div>
+ </div>
 </section>
 
 <section class=card id=section-trend>
@@ -168,6 +177,14 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  <div class=row-between>
   <div><h2 style=margin:0 data-i18n-key="Daily model usage">每日模型用量</h2><p class=sub style="margin:3px 0 0;color:var(--faint)" data-i18n-key="Filtered by the current date range and models; tokens and recorded calls use day aggregates; costs sum trusted parts rows only.">按当前日期范围与模型筛选；Token/已记录调用取 day 聚合，费用只汇总可信 parts 行</p></div>
   <div><span id=daily-scope></span><button type=button class=ghostbtn id=glm-compare-btn data-i18n-key="Compare GLM">GLM 对比</button><button type=button class=ghostbtn id=daily-csv-btn data-i18n-key="Export model usage CSV">导出模型用量 CSV</button></div>
+ </div>
+ <div class=share-stream id=share-stream data-i18n-skip hidden>
+  <div class=share-stream-head>
+   <div><h3 id=share-stream-title></h3><p class=share-stream-sub id=share-stream-sub></p></div>
+   <div class=share-stream-modes id=share-stream-modes role=group><button type=button class=ghostbtn data-stream-mode=share aria-pressed=true></button><button type=button class=ghostbtn data-stream-mode=volume aria-pressed=false></button></div>
+  </div>
+  <div class=share-stream-plot id=share-stream-plot><svg class=share-stream-svg id=share-stream-svg tabindex=0 role=img aria-describedby=share-stream-readout></svg><div class=insight-tip id=share-stream-tip hidden></div></div>
+  <p class=share-stream-readout id=share-stream-readout aria-live=polite></p>
  </div>
  <div class=daily-calendar id=daily-calendar role=group aria-labelledby=daily-calendar-heading>
   <div class=daily-calendar-head><h3 id=daily-calendar-heading>日期浏览</h3></div>
@@ -289,6 +306,14 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  </div>
  <div class=rhythm id=rhythm style=margin-top:16px></div>
  <div class=rh-foot><div class=persona id=rhythm-persona></div><div class=rh-legend>静 <i></i><i class=l1></i><i class=l2></i><i class=l3></i><i class=l4></i> 沸</div></div>
+ <div class=activity-cal id=activity-cal data-i18n-skip hidden>
+  <div class=activity-head><div><h3 id=activity-title></h3><p class=activity-sub id=activity-sub></p></div></div>
+  <div class=activity-body>
+  <div class=activity-stats id=activity-stats></div>
+  <div class=activity-plot><div class=activity-scroll id=activity-scroll><svg class=activity-svg id=activity-svg tabindex=0 role=img aria-describedby=activity-readout></svg></div><div class=insight-tip id=activity-tip hidden></div></div>
+  </div>
+  <div class=activity-foot><p class=activity-readout id=activity-readout aria-live=polite></p><div class=activity-legend id=activity-legend aria-hidden=true></div></div>
+ </div>
 </section>
 
 <section class="card work-mode-atlas" data-module=modes data-lazy=modes id=section-modes>
