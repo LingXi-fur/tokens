@@ -8,6 +8,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -254,15 +255,32 @@ class DoctorModelsTests(unittest.TestCase):
                 report, _ = self._collect(records, since="2026-11-10",
                                           until="2026-11-10")
         payload = json.loads(json.dumps(report))
-        self.assertEqual({"timezone", "since", "until", "sources", "router",
-                          "totals", "groups"}, set(payload))
+        legacy_top = {"timezone", "since", "until", "sources", "router",
+                      "totals", "groups"}
+        self.assertTrue(legacy_top <= set(payload))
+        self.assertEqual(legacy_top | {"source_totals"}, set(payload))
         self.assertEqual({"path", "exists", "rules"}, set(payload["router"]))
         self.assertEqual({"groups", "records", "tokens"}, set(payload["totals"]))
-        self.assertEqual({"request", "model", "basis", "records", "tokens",
-                          "first", "last"}, set(payload["groups"][0]))
+        legacy_group = {"request", "model", "basis", "records", "tokens",
+                        "first", "last"}
+        self.assertTrue(legacy_group <= set(payload["groups"][0]))
+        self.assertEqual(legacy_group | {"source"}, set(payload["groups"][0]))
+        self.assertEqual("claude", payload["groups"][0]["source"])
         self.assertEqual("2026-11-10", payload["since"])
         self.assertEqual("2026-11-10", payload["until"])
         self.assertEqual(12, payload["groups"][0]["tokens"])
+
+    def test_models_timezone_reads_config_tz_not_a_hardcoded_value(self):
+        records = [_record("glm-5.3", "glm-5.3", "2026-11-10", 7)]
+        for zone in ("Asia/Shanghai", "UTC"):
+            with self.subTest(zone=zone), \
+                    mock.patch.object(readers.config, "TZ", ZoneInfo(zone)):
+                report, _ = self._collect(records)
+                stdout = io.StringIO()
+                with mock.patch("sys.stdout", stdout):
+                    doctor.print_models(report, lang="en")
+            self.assertEqual(zone, report["timezone"])
+            self.assertIn(zone, stdout.getvalue())
 
     def test_since_and_until_filter_records(self):
         records = [
