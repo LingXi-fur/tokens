@@ -10,6 +10,12 @@ HOME = os.path.expanduser("~")
 CLAUDE_PROJECTS = os.path.join(HOME, ".claude", "projects")
 GEMINI_TMP = os.path.join(HOME, ".gemini", "tmp")
 CODEX_SESSIONS = os.path.join(HOME, ".codex", "sessions")
+CODEX_ARCHIVED_SESSIONS = os.path.join(HOME, ".codex", "archived_sessions")
+# OpenCode（sst/opencode）把会话与逐条助手消息用量存进 XDG 数据目录下的 SQLite。
+OPENCODE_DB = os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"),
+    "opencode", "opencode.db",
+)
 
 
 def _cache_root():
@@ -87,7 +93,8 @@ def _system_timezone():
 
 
 CACHE_DIR = os.path.join(_cache_root(), "ai-cli-tokens")
-CACHE_FILE = os.path.join(CACHE_DIR, "records-v4.json")
+# records-v8：文件名沿用 v8 结构；records 内 _v 独立演进（当前 20），旧文件不删除。
+CACHE_FILE = os.path.join(CACHE_DIR, "records-v8.json")
 OUT_DIR = os.path.abspath(os.path.join(os.getcwd(), "out"))
 SESSION_SUMMARY_FILE = os.path.join(OUT_DIR, "session_summaries.json")
 TZ = _system_timezone()

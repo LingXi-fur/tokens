@@ -40,9 +40,15 @@ def _read_asset(name):
 
 
 def _dashboard_template():
+    # 纯核心必须先于 dashboard.js 内联；资产保持 classic script 与离线自包含。
+    script = "\n;\n".join(_read_asset(name) for name in (
+        "cost_core.js", "calendar_core.js", "budget_core.js", "period_core.js", "insight_core.js", "dashboard.js",
+    ))
+    if "</script" in script:
+        raise ValueError("dashboard script assets must not contain '</script'")
     return (_read_asset("template.html")
             .replace("__STYLE__", _read_asset("dashboard.css"))
-            .replace("__SCRIPT__", _read_asset("dashboard.js")))
+            .replace("__SCRIPT__", script))
 
 _TEMPLATE = _dashboard_template()
 _LANGUAGE_TAGS = {

@@ -30,7 +30,7 @@ TEXT = {
         "details": "明细",
         "total": "总 token",
         "calls": "调用",
-        "footer": "by <b>tokens</b> · 数据来自 ~/.claude / ~/.gemini / ~/.codex · 亮/暗随系统",
+        "footer": "by <b>tokens</b> · 数据来自 {paths} · 亮/暗随系统",
         "units": (("亿", 1_0000_0000), ("万", 1_0000)),
     },
     "en": {
@@ -49,7 +49,7 @@ TEXT = {
         "details": "Details",
         "total": "Total tokens",
         "calls": "Calls",
-        "footer": "by <b>tokens</b> · Data from ~/.claude / ~/.gemini / ~/.codex · Light/dark follows system",
+        "footer": "by <b>tokens</b> · Data from {paths} · Light/dark follows system",
         "units": (("B", 1_000_000_000), ("M", 1_000_000), ("K", 1_000)),
     },
 }
@@ -57,6 +57,20 @@ TEXT = {
 # 系列配色（亮/暗通用）。热力图色阶由 CSS 变量按主题切换。
 SERIES = ["#5b8def", "#f0a84b", "#56c596", "#ef6f6d",
           "#9b8cf2", "#4ec9d6", "#e08a6a", "#7ec1e8"]
+
+# 页脚只列出本次实际启用的来源；新增来源时补一行即可。
+SOURCE_PATHS = {
+    "claude": "~/.claude",
+    "gemini": "~/.gemini",
+    "codex": "~/.codex",
+    "opencode": "~/.local/share/opencode",
+}
+
+
+def _footer_paths(sources):
+    selected = set(sources or ())
+    paths = [path for source, path in SOURCE_PATHS.items() if source in selected]
+    return " / ".join(paths or SOURCE_PATHS.values())
 
 
 def _esc(s):
@@ -304,6 +318,7 @@ def write_report(mode, rows, focus_date, focus_label, all_sources, lang="zh"):
     title = t["title"].format(pt=t["period_title"].get(mode, ""), focus=focus_label, date=focus_disp)
     now_str = datetime.now(config.TZ).strftime("%Y-%m-%d %H:%M")
     sub = t["sub"].format(ts=now_str, srcs=", ".join(all_sources) or t["no_data"])
+    footer = t["footer"].format(paths=_footer_paths(all_sources))
     period_col = (t["period_title"].get(mode, "") + t["period_col"]
                   if t is TEXT["zh"] else t["period_col"])
 
@@ -347,7 +362,7 @@ def write_report(mode, rows, focus_date, focus_label, all_sources, lang="zh"):
  <tbody>{''.join(table_rows)}</tbody></table>
 </div>
 
-<footer>{t['footer']}</footer>
+<footer>{footer}</footer>
 </div>
 </body></html>"""
 

@@ -434,7 +434,7 @@ class DocsTests(unittest.TestCase):
         for readme in readmes:
             self.assertIn(preview_url, readme)
             self.assertRegex(readme, re.compile(r"synthetic|合成", re.IGNORECASE))
-            self.assertRegex(readme, re.compile(r"isolated|隔离", re.IGNORECASE))
+            self.assertRegex(readme, re.compile(r"no real local logs|不含真实本地日志", re.IGNORECASE))
             self.assertNotIn("docs/assets/readme-preview.png)", readme.replace(preview_url, ""))
 
     def test_public_readmes_have_verified_first_run_path(self):

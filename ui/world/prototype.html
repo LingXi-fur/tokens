@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Token 山境 · 交互样机</title>
+<style>__STYLE__</style>
+</head>
+<body>
+<a class="skip" href="#data-view">跳到数据视图 / Skip to data</a>
+<div id="world" aria-hidden="true"></div>
+<div id="labels"></div>
+<header class="bar">
+  <a class="brand" href="#summit"><span class="brand-mark">山</span><span>TOKEN <b>山境</b><small>WORLD / PROTOTYPE</small></span></a>
+  <nav aria-label="场景章节 / Chapters"><a href="#summit" data-chapter="0">01 <span data-i18n="峰顶|Summit">峰顶</span></a><a href="#meadow" data-chapter="1">02 <span data-i18n="草坡|Meadow">草坡</span></a><a href="#village" data-chapter="2">03 <span data-i18n="村庄|Village">村庄</span></a></nav>
+  <div class="actions"><button id="view-toggle" data-i18n="数据视图|Data view">数据视图</button><button id="theme" aria-label="切换明暗 / Toggle theme">◐</button><button id="language" aria-label="切换语言 / Toggle language">EN</button><button id="motion" aria-pressed="false" data-i18n="减少动画|Less motion">减少动画</button></div>
+</header>
+<aside id="core-stats" class="core-stats" aria-label="核心用量与费用 / Usage and costs">
+  <p id="report-date" class="rail-meta"></p>
+  <div class="rail-values"><a href="#usage-details"><span data-i18n="当天 Token|Report-day tokens">当天 Token</span><strong id="today-tokens">—</strong><small id="today-calls"></small></a><a href="#cost-details"><span id="cost-label">载入区间费用</span><strong id="loaded-cost">—</strong><small id="cost-coverage"></small></a></div>
+  <p id="rail-range" class="rail-meta"></p>
+</aside>
+<main>
+<section id="summit" class="chapter" aria-labelledby="summit-title">
+  <div class="chapter-copy"><p class="eyebrow">01 / THE SUMMIT</p><h1 id="summit-title" data-i18n="数字在眼前，<br>山路在脚下。|Usage in view.<br>A trail to explore.">数字在眼前，<br>山路在脚下。</h1><p class="intro" data-i18n="沿山路探索日期和项目；当天用量与累计费用始终可见。|Explore dates and projects along the trail. Daily usage and loaded costs stay in view.">沿山路探索日期和项目；当天用量与累计费用始终可见。</p><p class="scope"><span class="demo-dot"></span><span data-i18n="合成示例 · 模型重标注 · 未接真实日志|Synthetic fixture · Models relabeled · No private logs">合成示例 · 模型重标注 · 未接真实日志</span></p><p id="range"></p><dl class="overview"><div><dt data-i18n="场景筛选 Token|Scene-filtered tokens">场景筛选 Token</dt><dd id="total">—</dd></div><div><dt data-i18n="场景调用|Scene calls">场景调用</dt><dd id="calls">—</dd></div></dl><div id="summit-actions" class="semantic-hotspots"></div><a class="descend" href="#meadow"><span data-i18n="沿山路探索|Explore the trail">沿山路探索</span> ↓</a></div>
+  <span class="chapter-word" aria-hidden="true">SUMMIT</span>
+</section>
+<section id="meadow" class="chapter" aria-labelledby="meadow-title">
+  <div class="chapter-copy"><p class="eyebrow">02 / THE MEADOW</p><h2 id="meadow-title" data-i18n="节奏，<br>在路上留下痕迹。|Your rhythm.<br>Written on the trail.">节奏，<br>在路上留下痕迹。</h2><p class="intro" data-i18n="路边站点对应日期。停下来，看看当天有哪些模型参与。|Each trail marker is a date. Pause to see which models contributed.">路边站点对应日期。停下来，看看当天有哪些模型参与。</p><p class="hint" data-i18n="场景与明细筛选。常驻核心数字始终为全部模型。|Scene and detail filters. Headline numbers always cover all models.">场景与明细筛选。常驻核心数字始终为全部模型。</p><div id="model-filters" class="model-filters" role="group" aria-label="模型筛选 / Model filters"></div><p class="hint" data-i18n="草花是景观，不代表用量。标记与数字才是数据。|Flowers are scenery, not usage. Markers and numbers carry the data.">草花是景观，不代表用量。标记与数字才是数据。</p><div id="station-list" class="station-list"></div></div><span class="chapter-word" aria-hidden="true">MEADOW</span>
+</section>
+<section id="village" class="chapter" aria-labelledby="village-title">
+  <div class="chapter-copy"><p class="eyebrow">03 / THE VILLAGE</p><h2 id="village-title" data-i18n="每一栋小屋，<br>都有正在发生的故事。|Every little house.<br>A project in progress.">每一栋小屋，<br>都有正在发生的故事。</h2><p class="intro" data-i18n="靠近预览，点击查看项目明细。这里的房屋大小不是用量比例。|Hover to preview. Click for project details. House size does not encode usage.">靠近预览，点击查看项目明细。这里的房屋大小不是用量比例。</p><p id="project-count"></p><button class="primary" id="projects-open" data-i18n="查看项目列表 ↗|Browse projects ↗">查看项目列表 ↗</button><p class="hint" data-i18n="村庄展示部分项目；列表覆盖载入聚合中的可用项目，不代表全部原始记录。|The village shows a subset. The list covers available loaded aggregates, not all original records.">村庄展示部分项目；列表覆盖载入聚合中的可用项目，不代表全部原始记录。</p></div><span class="chapter-word" aria-hidden="true">VILLAGE</span>
+</section>
+<section id="data-view" class="data-view" aria-labelledby="data-title"><div class="data-heading"><p class="eyebrow">FIELD NOTES / EXACT VALUES</p><h2 id="data-title" data-i18n="风景之外，数字依然清楚。|Beyond the scenery. Exact numbers.">风景之外，数字依然清楚。</h2><p data-i18n="日期表与项目列表跟随场景筛选。当天与费用明细默认全部模型，可切换当前筛选；常驻数字不变。项目点击只查看明细。|Timeline and project lists follow scene filters. Usage and cost details default to all models, with an explicit selected-model mode. Headline numbers stay unchanged. Projects open details only.">日期表与项目列表跟随场景筛选。当天与费用明细默认全部模型，可切换当前筛选；常驻数字不变。项目点击只查看明细。</p></div><section class="usage-details" id="usage-details" aria-labelledby="usage-title"><div class="usage-heading"><h3 id="usage-title" data-i18n="当天消耗 · 各模型明细|Report-day usage · By model">当天消耗 · 各模型明细</h3><div class="detail-scope" role="group" aria-label="明细范围 / Detail scope"><button id="scope-all" aria-pressed="true" data-i18n="全部模型|All models">全部模型</button><button id="scope-filtered" aria-pressed="false" data-i18n="当前筛选|Selected models">当前筛选</button></div></div><p id="usage-scope" class="hint"></p><p id="today-summary"></p><div id="today-models" class="table-wrap"></div><p class="hint" data-i18n="计费分量仅展示可信账本部分；未知口径另列，不等于 0。费用表 Token 按计数来源与未知口径分行，不重复计入。|Billing components cover trusted rows only. Unknown usage is separate, not zero. Cost-table tokens are split by counting source and unknown coverage without double counting.">计费分量仅展示可信账本部分；未知口径另列，不等于 0。费用表 Token 按计数来源与未知口径分行，不重复计入。</p></section><section class="usage-details" id="cost-details" aria-labelledby="cost-title"><div class="usage-heading"><h3 id="cost-title" data-i18n="载入区间 · 各模型费用|Loaded range · Model costs">载入区间 · 各模型费用</h3><button id="prices-open" data-i18n="调整示例单价|Edit example rates">调整示例单价</button></div><p id="cost-summary"></p><p id="reference-note" class="hint"></p><div id="cost-models" class="table-wrap"></div></section><div class="data-columns"><div><h3 data-i18n="时间站点|Timeline">时间站点</h3><div id="day-table" class="table-wrap"></div></div><div><h3 data-i18n="项目|Projects">项目</h3><label class="search-label" for="project-search" data-i18n="搜索项目|Search projects">搜索项目</label><input id="project-search" type="search" placeholder="搜索 / Search"><div id="project-list"></div></div></div><p class="boundary" data-i18n="费用是合成计费示例与官方参考单价的估算，不是实际账单。模型名称经过重标注；来源标签仍表示原合成记录的计数格式。不按 Token 占比推算项目费用。海拔、草花、小屋尺寸均不是数值坐标。|Costs are estimates using synthetic billing fixtures and reference rates, not actual bills. Models are relabeled; source labels preserve the original synthetic counting format. No proportional project cost estimates. Elevation, flowers and house sizes are not numeric axes.">费用是合成计费示例与官方参考单价的估算，不是实际账单。模型名称经过重标注；来源标签仍表示原合成记录的计数格式。不按 Token 占比推算项目费用。海拔、草花、小屋尺寸均不是数值坐标。</p></section>
+</main>
+<div class="journey" aria-hidden="true"><span>ALT / JOURNEY</span><div><i id="progress"></i></div><span id="chapter-number">01</span></div>
+<div id="tooltip" class="tooltip" hidden></div>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<dialog id="detail" aria-labelledby="detail-title"><div class="detail-bar"><span class="eyebrow">FIELD NOTE</span><button id="detail-close" aria-label="关闭 / Close">×</button></div><h2 id="detail-title"></h2><div id="detail-body"></div><p class="hint" data-i18n="此面板仅查看明细，不改变筛选。|Inspection only. Your filters are unchanged.">此面板仅查看明细，不改变筛选。</p></dialog>
+<dialog id="prices" aria-labelledby="prices-title"><div class="detail-bar"><h2 id="prices-title" data-i18n="示例单价 · USD / 百万 Token|Example rates · USD / million tokens">示例单价 · USD / 百万 Token</h2><button id="prices-close" type="button" aria-label="取消并关闭 / Cancel and close">×</button></div><p class="hint" data-i18n="仅当前页面内存，不读取或保存本机私人价格。空值=待定价，0=免费；手填整条覆盖参考价。|Page memory only. No private prices are read or saved. Blank means unpriced; 0 means free. A whole manual entry overrides reference rates.">仅当前页面内存，不读取或保存本机私人价格。空值=待定价，0=免费；手填整条覆盖参考价。</p><form id="price-form"><div id="price-fields"></div><p id="price-error" role="alert"></p><div class="price-actions"><button type="button" id="prices-reset" data-i18n="恢复全部参考价|Restore all reference rates">恢复全部参考价</button><button type="button" id="prices-cancel" data-i18n="取消|Cancel">取消</button><button type="submit" class="primary" data-i18n="保存到当前页|Apply to this page">保存到当前页</button></div></form></dialog>
+<script>const WORLD_DATA=__DATA__;</script>
+<script>__COST_CORE__</script>
+<script>__SCRIPT__</script>
+</body>
+</html>
