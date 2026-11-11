@@ -6,10 +6,10 @@ import sys
 from datetime import date, datetime, timedelta
 
 from . import (__version__, aggregate, config, demo, doctor, lang as lang_module, live_dashboard,
-               readers, report_dashboard, report_html, report_term)
+               quota, readers, report_dashboard, report_html, report_term)
 from .opener import open_url
 
-RANGES = ["day", "week", "month", "all", "dashboard", "demo", "serve", "doctor"]
+RANGES = ["day", "week", "month", "all", "dashboard", "demo", "serve", "doctor", "quota"]
 
 
 def compute_window(mode, now, days, weeks, months):
@@ -61,7 +61,7 @@ def build_parser():
     parser.add_argument("--models", action="store_true",
                         help="with doctor, show how Claude request names map to models")
     parser.add_argument("--json", action="store_true",
-                        help="with doctor --models, print machine-readable JSON")
+                        help="with doctor --models or quota, print machine-readable JSON")
     parser.add_argument("--interval", type=_positive_float, default=300.0,
                         help="live Dashboard check interval in seconds (default: 300)")
     parser.add_argument("--port", type=_port, default=8765,
@@ -122,8 +122,9 @@ def _configure(args, parser):
         parser.error("--anonymize requires dashboard, demo, or serve mode")
     if args.models and args.range != "doctor":
         parser.error("--models requires doctor mode")
-    if args.json and not (args.range == "doctor" and args.models):
-        parser.error("--json requires doctor --models")
+    if args.json and not ((args.range == "doctor" and args.models)
+                          or args.range == "quota"):
+        parser.error("--json requires doctor --models or quota")
 
 
 def _open_generated(path):
@@ -186,6 +187,26 @@ def main(argv=None):
             print(json.dumps(report, ensure_ascii=False, indent=2))
         else:
             doctor.print_models(report, lang=args.lang)
+        return 0
+
+    if args.range == "quota":
+        quota_sources = args.source or list(quota.DEFAULT_SOURCES)
+        try:
+            report = quota.collect(
+                sources=quota_sources,
+                use_cache=not args.no_cache,
+            )
+        except readers.CollectionIncompleteError:
+            print(
+                "Local log collection is incomplete; no quota report was produced. "
+                "Check log readability and collection limits, then retry.",
+                file=sys.stderr,
+            )
+            return 1
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            quota.print_report(report, lang=args.lang)
         return 0
 
     if args.range == "serve":
