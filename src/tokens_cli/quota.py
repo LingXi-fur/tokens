@@ -20,6 +20,7 @@ WEEK_WINDOW_MINUTES = 10080
 SHORT_WINDOW_MINUTES = 300
 VELOCITY_WINDOW_SECONDS = 60 * 60
 MIN_VELOCITY_SPAN_SECONDS = 5 * 60
+MIN_WINDOW_AGE_SECONDS = 15 * 60
 RECENT_EVENTS = 5
 CACHE_SCHEMA = 1
 
@@ -501,7 +502,7 @@ def _claude_capacity(events, direct, now_ts):
     }
 
 
-def _claude_current(direct, capacity, events, now_ts):
+def _claude_current(direct, capacity, events, now_ts, basis):
     windows = _claude_windows(direct, until=now_ts)
     if not windows or windows[-1]["end"] <= now_ts:
         return None
@@ -510,11 +511,12 @@ def _claude_current(direct, capacity, events, now_ts):
     used = _window_tokens(window)
     percent = (used / capacity * 100) if capacity else None
     has_hit = _window_has_hit(window, events)
+    window_too_new = now_ts - start < MIN_WINDOW_AGE_SECONDS
 
     hour_rows = [row for row in direct
                  if now_ts - VELOCITY_WINDOW_SECONDS <= row["at"] <= now_ts]
     velocity = None
-    if len(hour_rows) >= 2:
+    if not window_too_new and len(hour_rows) >= 2:
         span = hour_rows[-1]["at"] - hour_rows[0]["at"]
         if span >= MIN_VELOCITY_SPAN_SECONDS:
             # Do not divide by a very short burst: cap the denominator at the
@@ -530,11 +532,14 @@ def _claude_current(direct, capacity, events, now_ts):
         projection = {"status": "beyond_estimate", "projected_at": None}
     elif capacity and velocity and velocity > 0:
         projected = now_ts + (capacity - used) / velocity * 3600
-        projection = {
-            "status": "safe" if projected > end else "hit",
-            "projected_at": projected,
-        }
-    elif velocity is None:
+        if projected > end:
+            status = "safe"
+        elif basis == "safe_floor":
+            status = "past_floor"
+        else:
+            status = "hit"
+        projection = {"status": status, "projected_at": projected}
+    elif window_too_new or velocity is None:
         projection = {"status": "insufficient", "projected_at": None}
     elif velocity <= 0:
         projection = {"status": "flat", "projected_at": None}
@@ -547,6 +552,7 @@ def _claude_current(direct, capacity, events, now_ts):
         "capacity_tokens": capacity,
         "velocity_per_hour": velocity,
         "has_hit": has_hit,
+        "window_too_new": window_too_new,
         "projection": {
             "status": projection["status"],
             "projected_at": _iso(projection["projected_at"]),
@@ -562,7 +568,8 @@ def summarize_claude(events, direct, now):
     if capacity["safe_floor"] is not None and (
             capacity_value is None or capacity["safe_floor"] > capacity_value):
         capacity_value = capacity["safe_floor"]
-    current = _claude_current(direct, capacity_value, events, now_ts)
+    current = _claude_current(direct, capacity_value, events, now_ts,
+                              capacity["basis"])
     history = sorted(events, key=lambda event: event["at"], reverse=True)[:RECENT_EVENTS]
     return {
         "kind": "estimate",
@@ -641,6 +648,8 @@ _TEXT = {
         "flat": "velocity not increasing",
         "safe": "→ about {time} (after reset; safe this window)",
         "hit": "→ about {time} ⚠",
+        "past_floor": "ℹ at this pace, passes the highest no-limit usage around {time} (not a predicted limit hit)",
+        "insufficient_new": "insufficient data (window just started)",
         "reached": "already at 100%",
         "claude": "Claude (estimate, based on {count} rate-limit windows)",
         "claude_floor": "Claude (estimate, capacity floor from {safe} safe windows)",
@@ -650,7 +659,7 @@ _TEXT = {
         "current_no_capacity": "current 5h window {start} → {end}  direct tokens {used}",
         "no_current": "no direct Anthropic records in the last 5 hours",
         "velocity": "velocity {rate}%/h",
-        "claude_velocity": "velocity {rate}/h",
+        "claude_velocity": "last-1-hour velocity {rate}/h",
         "beyond_estimate": "past the estimate without a limit hit (estimate is low)",
         "recent": "recent rate limits:",
         "recent_item": "  {at} {type} (reset {reset})",
@@ -674,6 +683,8 @@ _TEXT = {
         "flat": "速度未增长",
         "safe": "→ 约 {time} 撞线（晚于重置，本窗口安全）",
         "hit": "→ 约 {time} 撞线 ⚠",
+        "past_floor": "ℹ 按当前速度约 {time} 超过历史最高未撞线用量（不代表会撞线）",
+        "insufficient_new": "数据不足（窗口刚开始）",
         "reached": "已达 100%",
         "claude": "Claude（估算，依据 {count} 个撞线窗口）",
         "claude_floor": "Claude（估算，容量下限来自 {safe} 个安全窗口）",
@@ -683,7 +694,7 @@ _TEXT = {
         "current_no_capacity": "当前 5h 窗口 起 {start} → 止 {end}   直连 token {used}",
         "no_current": "最近 5 小时没有直连 Anthropic 记录",
         "velocity": "速度 {rate}%/h",
-        "claude_velocity": "速度 {rate}/h",
+        "claude_velocity": "按最近 1 小时速度 {rate}/h",
         "beyond_estimate": "已超过历史估算，仍未撞线（估算偏低）",
         "recent": "最近撞线：",
         "recent_item": "  {at} {type}（重置 {reset}）",
@@ -823,7 +834,8 @@ def _print_claude(report, text, lang, now):
         velocity = current.get("velocity_per_hour")
         projection = current["projection"]
         if velocity is None:
-            print(f"  {text['no_velocity']}")
+            print("  " + (text["insufficient_new"] if current.get("window_too_new")
+                          else text["no_velocity"]))
             if projection["status"] == "hit":
                 print("  " + text["hit"].format(
                     time=_fmt_time(_epoch(projection["projected_at"]), now, text)))
@@ -836,6 +848,9 @@ def _print_claude(report, text, lang, now):
                     time=_fmt_time(_epoch(projection["projected_at"]), now, text))
             elif projection["status"] == "safe":
                 line += "  " + text["safe"].format(
+                    time=_fmt_time(_epoch(projection["projected_at"]), now, text))
+            elif projection["status"] == "past_floor":
+                line += "  " + text["past_floor"].format(
                     time=_fmt_time(_epoch(projection["projected_at"]), now, text))
             elif projection["status"] == "flat":
                 line += "  " + text["flat"]
