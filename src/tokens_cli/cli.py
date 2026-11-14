@@ -165,7 +165,7 @@ def main(argv=None):
     discovery_text = (source_registry.format_detection(detected, skipped, args.lang)
                       if auto_used else None)
     if discovery_text and not args.json and args.range != "demo":
-        print(discovery_text)
+        print(discovery_text, flush=True)
 
     if args.range == "doctor":
         if not args.models:
@@ -238,8 +238,9 @@ def main(argv=None):
             return 1
         host, port = server.server_address
         url = f"http://{host}:{port}/"
-        print(f"Live Dashboard: {url}")
-        print(f"Checking local logs every {args.interval:g} seconds. Press Ctrl+C to stop.")
+        print(f"Live Dashboard: {url}", flush=True)
+        print(f"Checking local logs every {args.interval:g} seconds. Press Ctrl+C to stop.",
+              flush=True)
         if args.open:
             try:
                 opened = open_url(url)
