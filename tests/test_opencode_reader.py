@@ -170,13 +170,28 @@ class OpenCodeReaderTests(unittest.TestCase):
             self.assertEqual(2, len(readers.read_all(["opencode"])))
         writer.close()
 
-    def test_source_is_registered_everywhere_it_is_enumerated(self):
-        from tokens_cli import cli, live_snapshot
-        self.assertIn("opencode", readers.SOURCES)
-        self.assertIn("opencode", readers._BILLING_VALIDATORS)
-        self.assertIn("opencode", readers.CollectionIncompleteError.SOURCES)
-        self.assertEqual(["opencode"], cli.build_parser().parse_args(["--source", "opencode"]).source)
-        self.assertTrue(live_snapshot.SnapshotStore(["opencode"], directory=self.tmp.name)._valid)
+    def test_every_registered_source_is_enumerated_everywhere(self):
+        from tokens_cli import (cli, dashboard_payload, live_dashboard,
+                                live_snapshot, quota, report_html, sources)
+        dashboard_js = (ROOT / "src" / "tokens_cli" / "dashboard_assets" /
+                        "dashboard.js").read_text(encoding="utf-8")
+        self.assertIn("DATA.source_labels", dashboard_js)
+        for source in sources.SOURCES:
+            name = source.name
+            with self.subTest(source=name):
+                self.assertIn(name, readers.SOURCES)
+                self.assertIn(name, readers._BILLING_VALIDATORS)
+                self.assertIn(name, readers.CollectionIncompleteError.SOURCES)
+                self.assertIn(name, cli.build_parser().parse_args(
+                    ["--source", name]).source)
+                self.assertIn(name, live_snapshot._ALLOWED_SOURCES)
+                self.assertIn(name, live_dashboard._PROGRESS_SOURCES)
+                self.assertIn(name, report_html.SOURCE_PATHS)
+                self.assertIn(name, dashboard_payload.SOURCE_LABELS)
+                if source.quota_supported:
+                    self.assertIn(name, quota.DEFAULT_SOURCES)
+                self.assertTrue(
+                    live_snapshot.SnapshotStore([name], directory=self.tmp.name)._valid)
 
 
 if __name__ == "__main__":

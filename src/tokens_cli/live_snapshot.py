@@ -15,7 +15,7 @@ import sys
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
-from . import config, dashboard_payload, dashboard_wire, readers
+from . import config, dashboard_payload, dashboard_wire, readers, sources as source_registry
 
 
 STORAGE_SCHEMA = 1
@@ -27,16 +27,17 @@ _DIRFD_CAPABLE = (os.open in os.supports_dir_fd and os.stat in os.supports_dir_f
                   and os.mkdir in os.supports_dir_fd and os.rename in os.supports_dir_fd)
 _CODE_MAX_BYTES = 8 * 1024 * 1024
 _CODE_FILES = tuple(os.path.join(os.path.dirname(__file__), name) for name in (
-    "config.py", "readers.py", "_claude_json.py", "codex_usage.py",
+    "config.py", "sources.py", "readers.py", "_claude_json.py", "codex_usage.py",
     "aggregate.py", "dashboard_payload.py", "dashboard_wire.py", "live_snapshot.py",
 ))
+_ALLOWED_SOURCES = frozenset(source.name for source in source_registry.SOURCES)
 _PAYLOAD_KEYS = frozenset((
     "generated", "calendar_day", "snapshot", "anonymized", "source", "range",
     "models", "other_models", "pretty", "colors", "cache_read", "hourly",
     "day_details", "block", "top_cwds", "session_series", "session_context",
     "n_cwds", "n_sessions", "max_turns", "provenance", "achievement_stats",
     "achievement_daily", "reuse", "day", "week", "month", "cost",
-    "request_models",
+    "request_models", "source_labels",
 ))
 _REF = re.compile(r"(?:0|[1-9a-z][0-9a-z]*)\Z")
 _TOP_SESSION_CONTEXT = frozenset(("p", "pm", "s", "d0", "d1"))
@@ -444,9 +445,16 @@ def _aggregate_shapes(payload, sources):
 
 
 def _validate_payload(payload, sources, since, until, tz):
-    _require(type(payload) is dict and set(payload) == _PAYLOAD_KEYS)
+    _require(type(payload) is dict
+             and set(payload) in (_PAYLOAD_KEYS, _PAYLOAD_KEYS - {"source_labels"}))
     _require(payload["anonymized"] is False and payload["source"] == list(sources))
     _require(type(payload["source"]) is list)
+    _require(set(payload["source"]) <= _ALLOWED_SOURCES)
+    if "source_labels" in payload:
+        labels = payload["source_labels"]
+        _require(type(labels) is dict and set(labels) <= _ALLOWED_SOURCES)
+        _require(all(type(value) is str and 0 < len(value) <= 64
+                     for value in labels.values()))
     _require(type(payload["generated"]) is str and len(payload["generated"]) == 16)
     datetime.strptime(payload["generated"], "%Y-%m-%d %H:%M")
     _date(payload["calendar_day"])
@@ -686,7 +694,7 @@ class SnapshotStore:
         self._valid = False
         try:
             _require(type(sources) in (list, tuple) and bool(sources))
-            _require(all(type(source) is str and source in {"claude", "gemini", "codex", "opencode"}
+            _require(all(type(source) is str and source in _ALLOWED_SOURCES
                          for source in sources))
             _require(len(set(sources)) == len(sources))
             _date(since, optional=True)

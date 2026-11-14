@@ -252,7 +252,8 @@ class DoctorModelsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             missing = str(Path(tmp) / "missing-router.js")
             with mock.patch.object(readers.config, "CCR_ROUTER_FILE", missing):
-                report, _ = self._collect(records, since="2026-11-10",
+                report, _ = self._collect(records, sources=["claude"],
+                                          since="2026-11-10",
                                           until="2026-11-10")
         payload = json.loads(json.dumps(report))
         legacy_top = {"timezone", "since", "until", "sources", "router",

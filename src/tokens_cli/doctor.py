@@ -10,7 +10,7 @@ import shutil
 import sqlite3
 import unicodedata
 
-from . import aggregate, config, readers
+from . import aggregate, config, readers, sources as source_registry
 
 BASIS_HEX_ALIAS = "hex_alias"
 BASIS_LOGGED = "logged"
@@ -24,16 +24,11 @@ _MODEL_SOURCES = ("claude", "opencode")
 
 
 def collect(sources=None):
-    selected = sources or list(readers.SOURCES)
+    selected = list(sources) if sources is not None else list(readers.SOURCES)
     source_rows = []
     for source in selected:
         files_fn, _ = readers.SOURCES[source]
-        root = {
-            "claude": config.CLAUDE_PROJECTS,
-            "gemini": config.GEMINI_TMP,
-            "codex": config.CODEX_SESSIONS,
-            "opencode": config.OPENCODE_DB,
-        }[source]
+        root = source_registry.BY_NAME[source].root()
         error = None
         try:
             files = files_fn()
@@ -45,7 +40,8 @@ def collect(sources=None):
         source_rows.append({
             "source": source,
             "root": root,
-            "exists": os.path.isfile(root) if source == "opencode" else os.path.isdir(root),
+            "exists": os.path.isfile(root) if source_registry.BY_NAME[source].root_kind == "file"
+            else os.path.isdir(root),
             "files": len(files),
             "readable": readable,
             **({"error": error} if error else {}),
@@ -61,7 +57,32 @@ def collect(sources=None):
         "cache": config.CACHE_FILE,
         "cache_parent_writable": _parent_writable(config.CACHE_FILE),
         "sources": source_rows,
+        "discovery": _discovery_rows(),
     }
+
+
+def _discovery_rows():
+    rows = []
+    for source in source_registry.SOURCES:
+        root = source.root()
+        exists = (os.path.isfile(root) if source.root_kind == "file"
+                  else os.path.isdir(root))
+        readable = exists and os.access(root, os.R_OK)
+        files = 0
+        if exists:
+            try:
+                files = len(source.files())
+            except (readers.CollectionIncompleteError, OSError):
+                files = 0
+        rows.append({
+            "source": source.name,
+            "label": source.label,
+            "root": root,
+            "exists": exists,
+            "readable": readable,
+            "files": files,
+        })
+    return rows
 
 
 def collect_models(sources=None, since=None, until=None, use_cache=True):
@@ -72,9 +93,10 @@ def collect_models(sources=None, since=None, until=None, use_cache=True):
     cwd, session ids, message bodies, and project labels never leave the
     reader. The default selection stays Claude-only.
     """
-    selected = list(sources) if sources else list(config.DEFAULT_SOURCES)
+    selected = (list(sources) if sources is not None
+                else [source.name for source in source_registry.SOURCES])
     enabled = {source: source in selected for source in _MODEL_SOURCES}
-    records = readers.read_all(sources=selected, use_cache=use_cache)
+    records = readers.read_all(sources=selected, use_cache=use_cache) if selected else []
 
     claude = ([record for record in records
                if isinstance(record, dict) and record.get("source") == "claude"]
@@ -413,6 +435,12 @@ def print_report(report):
         if row["source"] == "codex":
             support = "available" if row["decompressor_available"] else "unavailable"
             print(f"            {row['compressed_files']} compressed archives; zstd {support}")
+    print("  Source discovery:")
+    for row in report.get("discovery", []):
+        state = "found" if row["exists"] else "not found"
+        if row["exists"] and not row["readable"]:
+            state = "unreadable"
+        print(f"    {row['label']:<12} {state:<9} {row['root']} ({row['files']} candidates)")
 
 
 def _status(ok):

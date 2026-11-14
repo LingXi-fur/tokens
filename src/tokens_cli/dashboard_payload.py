@@ -8,7 +8,7 @@ import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from . import aggregate, config, readers
+from . import aggregate, config, readers, sources as source_registry
 
 
 LIGHT_PALETTE = [
@@ -23,6 +23,7 @@ MODEL_IDENTITY_CAPACITY = 7
 # Keep explicitly compared GLM variants independently filterable when present.
 COMPARISON_MODELS = ("glm-5.3", "glm-5.3-flash")
 OTHER_MODEL = "other"
+SOURCE_LABELS = {source.name: source.label for source in source_registry.SOURCES}
 SNAPSHOT_SCHEMA = 1
 METRIC_SCHEMA = 1
 # 费用账本（cost block）contract：schema 1，分量顺序固定，与 readers 计费证据一致。
@@ -780,6 +781,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
     dashboard_data = {
         "anonymized": anonymize,
         "source": sources or [],
+        "source_labels": dict(SOURCE_LABELS),
         "range": {
             "since": since,
             "until": until,

@@ -98,7 +98,7 @@ CACHE_FILE = os.path.join(CACHE_DIR, "records-v8.json")
 OUT_DIR = os.path.abspath(os.path.join(os.getcwd(), "out"))
 SESSION_SUMMARY_FILE = os.path.join(OUT_DIR, "session_summaries.json")
 TZ = _system_timezone()
-DEFAULT_SOURCES = ["claude"]
+DEFAULT_SOURCES = ["auto"]
 
 # Optional CCR (claude-code-router) configuration. When present, readers can
 # resolve request aliases using this user's current router. A missing router

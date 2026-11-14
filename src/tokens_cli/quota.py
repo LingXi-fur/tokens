@@ -12,9 +12,10 @@ import statistics
 import tempfile
 from datetime import datetime, timezone
 
-from . import codex_usage, config, readers
+from . import codex_usage, config, readers, sources as source_registry
 
-DEFAULT_SOURCES = ("claude", "codex", "opencode")
+DEFAULT_SOURCES = tuple(source.name for source in source_registry.SOURCES
+                        if source.quota_supported)
 CLAUDE_WINDOW_SECONDS = 5 * 60 * 60
 WEEK_WINDOW_MINUTES = 10080
 SHORT_WINDOW_MINUTES = 300
@@ -580,7 +581,7 @@ def summarize_claude(events, direct, now):
 # ---------- collection ----------
 
 def collect(sources=None, use_cache=True, now=None):
-    selected = list(sources) if sources else list(DEFAULT_SOURCES)
+    selected = list(sources) if sources is not None else list(DEFAULT_SOURCES)
     now = now or datetime.now(config.TZ)
     scan = scan_rate_limits(selected, use_cache=use_cache)
 
