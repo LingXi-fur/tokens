@@ -13,7 +13,7 @@ SRC = ROOT / "src"
 import sys
 sys.path.insert(0, str(SRC))
 
-from tokens_cli import dashboard_wire, report_dashboard
+from tokens_cli import dashboard_payload, dashboard_wire, report_dashboard
 
 try:
     from playwright.sync_api import sync_playwright
@@ -3326,7 +3326,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                   const url=new URL(location.href);
                   url.searchParams.delete('t');
                   return {range:state.range,date:state.rangeDate,url:url.href,
-                    total:document.querySelector('#k-total').textContent};
+                    total:document.querySelector('#k-total-exact').textContent};
                 }"""
             )
             strip_days = page.locator("#daily-date-strip [data-strip-day]").evaluate_all(
@@ -3383,7 +3383,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                   const url=new URL(location.href);
                   url.searchParams.delete('t');
                   return {range:state.range,date:state.rangeDate,url:url.href,
-                    total:document.querySelector('#k-total').textContent};
+                    total:document.querySelector('#k-total-exact').textContent};
                 }"""
             ))
 
@@ -3415,7 +3415,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                   const url=new URL(location.href);
                   url.searchParams.delete('t');
                   return {range:state.range,date:state.rangeDate,url:url.href,
-                    total:document.querySelector('#k-total').textContent};
+                    total:document.querySelector('#k-total-exact').textContent};
                 }"""
             ))
             self.assertEqual([], page_errors)
@@ -4006,6 +4006,108 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertEqual([], console_errors)
         finally:
             context.close()
+
+    def test_other_summary_and_hover_show_source_names(self):
+        context, page, page_errors, console_errors = self.new_page(path=self._overflow_path)
+        name = "older-<img src=x onerror=window.__otherXss=1>"
+        try:
+            page.evaluate("""name => {
+              DATA.cost = {
+                schema: 1,
+                models: [
+                  {source: 'codex', model: name, identity: 'other', hidden: false},
+                ],
+                rows: [],
+              };
+              renderFilters();
+              renderTrendLegend();
+              renderDonut();
+              renderOtherModelSummary();
+            }""", name)
+            summary_text = page.locator("#other-model-summary").inner_text()
+            self.assertIn(f"{name} (Codex)", summary_text)
+            trend_title = page.locator('#trend-legend [data-model-toggle="other"]').get_attribute("title") or ""
+            self.assertIn(f"{name} (Codex)", trend_title)
+            donut_title = page.locator('#donut-legend [data-model-toggle="other"]').get_attribute("title") or ""
+            self.assertIn(f"{name} (Codex)", donut_title)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_english_dashboard_has_no_cjk_units_or_granularity_words(self):
+        records = [
+            {
+                "source": "claude",
+                "ts": "2026-09-10T10:00:00Z",
+                "date": "2026-09-10",
+                "model": "claude-sonnet-4-5",
+                "input": 9_000_000,
+                "output": 4_330_000,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 13_330_000,
+                "session": "s-en-1",
+                "cwd": "/tmp/en-proj",
+            },
+            {
+                "source": "codex",
+                "ts": "2026-10-15T11:00:00Z",
+                "date": "2026-10-15",
+                "model": "gpt-5-codex",
+                "input": 6_000_000,
+                "output": 3_560_000,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 9_560_000,
+                "session": "s-en-2",
+                "cwd": "/tmp/en-proj",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            html_path = Path(tmpdir) / "en-units.html"
+            payload = dashboard_payload.build_payload(records)
+            html_path.write_text(
+                report_dashboard.render_dashboard(
+                    dashboard_wire.encode_payload(payload),
+                    language="en",
+                ),
+                encoding="utf-8",
+            )
+            context, page, page_errors, console_errors = self.new_page(path=html_path)
+            try:
+                for gran, expected_prefix in (("month", "Month · All models"), ("week", "Week · All models"), ("day", "Day · All models")):
+                    page.evaluate("g => setGran(g)", gran)
+                    page.wait_for_timeout(150)
+                    view_label = page.locator("#view-label").inner_text()
+                    self.assertIn(expected_prefix, view_label)
+                    visible_text = page.evaluate("""() => {
+                      const visible = el => el.getClientRects().length && !el.closest('script,style,[hidden]') && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+                      const parts = [];
+                      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                      while (walker.nextNode()) {
+                        const node = walker.currentNode;
+                        if (node.parentElement && visible(node.parentElement) && node.parentElement.id !== 'lang-btn') {
+                          parts.push(node.nodeValue);
+                        }
+                      }
+                      return parts.join(' ');
+                    }""")
+                    for forbidden in ("万", "亿", "月"):
+                        self.assertNotIn(forbidden, visible_text, f"Unexpected {forbidden!r} in English view ({gran})")
+                page.evaluate("setGran('month')")
+                bar_texts = page.evaluate("""() => [...document.querySelectorAll('#bar text.peak-flag, #bar text.mean-lab, #bar text.tick')].map(el => el.textContent)""")
+                self.assertTrue(any("M" in t for t in bar_texts), bar_texts)
+                self.assertFalse(any("万" in t or "亿" in t for t in bar_texts), bar_texts)
+                # Switching back to Chinese preserves 万/亿 units.
+                page.click("#lang-btn")
+                page.wait_for_timeout(150)
+                zh_bar_texts = page.evaluate("""() => [...document.querySelectorAll('#bar text.peak-flag, #bar text.mean-lab, #bar text.tick')].map(el => el.textContent)""")
+                self.assertTrue(any("万" in t for t in zh_bar_texts), zh_bar_texts)
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
 
 
 if __name__ == "__main__":
