@@ -515,18 +515,18 @@ class DocsTests(unittest.TestCase):
                 for marker in expected:
                     self.assertIn(marker, text)
 
-    def test_chinese_cli_documents_eight_command_modes(self):
+    def test_chinese_cli_documents_nine_command_modes(self):
         chinese_cli = (DOCS / "zh" / "cli.html").read_text(encoding="utf-8")
-        self.assertIn("八种命令模式", chinese_cli)
+        self.assertIn("九种命令模式", chinese_cli)
         for command in (
-            "day", "week", "month", "all", "dashboard", "demo", "serve", "doctor",
+            "day", "week", "month", "all", "dashboard", "demo", "serve", "doctor", "quota",
         ):
             self.assertIn(f"<code>{command}</code>", chinese_cli)
 
         combined = "\n".join(
             path.read_text(encoding="utf-8") for path in DOCS.rglob("*.html")
         )
-        for stale in ("六种命令模式", "七种命令模式"):
+        for stale in ("六种命令模式", "七种命令模式", "八种命令模式"):
             self.assertNotIn(stale, combined)
 
     def test_documentation_uses_current_live_refresh_default(self):

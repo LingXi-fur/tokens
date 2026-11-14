@@ -34,6 +34,8 @@ AI coding tools already leave usage records on your machine, but each tool store
 - **See usage from Claude Code, Gemini CLI, and Codex** in one report while keeping each source's reported token semantics visible.
 - **Find changes worth inspecting:** daily, weekly, and monthly trends, two-period comparisons (with a dominant-model shift badge when the top model changes), and peak periods. Copy a compact text summary of the current view—with its delta when available—into notes or messages.
 - **Follow token destinations:** a project and model overview beside per-session cards, tracing model, source, project, and session details where the logs provide them.
+- **Check subscription quota windows:** run `tokens quota` for official Codex rate-limit snapshots and explicit Claude capacity estimates with projected limit times, without sending logs anywhere.
+- **Dark-first dashboard with Today HUD:** defaults to dark with a soft-light mode, translucent glass reserved for the shell, overview insights (pace race, model share stream, activity calendar), and a collapsible, draggable Today HUD.
 - **Keep results under your control:** exact tables, CSV and Markdown exports, local live refresh, or a self-contained offline HTML snapshot.
 
 The local CLI and dashboard require no account, telemetry endpoint, hosted backend, or external runtime assets; your AI coding tools and this documentation site have their own network policies. Core parsing, aggregation, reporting, and loopback serving use the Python standard library. Windows additionally needs the data-only `tzdata` package for consistent IANA timezone support.
