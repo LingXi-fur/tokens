@@ -7,7 +7,7 @@ import html
 import math
 from datetime import datetime
 
-from . import config, report_term
+from . import config, report_term, sources
 from .opener import open_path
 
 PERIOD_TITLE = {"day": "每日", "week": "每周", "month": "每月"}
@@ -59,12 +59,7 @@ SERIES = ["#5b8def", "#f0a84b", "#56c596", "#ef6f6d",
           "#9b8cf2", "#4ec9d6", "#e08a6a", "#7ec1e8"]
 
 # 页脚只列出本次实际启用的来源；新增来源时补一行即可。
-SOURCE_PATHS = {
-    "claude": "~/.claude",
-    "gemini": "~/.gemini",
-    "codex": "~/.codex",
-    "opencode": "~/.local/share/opencode",
-}
+SOURCE_PATHS = {source.name: source.docs_path for source in sources.SOURCES}
 
 
 def _footer_paths(sources):
@@ -270,7 +265,7 @@ a{color:var(--accent)}
 """
 
 
-def write_report(mode, rows, focus_date, focus_label, all_sources, lang="zh"):
+def write_report(mode, rows, focus_date, focus_label, all_sources, lang="zh", discovery=None):
     """rows: [(period, summarize)]; all_sources: 本次扫描命中的 source 列表。"""
     t = TEXT.get(lang, TEXT["zh"])
     focus = None
@@ -318,6 +313,8 @@ def write_report(mode, rows, focus_date, focus_label, all_sources, lang="zh"):
     title = t["title"].format(pt=t["period_title"].get(mode, ""), focus=focus_label, date=focus_disp)
     now_str = datetime.now(config.TZ).strftime("%Y-%m-%d %H:%M")
     sub = t["sub"].format(ts=now_str, srcs=", ".join(all_sources) or t["no_data"])
+    if discovery:
+        sub += " · " + discovery
     footer = t["footer"].format(paths=_footer_paths(all_sources))
     period_col = (t["period_title"].get(mode, "") + t["period_col"]
                   if t is TEXT["zh"] else t["period_col"])

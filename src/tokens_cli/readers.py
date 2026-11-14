@@ -34,7 +34,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from . import _claude_json, config
+from . import _claude_json, config, sources
 
 # 缓存结构版本：解析口径变更后旧 cache.json 作废、强制重读。
 #   v1 = 初版（含 Claude 重复 message.id 导致总量夸大）
@@ -276,7 +276,7 @@ MAX_CACHE_BYTES = 512 * 1024 * 1024
 class CollectionIncompleteError(Exception):
     """受控失败码；不得把路径、日志内容或底层异常插入公开错误文本。"""
 
-    SOURCES = frozenset(("claude", "gemini", "codex", "opencode", "all"))
+    SOURCES = frozenset(source.name for source in sources.SOURCES) | {"all"}
     REASONS = frozenset((
         "discovery_failed", "stat_failed", "unsafe_file", "open_failed",
         "read_failed", "file_changed", "line_too_long", "record_limit",
@@ -1173,12 +1173,7 @@ _BUILTIN_CODEX_PARSE = codex_parse
 
 # ---------- 调度 + 缓存 ----------
 
-SOURCES = {
-    "claude": (claude_files, claude_parse),
-    "gemini": (gemini_files, gemini_parse),
-    "codex": (codex_files, codex_parse),
-    "opencode": (opencode_files, opencode_parse),
-}
+SOURCES = {source.name: (source.files, source.parse) for source in sources.SOURCES}
 
 
 def _file_key(path):
@@ -1191,7 +1186,8 @@ def _safe_to_parse(path, st, source=None):
     if os.path.islink(path) or not stat.S_ISREG(st.st_mode):
         return False
     # OpenCode SQLite 含图片 blob，体积与用量无关；按 SQL 投影读取，不整文件载入。
-    if source not in ("claude", "codex", "opencode") and st.st_size > MAX_FILE_BYTES:
+    registered = sources.BY_NAME.get(source)
+    if (registered is None or not registered.size_exempt) and st.st_size > MAX_FILE_BYTES:
         return False
     return True
 
@@ -1267,12 +1263,7 @@ _RECORD_FIELDS = frozenset((
 # billing helper 产出的 schema 1 顶层键；来源规范复用同一 helper，不另造口径。
 _BILLING_DICT_KEYS = frozenset(
     ("v", "present", "raw", "parts", "uncertain", "reasons"))
-_BILLING_VALIDATORS = {
-    "claude": (_CLAUDE_BILLING_KEYS, _claude_billing),
-    "gemini": (_GEMINI_BILLING_KEYS, _gemini_billing),
-    "codex": (_CODEX_BILLING_KEYS, _codex_billing),
-    "opencode": (_OPENCODE_BILLING_KEYS, _opencode_billing),
-}
+_BILLING_VALIDATORS = {source.name: source.billing for source in sources.SOURCES}
 
 
 def _cached_tokens_valid(record, source):

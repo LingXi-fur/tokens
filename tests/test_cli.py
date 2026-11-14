@@ -21,6 +21,14 @@ class CliTests(unittest.TestCase):
         self.output = config.OUT_DIR
         self.summary = config.SESSION_SUMMARY_FILE
         self.timezone = config.TZ
+        resolver = mock.patch(
+            "tokens_cli.cli.source_registry.resolve",
+            side_effect=lambda selected=None: (
+                (list(selected), [], [], False)
+                if selected and "auto" not in selected
+                else (["claude"], [], [], False)))
+        resolver.start()
+        self.addCleanup(resolver.stop)
 
     def tearDown(self):
         config.OUT_DIR = self.output
@@ -118,7 +126,7 @@ class CliTests(unittest.TestCase):
                 mock.patch("tokens_cli.cli.readers.read_all") as read_all:
             result = cli.main(["doctor"])
         self.assertEqual(0, result)
-        collect.assert_called_once_with(sources=None)
+        collect.assert_called_once_with(sources=["claude"])
         print_report.assert_called_once_with(report)
         read_all.assert_not_called()
 

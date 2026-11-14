@@ -2670,7 +2670,7 @@ function renderSnapshotMeta(){
   const detail=document.getElementById('snapshot-detail');
   if(detail)detail.textContent =
     (en?'Generated day ':'生成日 ')+(generatedDay()||(en?'unknown':'未知'))+' ('+(isoDayValid(DATA.calendar_day)?(en?'top-level calendar_day':'顶层 calendar_day'):(en?'generated-date fallback':'generated 日期回退'))+')'+(DATA.anonymized?(en?' · anonymized export (identifiers replaced)':' · 脱敏导出（标识已替换）'):'')+(DATA.range.latest_backend?(en?' · Latest recorded backend in report range: ':' · 报告范围最近记录后端：')+(DATA.range.latest_backend_folded?(en?'other models (folded into Other)':'其他模型（归入 Other）'):DATA.range.latest_backend):'');
-  const sourceNames={claude:'Claude Code',codex:'Codex',gemini:'Gemini CLI',opencode:'OpenCode'};
+  const sourceNames=DATA.source_labels||{claude:'Claude Code',codex:'Codex',gemini:'Gemini CLI',opencode:'OpenCode'};
   const coverage=[];
   if(DATA.source.includes('claude'))coverage.push(en?'Claude Code (includes Claude App Code using the same local logs; counted once)':'Claude Code（含复用同一本地日志的 Claude App Code，仅计一次）');
   if(DATA.source.includes('codex'))coverage.push('Codex');

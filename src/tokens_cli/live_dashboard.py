@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-from . import dashboard_payload, dashboard_wire, readers, report_dashboard
+from . import dashboard_payload, dashboard_wire, readers, report_dashboard, sources as source_registry
 
 
 _SCAN_FAILED_ERROR = (
@@ -25,6 +25,7 @@ _STOP_JOIN_TIMEOUT = 5.0
 _MAX_CLIENT_POLL_SECONDS = 60
 _SCAN_STAGES = ("discovery", "collection", "payload", "encoding")
 _PROGRESS_PUBLISH_SECONDS = 0.25
+_PROGRESS_SOURCES = frozenset(source.name for source in source_registry.SOURCES)
 
 
 class _ScanProgress:
@@ -66,7 +67,7 @@ class _ScanProgress:
         self.flush(force=True)
 
     def observe(self, event, source):
-        if source not in ("claude", "codex", "gemini", "opencode"):
+        if source not in _PROGRESS_SOURCES:
             return
         if event == "discovered":
             self.state["discovered"] += 1
@@ -210,14 +211,15 @@ class LiveDashboard:
         entries = []
         for source in self.sources:
             files_fn, _ = readers.SOURCES[source]
+            strict = source_registry.BY_NAME[source].strict_discovery
             try:
                 paths = files_fn()
             except OSError:
-                if source in ("claude", "codex"):
+                if strict:
                     raise readers.CollectionIncompleteError(source, "discovery_failed") from None
                 paths = []
             for path in paths:
-                if source in ("claude", "codex"):
+                if strict:
                     try:
                         stat_result = os.lstat(path)
                     except OSError:

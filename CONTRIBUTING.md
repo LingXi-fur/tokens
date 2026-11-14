@@ -45,6 +45,15 @@ Codex regressions live in `tests/test_codex_usage.py`. Keep new/legacy mirror ch
 
 Dashboard coverage text must distinguish locally recorded Claude Code / Claude App Code and Codex usage from unknown ordinary Claude chat / Cowork usage. Do not replace unknown tokens with zero, convert subscription utilization into tokens, or claim account-wide completeness. Do not embed event IDs or application-session indexes in exports.
 
+## Adding a new source
+
+Register the tool once in `src/tokens_cli/sources.py`; reader registration, CLI choices, doctor discovery, live snapshot validation, HTML footer paths, quota defaults, and Dashboard labels derive from that registry. Then add a group of synthetic reader tests. Keep these rules:
+
+- The reader may project only token counts, model identity, and timestamps. Do not retain or print message bodies, prompts, tool output, credentials, or unrelated metadata.
+- Missing files, missing tables, malformed rows, unknown fields, and partially written data must be handled explicitly: skip the bad item or raise the existing controlled collection error. Never invent zero usage for a failure.
+- Open user data read-only. Never write, migrate, repair, truncate, or checkpoint the user's logs, SQLite database, cache, or sidecars.
+- A source entry records its label, root path/kind, reader functions, billing validator, documentation path, and capability flags. Add one registry entry plus synthetic fixtures; do not add another hard-coded source list elsewhere.
+
 ## Local artifacts and cleanup
 
 - Keep generated reports in ignored output directories and use only synthetic data for previews, tests, and screenshots. Keep temporary test evidence outside the checkout; never include private output in a package or site build.

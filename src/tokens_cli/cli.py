@@ -6,7 +6,7 @@ import sys
 from datetime import date, datetime, timedelta
 
 from . import (__version__, aggregate, config, demo, doctor, lang as lang_module, live_dashboard,
-               quota, readers, report_dashboard, report_html, report_term)
+               quota, readers, report_dashboard, report_html, report_term, sources as source_registry)
 from .opener import open_url
 
 RANGES = ["day", "week", "month", "all", "dashboard", "demo", "serve", "doctor", "quota"]
@@ -46,8 +46,9 @@ def build_parser():
     parser.add_argument("--days", type=_positive_int, default=14, help="days shown in day mode")
     parser.add_argument("--weeks", type=_positive_int, default=8, help="weeks shown in week mode")
     parser.add_argument("--months", type=_positive_int, default=6, help="months shown in month mode")
-    parser.add_argument("--source", action="append", choices=sorted(readers.SOURCES),
-                        help="log source; repeat to combine sources (default: claude)")
+    parser.add_argument("--source", action="append",
+                        choices=sorted(source_registry.NAMES) + ["auto"],
+                        help="log source; repeat to combine sources (default: auto)")
     parser.add_argument("--html", action="store_true", help="write a static HTML report")
     parser.add_argument("--dashboard", action="store_true", help="write the interactive offline dashboard")
     parser.add_argument("--anonymize", action="store_true",
@@ -138,15 +139,11 @@ def _open_generated(path):
 
 
 def _no_records_message(sources):
-    roots = {
-        "claude": config.CLAUDE_PROJECTS,
-        "gemini": config.GEMINI_TMP,
-        "codex": config.CODEX_SESSIONS,
-        "opencode": config.OPENCODE_DB,
-    }
     print("No supported token logs were found.", file=sys.stderr)
     for source in sources:
-        print(f"  {source}: {roots[source]}", file=sys.stderr)
+        registered = source_registry.BY_NAME.get(source)
+        print(f"  {source}: {registered.root() if registered else 'unknown source'}",
+              file=sys.stderr)
     print(
         "Run `tokens doctor` (or `./run doctor` in a source checkout) "
         "for a source-by-source check.",
@@ -163,15 +160,20 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     _configure(args, parser)
-    sources = args.source or config.DEFAULT_SOURCES
+    selected_sources, detected, skipped, auto_used = source_registry.resolve(
+        args.source or config.DEFAULT_SOURCES)
+    discovery_text = (source_registry.format_detection(detected, skipped, args.lang)
+                      if auto_used else None)
+    if discovery_text and not args.json and args.range != "demo":
+        print(discovery_text)
 
     if args.range == "doctor":
         if not args.models:
-            doctor.print_report(doctor.collect(sources=args.source))
+            doctor.print_report(doctor.collect(sources=selected_sources))
             return 0
         try:
             report = doctor.collect_models(
-                sources=sources,
+                sources=selected_sources,
                 since=args.since,
                 until=args.until,
                 use_cache=not args.no_cache,
@@ -183,6 +185,9 @@ def main(argv=None):
                 file=sys.stderr,
             )
             return 1
+        if auto_used:
+            report["sources_detected"] = [source.name for source in detected]
+            report["sources_skipped"] = skipped
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2))
         else:
@@ -190,10 +195,12 @@ def main(argv=None):
         return 0
 
     if args.range == "quota":
-        quota_sources = args.source or list(quota.DEFAULT_SOURCES)
+        if not selected_sources:
+            _no_records_message(selected_sources)
+            return 1
         try:
             report = quota.collect(
-                sources=quota_sources,
+                sources=selected_sources,
                 use_cache=not args.no_cache,
             )
         except readers.CollectionIncompleteError:
@@ -203,6 +210,9 @@ def main(argv=None):
                 file=sys.stderr,
             )
             return 1
+        if auto_used:
+            report["sources_detected"] = [source.name for source in detected]
+            report["sources_skipped"] = skipped
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2))
         else:
@@ -210,10 +220,13 @@ def main(argv=None):
         return 0
 
     if args.range == "serve":
+        if not selected_sources:
+            _no_records_message(selected_sources)
+            return 1
         try:
             server = live_dashboard.create_server(
                 args.port,
-                sources,
+                selected_sources,
                 since=args.since,
                 until=args.until,
                 anonymize=args.anonymize,
@@ -245,7 +258,9 @@ def main(argv=None):
 
     if args.range == "demo":
         today = datetime.now(config.TZ).date()
-        bundle = demo.build_demo(today=today, sources=args.source)
+        demo_sources = ([name for name in (args.source or []) if name != "auto"]
+                        or list(demo.DEMO_SOURCES))
+        bundle = demo.build_demo(today=today, sources=demo_sources)
         path = report_dashboard.write_dashboard(
             bundle["records"],
             since=args.since or bundle["since"],
@@ -265,8 +280,11 @@ def main(argv=None):
 
     now = datetime.now(config.TZ).date()
     mode = args.range
+    if not selected_sources:
+        _no_records_message(selected_sources)
+        return 1
     try:
-        records = readers.read_all(sources=sources, use_cache=not args.no_cache)
+        records = readers.read_all(sources=selected_sources, use_cache=not args.no_cache)
     except readers.CollectionIncompleteError:
         print(
             "Local log collection is incomplete; no report was written. "
@@ -275,7 +293,7 @@ def main(argv=None):
         )
         return 1
     if not records:
-        _no_records_message(sources)
+        _no_records_message(selected_sources)
         return 1
 
     if args.dashboard or mode == "dashboard":
@@ -283,7 +301,7 @@ def main(argv=None):
             records,
             since=args.since,
             until=args.until,
-            sources=sources,
+            sources=selected_sources,
             anonymize=args.anonymize,
         )
         print(f"Dashboard: {path}")
@@ -311,7 +329,8 @@ def main(argv=None):
     report_term.print_report(mode, rows, focus, label, lang=args.lang)
 
     if args.html:
-        path = report_html.write_report(mode, rows, focus, label, all_sources, lang=args.lang)
+        path = report_html.write_report(mode, rows, focus, label, all_sources,
+                                        lang=args.lang, discovery=discovery_text)
         print(f"HTML report: {path}")
         if args.open:
             _open_generated(path)
