@@ -1,5 +1,8 @@
 import http.client
+import io
 import json
+import socket
+import struct
 import threading
 import time
 import tempfile
@@ -226,6 +229,91 @@ class LiveDashboardTests(unittest.TestCase):
             while not errors and time.monotonic() < deadline:
                 time.sleep(0.01)
         self.assertEqual(1, len(errors))
+
+    def test_concurrent_requests_never_scan_or_rebuild(self):
+        """20 threads x 50 requests per endpoint must read only the snapshot."""
+        read_all_patcher = mock.patch(
+            "tokens_cli.live_dashboard.readers.read_all",
+            return_value=[self.record("2026-08-25")],
+        )
+        read_all = read_all_patcher.start()
+        self.addCleanup(read_all_patcher.stop)
+        dashboard = live_dashboard.LiveDashboard(["claude"], use_cache=False)
+        with mock.patch.object(dashboard, "_file_signature", return_value=()), \
+                mock.patch(
+                    "tokens_cli.live_dashboard.dashboard_payload.build_payload",
+                    wraps=dashboard_payload.build_payload,
+                ) as build_payload:
+            self.assertTrue(dashboard.refresh(force=True))
+            read_all.reset_mock()
+            build_payload.reset_mock()
+            dashboard.start = lambda interval: None
+            server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            self.addCleanup(server.server_close)
+            self.addCleanup(server.shutdown)
+            self.addCleanup(thread.join, 2)
+
+            paths = (
+                "/",
+                "/api/status",
+                "/api/snapshot?since=2026-08-01&until=2026-08-31",
+            )
+            barrier = threading.Barrier(20)
+            errors = []
+            started = time.perf_counter()
+
+            def worker(index):
+                barrier.wait()
+                for request_index in range(50):
+                    for path in paths:
+                        try:
+                            connection = http.client.HTTPConnection(
+                                "127.0.0.1", server.server_port, timeout=5)
+                            connection.request("GET", path)
+                            response = connection.getresponse()
+                            response.read()
+                            connection.close()
+                        except Exception as exc:  # pragma: no cover - diagnostic
+                            errors.append(exc)
+
+            workers = [threading.Thread(target=worker, args=(index,))
+                       for index in range(20)]
+            for worker_thread in workers:
+                worker_thread.start()
+            for worker_thread in workers:
+                worker_thread.join(30)
+            elapsed = time.perf_counter() - started
+
+        self.assertEqual([], errors)
+        self.assertLess(elapsed, 30)
+        self.assertLessEqual(read_all.call_count, 1)
+        self.assertLessEqual(build_payload.call_count, 1)
+        print(f"serve concurrency: read_all={read_all.call_count} "
+              f"build_payload={build_payload.call_count} elapsed={elapsed:.2f}s")
+
+    def test_client_disconnect_mid_response_has_no_traceback(self):
+        dashboard = _FakeDashboard()
+        dashboard.page = lambda interval: "x" * 2_000_000
+        server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.addCleanup(thread.join, 2)
+        stderr = io.StringIO()
+        with self.assertLogs("tokens.live", level="DEBUG") as logs, \
+                mock.patch("sys.stderr", stderr):
+            connection = socket.create_connection(("127.0.0.1", server.server_port), timeout=2)
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                  struct.pack("ii", 1, 0))
+            connection.sendall(
+                f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{server.server_port}\r\n\r\n".encode())
+            connection.close()
+            time.sleep(0.3)
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertTrue(any("client disconnected" in line for line in logs.output))
 
     def test_default_server_interval_is_five_minutes(self):
         with mock.patch(

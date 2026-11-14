@@ -6,6 +6,7 @@ recently published in-memory snapshot under a short state lock, so ``/`` and
 ``/api/snapshot`` stay fast even while a scan is running or blocked.
 """
 import json
+import logging
 import os
 import sys
 import threading
@@ -26,6 +27,8 @@ _MAX_CLIENT_POLL_SECONDS = 60
 _SCAN_STAGES = ("discovery", "collection", "payload", "encoding")
 _PROGRESS_PUBLISH_SECONDS = 0.25
 _PROGRESS_SOURCES = frozenset(source.name for source in source_registry.SOURCES)
+_LOGGER = logging.getLogger("tokens.live")
+_CLIENT_DISCONNECTS = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)
 
 
 class _ScanProgress:
@@ -418,12 +421,20 @@ class LiveDashboard:
 class LiveDashboardServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 128
 
     def __init__(self, port, dashboard, interval):
         self.dashboard = dashboard
         self.interval = interval
         super().__init__(("127.0.0.1", port), LiveDashboardHandler)
         dashboard.start(interval)
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, _CLIENT_DISCONNECTS):
+            _LOGGER.debug("client disconnected: %s", type(exc).__name__)
+            return
+        super().handle_error(request, client_address)
 
     def server_close(self):
         try:
@@ -461,8 +472,15 @@ class LiveDashboardHandler(BaseHTTPRequestHandler):
         # this boundary without masking any other error.
         try:
             self._handle_get()
-        except (BrokenPipeError, ConnectionResetError):
+        except _CLIENT_DISCONNECTS as exc:
+            _LOGGER.debug("client disconnected during request: %s", type(exc).__name__)
             return
+
+    def finish(self):
+        try:
+            super().finish()
+        except _CLIENT_DISCONNECTS as exc:
+            _LOGGER.debug("client disconnected during flush: %s", type(exc).__name__)
 
     def _handle_get(self):
         if not self._allowed_request():

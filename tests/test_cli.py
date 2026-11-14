@@ -239,6 +239,26 @@ class CliTests(unittest.TestCase):
 
     @mock.patch("tokens_cli.cli.open_url", return_value=True)
     @mock.patch("tokens_cli.cli.live_dashboard.create_server")
+    def test_serve_prints_auto_discovery_line(self, create_server, _open_url):
+        server = mock.Mock()
+        server.server_address = ("127.0.0.1", 43123)
+        server.serve_forever.side_effect = KeyboardInterrupt
+        create_server.return_value = server
+        stdout = io.StringIO()
+        with mock.patch(
+                "tokens_cli.cli.source_registry.resolve",
+                return_value=(["codex"], [], [], True)), \
+                mock.patch(
+                    "tokens_cli.cli.source_registry.format_detection",
+                    return_value="Auto-detected sources: Codex"), \
+                mock.patch("sys.stdout", stdout):
+            result = cli.main(["serve"])
+        self.assertEqual(0, result)
+        self.assertIn("Auto-detected sources: Codex", stdout.getvalue())
+        self.assertIn("Live Dashboard:", stdout.getvalue())
+
+    @mock.patch("tokens_cli.cli.open_url", return_value=True)
+    @mock.patch("tokens_cli.cli.live_dashboard.create_server")
     def test_live_dashboard_forwards_options_and_opens_loopback_url(self, create_server, open_url):
         server = mock.Mock()
         server.server_address = ("127.0.0.1", 43123)
