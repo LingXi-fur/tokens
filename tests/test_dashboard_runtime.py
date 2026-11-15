@@ -4109,6 +4109,54 @@ class DashboardRuntimeTests(unittest.TestCase):
             finally:
                 context.close()
 
+    def test_configured_sources_line_lists_all_five_registered_sources(self):
+        records = [
+            {
+                "source": source,
+                "ts": "2026-10-15T10:00:00Z",
+                "date": "2026-10-15",
+                "model": f"model-{source}",
+                "input": 100,
+                "output": 50,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 150,
+                "session": f"s-{source}",
+                "cwd": "/tmp/proj",
+            }
+            for source in ("claude", "codex", "gemini", "opencode", "antigravity")
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            html_path = Path(tmpdir) / "five-sources.html"
+            payload = dashboard_payload.build_payload(
+                records,
+                sources=["claude", "codex", "gemini", "opencode", "antigravity"],
+            )
+            html_path.write_text(
+                report_dashboard.render_dashboard(
+                    dashboard_wire.encode_payload(payload),
+                    language="zh",
+                ),
+                encoding="utf-8",
+            )
+            context, page, page_errors, console_errors = self.new_page(path=html_path)
+            try:
+                zh_line = page.locator("#source-coverage").inner_text()
+                self.assertEqual(
+                    "已启用本地来源：Claude Code（含复用同一本地日志的 Claude App Code，仅计一次） / Codex / Gemini CLI / OpenCode / Antigravity",
+                    zh_line,
+                )
+                page.evaluate("applyLanguage('en', false)")
+                en_line = page.locator("#source-coverage").inner_text()
+                self.assertEqual(
+                    "Configured local sources: Claude Code (includes Claude App Code using the same local logs; counted once) / Codex / Gemini CLI / OpenCode / Antigravity",
+                    en_line,
+                )
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
 
 if __name__ == "__main__":
     unittest.main()
