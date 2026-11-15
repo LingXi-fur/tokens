@@ -94,58 +94,59 @@ class DashboardModelColorTests(unittest.TestCase):
                     after["colors"][theme][model],
                 )
 
-    def test_eighth_and_later_models_fold_into_other_before_all_aggregation(self):
+    def test_ninth_and_later_models_fold_into_other_before_all_aggregation(self):
         records = [
             self.record(f"model-{index}", f"2026-07-{index + 1:02d}", index + 1)
-            for index in range(9)
+            for index in range(10)
         ]
         payload = self.payload(records)
 
-        # All-time usage now decides the registry: the seven heaviest identities
+        # All-time usage decides the registry: the eight heaviest identities
         # stay first-class and only the two lightest fold into Other.
-        retained = {f"model-{index}" for index in range(2, 9)}
+        retained = {f"model-{index}" for index in range(2, 10)}
         overflow = {"model-0", "model-1"}
         self.assertEqual(retained | {dashboard_payload.OTHER_MODEL}, set(payload["models"]))
-        self.assertEqual(8, len(payload["models"]))
+        self.assertEqual(9, len(payload["models"]))
         self.assertEqual("Other", payload["pretty"][dashboard_payload.OTHER_MODEL])
         self.assertEqual(3, next(
             row["models"][dashboard_payload.OTHER_MODEL]
             for row in payload["month"]
         ))
-        self.assertEqual("model-8", payload["range"]["latest_backend"])
+        self.assertEqual("model-9", payload["range"]["latest_backend"])
         self.assertFalse(payload["range"]["latest_backend_folded"])
 
         encoded = json.dumps(payload, sort_keys=True)
         for model in overflow:
             self.assertNotIn(f'"{model}"', encoded)
 
-        for theme, palette in (
-            ("light", dashboard_payload.LIGHT_PALETTE),
-            ("dark", dashboard_payload.DARK_PALETTE),
+        for theme, palette, other_color in (
+            ("light", dashboard_payload.LIGHT_PALETTE, dashboard_payload.LIGHT_OTHER_COLOR),
+            ("dark", dashboard_payload.DARK_PALETTE, dashboard_payload.DARK_OTHER_COLOR),
         ):
             self.assertEqual(
-                palette[dashboard_payload.MODEL_IDENTITY_CAPACITY],
+                other_color,
                 payload["colors"][theme][dashboard_payload.OTHER_MODEL],
             )
+            self.assertNotIn(other_color, palette)
             self.assertEqual(len(payload["models"]), len(set(payload["colors"][theme].values())))
 
     def test_recent_backend_keeps_one_seat_when_registry_overflows(self):
         records = [
             self.record(f"model-{index}", f"2026-07-{index + 1:02d}", 100 - index * 10)
-            for index in range(7)
+            for index in range(8)
         ] + [
-            self.record("gpt-5.6-sol", "2026-07-08", 5),
-            self.record("gpt-6-sol", "2026-07-09", 3),
+            self.record("gpt-5.6-sol", "2026-07-09", 5),
+            self.record("gpt-6-sol", "2026-07-10", 3),
         ]
         payload = self.payload(records)
         reversed_payload = self.payload(list(reversed(records)))
 
         # The lightest-but-latest backend is rescued: it claims a seat and the
-        # weakest survivor (model-6 = 40) folds into Other.
+        # weakest survivor (model-7 = 30) folds into Other.
         self.assertIn("gpt-6-sol", payload["models"])
         self.assertNotIn("gpt-5.6-sol", payload["models"])
-        self.assertNotIn("model-6", payload["models"])
-        self.assertEqual(45, next(
+        self.assertNotIn("model-7", payload["models"])
+        self.assertEqual(35, next(
             row["models"][dashboard_payload.OTHER_MODEL] for row in payload["month"]
         ))
         self.assertEqual(payload["colors"], reversed_payload["colors"])
@@ -153,24 +154,24 @@ class DashboardModelColorTests(unittest.TestCase):
         self.assertFalse(payload["range"]["latest_backend_folded"])
         for theme in ("light", "dark"):
             self.assertEqual(
-                getattr(dashboard_payload, theme.upper() + "_PALETTE")[6],
+                getattr(dashboard_payload, theme.upper() + "_PALETTE")[7],
                 payload["colors"][theme]["gpt-6-sol"],
             )
 
     def test_recent_backend_uses_report_day_even_when_timestamp_missing(self):
         records = [
             self.record(f"model-{index}", f"2026-07-{index + 1:02d}", 100 - index * 10)
-            for index in range(7)
+            for index in range(8)
         ]
-        previous = self.record("model-older", "2026-07-08", 30)
-        recent = self.record("gpt-6-sol", "2026-07-09", 7)
+        previous = self.record("model-older", "2026-07-09", 20)
+        recent = self.record("gpt-6-sol", "2026-07-10", 7)
         recent["ts"] = "invalid"
         payload = self.payload(records + [previous, recent])
 
         # Day ordering alone lets the untimed newest backend rescue a seat.
         self.assertIn("gpt-6-sol", payload["models"])
         self.assertNotIn("model-older", payload["models"])
-        self.assertNotIn("model-6", payload["models"])
+        self.assertNotIn("model-7", payload["models"])
         self.assertEqual("gpt-6-sol", payload["range"]["latest_backend"])
         self.assertFalse(payload["range"]["latest_backend_folded"])
 
@@ -189,7 +190,7 @@ class DashboardModelColorTests(unittest.TestCase):
             self.record("latest-backend", "2026-10-17", 1),
         ]
         payload = self.payload(records)
-        self.assertEqual(8, len(payload["models"]))
+        self.assertEqual(9, len(payload["models"]))
         for name in ("glm-5.3", "glm-5.3-flash", "latest-backend"):
             self.assertIn(name, payload["models"])
         yesterday = next(row for row in payload["day"] if row["period"] == "2026-10-16")
@@ -200,7 +201,7 @@ class DashboardModelColorTests(unittest.TestCase):
         self.assertEqual(payload["colors"], reverse["colors"])
         self.assertEqual(payload["day"], reverse["day"])
         for theme in ("light", "dark"):
-            self.assertEqual(8, len(set(payload["colors"][theme].values())))
+            self.assertEqual(9, len(set(payload["colors"][theme].values())))
 
     def test_glm_seats_only_use_exact_recorded_names(self):
         payload = self.payload([self.record("glm-5.3-preview", "2026-10-16", 5)])
@@ -220,9 +221,9 @@ class DashboardModelColorTests(unittest.TestCase):
     def test_overflow_names_keep_daily_totals_only_in_non_anonymized_reports(self):
         records = [
             self.record(f"model-{index}", "2026-07-01", (index + 1) * 100, index)
-            for index in range(7)
+            for index in range(8)
         ] + [
-            self.record("model-6", "2026-07-03", 1),
+            self.record("model-7", "2026-07-03", 1),
             self.record("other", "2026-07-01", 3),
             self.record("unknown", "2026-07-01", 4, 21),
             self.record("overflow-name", "2026-07-01", 11, 20),
@@ -232,7 +233,7 @@ class DashboardModelColorTests(unittest.TestCase):
         forward = dashboard_payload.build_payload(records)
         reverse = dashboard_payload.build_payload(list(reversed(records)))
         self.assertEqual(forward["other_models"], reverse["other_models"])
-        self.assertEqual(8, len(forward["models"]))
+        self.assertEqual(9, len(forward["models"]))
         self.assertNotIn("overflow-name", forward["models"])
         self.assertEqual([
             {"day": "2026-07-01", "models": {"overflow-name": 11, "unknown": 4}},
@@ -282,21 +283,21 @@ class DashboardModelColorTests(unittest.TestCase):
         ]
         payload = self.payload(records)
 
-        # Seven retained identities plus the Other bucket.
-        self.assertEqual(8, len(payload["models"]))
+        # Eight retained identities plus the Other bucket.
+        self.assertEqual(9, len(payload["models"]))
         # Both Sol generations survive on their own; neither is folded away.
         self.assertIn("gpt-6-sol", payload["models"])
         self.assertIn("gpt-6.1-sol", payload["models"])
         light = payload["colors"]["light"]
-        self.assertEqual(8, len(set(light.values())))
+        self.assertEqual(9, len(set(light.values())))
         self.assertNotEqual(light["gpt-6-sol"], light["gpt-6.1-sol"])
         self.assertNotEqual(light["gpt-6.1-sol"], light[dashboard_payload.OTHER_MODEL])
         self.assertEqual(
-            dashboard_payload.LIGHT_PALETTE[dashboard_payload.MODEL_IDENTITY_CAPACITY],
+            dashboard_payload.LIGHT_OTHER_COLOR,
             light[dashboard_payload.OTHER_MODEL],
         )
-        # The four lightest identities fold into Other without losing a token.
-        self.assertEqual(46, next(
+        # The three lightest identities fold into Other without losing a token.
+        self.assertEqual(33, next(
             row["models"][dashboard_payload.OTHER_MODEL] for row in payload["month"]
         ))
         for row in payload["month"]:
@@ -309,7 +310,7 @@ class DashboardModelColorTests(unittest.TestCase):
     def test_overflow_names_are_gated_by_anonymization(self):
         records = [
             self.record(f"model-{index}", "2026-07-01", 10 + index, index)
-            for index in range(9)
+            for index in range(10)
         ]
         public = dashboard_payload.build_payload(records)
         anonymized = self.payload(records)
@@ -367,7 +368,7 @@ class DashboardModelColorTests(unittest.TestCase):
             self.record("gemini-4-argon", "2026-07-05", 4_000, 2, source="antigravity"),
         ]
         payload = dashboard_payload.build_payload(records)
-        self.assertEqual(8, len(payload["models"]))
+        self.assertEqual(9, len(payload["models"]))
         for guaranteed in (
             "claude-opus-4-1",
             "gpt-5-codex",
@@ -391,11 +392,11 @@ class DashboardModelColorTests(unittest.TestCase):
     def test_more_than_capacity_sources_prioritizes_higher_total_sources(self):
         records = [
             self.record(f"model-src-{idx}", f"2026-07-{idx + 1:02d}", (idx + 1) * 100, source=f"src-{idx}")
-            for idx in range(9)
+            for idx in range(10)
         ]
         payload = self.payload(records)
-        self.assertEqual(8, len(payload["models"]))
-        for idx in range(2, 9):
+        self.assertEqual(9, len(payload["models"]))
+        for idx in range(2, 10):
             self.assertIn(f"model-src-{idx}", payload["models"])
         self.assertIn(dashboard_payload.OTHER_MODEL, payload["models"])
         self.assertNotIn("model-src-0", payload["models"])

@@ -104,9 +104,15 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         self.assertIn("今日", info["legend"])
 
         # Isolate one model through the real filter chips: the race narrows to that model only.
-        model = page.evaluate("() => Object.keys(DATA.day.find(r=>r.period===generatedDay()).models)[0]")
+        model = page.evaluate("() => Object.keys(DATA.day.find(r=>r.period===generatedDay()).models).find(m=>m!=='other')")
         for other in page.evaluate("m => DATA.models.filter(x=>x!==m)", model):
-            page.locator("#filters label.chip", has=page.locator(f'input[value="{other}"]')).click()
+            if other == "other" and page.locator("#more-models-dropdown").count():
+                page.locator("#more-models-dropdown summary").click()
+                for cb in page.locator('#more-models-dropdown input[data-other-filter]').all():
+                    if cb.is_checked():
+                        cb.uncheck()
+            else:
+                page.locator("#filters label.chip", has=page.locator(f'input[value="{other}"]')).click()
         narrowed = page.evaluate("""m => ({race:insightState.race&&insightState.race.today.total,
             expected:DATA.day.find(r=>r.period===generatedDay()).models[m]||0})""", model)
         self.assertEqual(narrowed["expected"], narrowed["race"])

@@ -19,7 +19,9 @@ DARK_PALETTE = [
     "#3987e5", "#d95926", "#199e70", "#c98500",
     "#d55181", "#008300", "#9085e9", "#e66767",
 ]
-MODEL_IDENTITY_CAPACITY = 7
+LIGHT_OTHER_COLOR = "#646973"
+DARK_OTHER_COLOR = "#8b929e"
+MODEL_IDENTITY_CAPACITY = 8
 # Keep explicitly compared GLM variants independently filterable when present.
 COMPARISON_MODELS = ("glm-5.3", "glm-5.3-flash")
 OTHER_MODEL = "other"
@@ -665,11 +667,19 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         pretty[OTHER_MODEL] = "Other"
     colors = {
         "light": {
-            model: LIGHT_PALETTE[model_slots[model]]
+            model: (
+                LIGHT_OTHER_COLOR
+                if model == OTHER_MODEL
+                else LIGHT_PALETTE[model_slots[model]]
+            )
             for model in models
         },
         "dark": {
-            model: DARK_PALETTE[model_slots[model]]
+            model: (
+                DARK_OTHER_COLOR
+                if model == OTHER_MODEL
+                else DARK_PALETTE[model_slots[model]]
+            )
             for model in models
         },
     }

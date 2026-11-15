@@ -546,17 +546,17 @@ class CostPayloadTests(unittest.TestCase):
         self.assertEqual(sum(row[2]), row[3])
 
     def test_overflow_models_stay_pricable_and_distinct(self):
-        # 超过 identity 容量（7）：overflow 保留原始模型名、identity='other'、
+        # 超过 identity 容量（8）：overflow 保留原始模型名、identity='other'、
         # hidden=False，可独立定价；相近名称不合并。token 总量区分排名。
         records = [
             _record("2026-07-01", "priv-%d" % i, 10 * (i + 1),
                     _trusted([10 * (i + 1), 0, 0, 0, 0]))
-            for i in range(9)
+            for i in range(10)
         ]
         cost = self.build(records)["cost"]
         catalog = {(entry["source"], entry["model"]): entry
                    for entry in cost["models"]}
-        self.assertEqual(9, len(cost["models"]))
+        self.assertEqual(10, len(cost["models"]))
         # 用量最低的 priv-0/priv-1 溢出为 identity='other'，但目录项独立。
         overflow = sorted(name for name in catalog
                           if catalog[name]["identity"] == "other")
@@ -565,7 +565,7 @@ class CostPayloadTests(unittest.TestCase):
             entry = catalog[key]
             self.assertFalse(entry["hidden"])
             self.assertNotEqual("other", entry["model"])
-        for i in range(2, 9):
+        for i in range(2, 10):
             entry = catalog[("claude", "priv-%d" % i)]
             self.assertFalse(entry["hidden"])
             self.assertEqual("priv-%d" % i, entry["identity"])
@@ -582,13 +582,13 @@ class CostPayloadTests(unittest.TestCase):
         records = [
             _record("2026-07-01", "priv-%d" % i, 10 * (i + 1),
                     _trusted([10 * (i + 1), 0, 0, 0, 0]))
-            for i in range(9)
+            for i in range(10)
         ]
         records.append(_record("2026-07-01", "x-model", 4,
                                _trusted([4, 0, 0, 0, 0]), source="codex"))
         cost = self.build(records, anonymize=True)["cost"]
         encoded = json.dumps(cost, ensure_ascii=False)
-        # registry 全局容量 7：priv-8..priv-2 按用量入围后，x-model 以最近活跃
+        # registry 全局容量 8：priv-9..priv-2 按用量入围后，x-model 以最近活跃
         # 提名顶替 priv-2 → 溢出为 priv-0/priv-1/priv-2，被隐藏的原名不得出现。
         for name in ("priv-0", "priv-1", "priv-2"):
             self.assertNotIn(name, encoded)
@@ -596,8 +596,8 @@ class CostPayloadTests(unittest.TestCase):
                   for entry in cost["models"] if entry["hidden"]]
         self.assertEqual([("claude", "other")], hidden)
         visible = [entry for entry in cost["models"] if not entry["hidden"]]
-        # 匿名下保留原名可见（6 个 claude + codex x-model），隐藏桶合并 3 条记录。
-        self.assertEqual(7, len(visible))
+        # 匿名下保留原名可见（7 个 claude + codex x-model），隐藏桶合并 3 条记录。
+        self.assertEqual(8, len(visible))
         self.assertIn(
             ("codex", "x-model"),
             [(entry["source"], entry["model"]) for entry in visible])
