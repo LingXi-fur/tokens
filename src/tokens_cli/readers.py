@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from . import _claude_json, config, sources
+from . import sources as _source_registry
 
 # 缓存结构版本：解析口径变更后旧 cache.json 作废、强制重读。
 #   v1 = 初版（含 Claude 重复 message.id 导致总量夸大）
@@ -596,6 +597,26 @@ def _opencode_billing(tokens):
     return _billing_result(present, values, parts, reasons)
 
 
+_ANTIGRAVITY_BILLING_KEYS = {
+    "input": "input",
+    "output": "output",
+    "cache_read": "cache_read",
+}
+
+
+def _antigravity_billing(tokens):
+    present, values = _field_evidence(tokens, _ANTIGRAVITY_BILLING_KEYS)
+    reasons = []
+    _missing_or_invalid(present, values, ("input", "output"), reasons)
+    if present["cache_read"] and values["cache_read"] is None:
+        reasons.append("invalid_cache_read")
+    parts = None
+    if not reasons:
+        cache_read = values["cache_read"] if present["cache_read"] else 0
+        parts = [values["input"], values["output"], cache_read, 0, 0]
+    return _billing_result(present, values, parts, reasons)
+
+
 # ---------- Optional CCR model resolution ----------
 # Claude logs may contain request aliases (for example a Claude tier name) or
 # an actual backend name. A local CCR router can resolve aliases for its owner.
@@ -1154,6 +1175,18 @@ def _opencode_wal_key(path):
     except OSError:
         return "nowal"
     return f"{st.st_mtime_ns}|{st.st_size}"
+
+
+# ---------- Antigravity ----------
+
+def antigravity_files():
+    from . import antigravity_usage
+    return antigravity_usage.discover()
+
+
+def antigravity_parse(path):
+    from . import antigravity_usage
+    return antigravity_usage.parse(path)
 
 
 # ---------- Codex ----------
@@ -1760,7 +1793,8 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                     notify("skipped", src)
                     continue
                 key = f"{st.st_mtime_ns}|{st.st_size}"
-                if src == "opencode":
+                source_meta = _source_registry.BY_NAME.get(src)
+                if source_meta is not None and source_meta.sqlite_wal:
                     key += "|wal:" + _opencode_wal_key(path)
                 ckey = src + "::" + path
                 seen_keys.add(ckey)

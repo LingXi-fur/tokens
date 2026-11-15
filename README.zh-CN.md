@@ -201,6 +201,7 @@ Token 增减只描述用量变化，不代表生产力或代码质量。Cache Re
 | Gemini CLI | `~/.gemini/tmp/*/chats/session-*.json` | 通常无 | 有 | 有来源 `tokens.total` 时优先使用。 |
 | Codex | `~/.codex/{sessions,archived_sessions}/**/rollout-*.jsonl[.zst]` | 通常无 | 通常无 | cached input 已包含在 input 中，reasoning 已包含在 output 中，均不重复相加；压缩归档需要本机已有 `zstd` 可执行文件。 |
 | OpenCode | `~/.local/share/opencode/opencode.db`（SQLite，遵循 `XDG_DATA_HOME`） | 有 | 有 | 总量为 input + output + reasoning + cache read + cache write；OpenCode 的 input 不含缓存、output 不含 reasoning。只读打开，只查询 token、模型与时间字段，从不读取消息正文。 |
+| Antigravity | `~/.gemini/antigravity/conversations/*.db`（SQLite，可通过 `TOKENS_ANTIGRAVITY_DIR` 覆盖） | 无 | 有 | 总量为 input + output + cache read。只读打开，只取 token、模型与时间字段，从不读取对话正文或摘要库。基于未公开的私有格式，应用升级后可能需要同步更新读取器。 |
 
 默认只扫描 Claude。重复指定 `--source` 可组合来源：
 

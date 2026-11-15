@@ -222,6 +222,14 @@ class LiveDashboard:
                     raise readers.CollectionIncompleteError(source, "discovery_failed") from None
                 paths = []
             for path in paths:
+                wal_sig = None
+                source_meta = source_registry.BY_NAME.get(source)
+                if source_meta is not None and source_meta.sqlite_wal:
+                    try:
+                        wal_st = os.stat(path + "-wal")
+                        wal_sig = (wal_st.st_mtime_ns, wal_st.st_size)
+                    except OSError:
+                        wal_sig = None
                 if strict:
                     try:
                         stat_result = os.lstat(path)
@@ -233,7 +241,8 @@ class LiveDashboard:
                                     stat_result.st_size, stat_result.st_dev,
                                     stat_result.st_ino, stat_result.st_mode,
                                     stat_result.st_ctime_ns,
-                                    readers._safe_to_parse(path, stat_result, source=source)))
+                                    readers._safe_to_parse(path, stat_result, source=source),
+                                    wal_sig))
                     continue
                 try:
                     stat_result = os.stat(path)
@@ -241,7 +250,7 @@ class LiveDashboard:
                     continue
                 if not readers._safe_to_parse(path, stat_result, source=source):
                     continue
-                entries.append((source, path, stat_result.st_mtime_ns, stat_result.st_size))
+                entries.append((source, path, stat_result.st_mtime_ns, stat_result.st_size, wal_sig))
         return tuple(sorted(entries))
 
     def refresh(self, force=False):

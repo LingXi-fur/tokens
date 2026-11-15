@@ -133,11 +133,36 @@ class AntigravityUsageTests(unittest.TestCase):
             self.assertEqual(rec["cache_write"], 0)
             self.assertEqual(rec["total"], 120 + 45 + 800)
             self.assertEqual(rec["session"], "cas-xyz")
-            self.assertIsNone(rec["cwd"])
-            self.assertIsNone(rec["billing"])
+            self.assertNotIn("cwd", rec)
+            self.assertIsInstance(rec["billing"], dict)
+            self.assertEqual(rec["billing"]["parts"], [120, 45, 800, 0, 0])
+            self.assertFalse(rec["billing"]["uncertain"])
             self.assertEqual(rec["ts"], "2026-11-13T20:00:00Z")
             self.assertRegex(rec["date"], r"^\d{4}-\d{2}-\d{2}$")
             self.assertEqual(antigravity_usage.MISSING_TIME_COUNT, 0)
+
+    def test_skips_zero_usage_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "zero.db")
+            zero = _make_gen_data(
+                model=None, inp=0, outp=0, cache_read=0,
+                thought_split=0, text_split=0, request_id="r-zero", last_step_index="0",
+            )
+            nonzero = _make_gen_data(
+                model="gemini-4-hydrogen", inp=10, outp=5, cache_read=0,
+                request_id="r-ok", last_step_index="0",
+            )
+            con = _create_db(
+                db_path,
+                steps=[(0, _make_step_metadata(1794600000))],
+                gens=[(0, zero), (1, nonzero)],
+            )
+            con.close()
+
+            records = antigravity_usage.parse(db_path)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["model"], "gemini-4-hydrogen")
+            self.assertEqual(records[0]["total"], 15)
 
     def test_missing_model_falls_back_to_antigravity_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -278,6 +303,54 @@ class AntigravityUsageTests(unittest.TestCase):
             joined = " ".join(executed_sql).lower()
             for forbidden in ("step_payload", "render_info", "task_details", "select *"):
                 self.assertNotIn(forbidden, joined)
+
+    def test_cache_roundtrip_and_wal_invalidation(self):
+        from tokens_cli import config, live_dashboard, readers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ag_dir = os.path.join(tmp, "ag")
+            cache_dir = os.path.join(tmp, "cache")
+            os.makedirs(ag_dir, exist_ok=True)
+            os.makedirs(cache_dir, exist_ok=True)
+            db_path = os.path.join(ag_dir, "conv.db")
+            con = _create_db(
+                db_path,
+                steps=[(0, _make_step_metadata(1794600000))],
+                gens=[(0, _make_gen_data(inp=50, outp=10, cache_read=40, request_id="r1", last_step_index="0"))],
+                wal=True,
+            )
+
+            try:
+                with mock.patch.dict(os.environ, {"TOKENS_ANTIGRAVITY_DIR": ag_dir}), \
+                     mock.patch.object(config, "CACHE_DIR", cache_dir), \
+                     mock.patch.object(config, "CACHE_FILE", os.path.join(cache_dir, "records.json")):
+                    first = readers.read_all(sources=["antigravity"], use_cache=True)
+                    self.assertEqual(len(first), 1)
+                    self.assertNotIn("cwd", first[0])
+                    self.assertTrue(readers._cached_records_valid(first, "antigravity"))
+
+                    # Second call must hit cache without calling antigravity_usage.parse
+                    with mock.patch("tokens_cli.antigravity_usage.parse", side_effect=AssertionError("cache miss")):
+                        second = readers.read_all(sources=["antigravity"], use_cache=True)
+                    self.assertEqual(second, first)
+
+                    poller = live_dashboard.LiveDashboard(["antigravity"], use_cache=False)
+                    sig_before = poller._file_signature()
+
+                    # Append a new record via WAL
+                    new_data = _make_gen_data(inp=80, outp=20, cache_read=0, request_id="r2", last_step_index="0")
+                    con.execute(
+                        "INSERT INTO gen_metadata (idx, data, size) VALUES (?, ?, ?)",
+                        (1, new_data, len(new_data)),
+                    )
+                    con.commit()
+                    sig_after = poller._file_signature()
+                    self.assertNotEqual(sig_before, sig_after)
+
+                    third = readers.read_all(sources=["antigravity"], use_cache=True)
+                    self.assertEqual(len(third), 2)
+            finally:
+                con.close()
 
 
 if __name__ == "__main__":

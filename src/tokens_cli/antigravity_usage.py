@@ -249,6 +249,10 @@ def parse(path: str) -> list[dict]:
         if parsed is None:
             continue
 
+        inp, outp, cache_read = parsed["usage"]
+        if inp + outp + cache_read == 0:
+            continue
+
         req_id = parsed["request_id"]
         if req_id is not None:
             if req_id in seen_requests:
@@ -274,7 +278,11 @@ def parse(path: str) -> list[dict]:
             MISSING_TIME_COUNT += 1
             continue
 
-        inp, outp, cache_read = parsed["usage"]
+        billing = readers._antigravity_billing({
+            "input": inp,
+            "output": outp,
+            "cache_read": cache_read,
+        })
         out.append({
             "source": "antigravity",
             "ts": ts,
@@ -286,8 +294,7 @@ def parse(path: str) -> list[dict]:
             "cache_write": 0,
             "total": inp + outp + cache_read,
             "session": parsed["cascade_id"],
-            "cwd": None,
-            "billing": None,
+            "billing": billing,
         })
 
     return out

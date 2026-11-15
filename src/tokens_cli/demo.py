@@ -8,13 +8,14 @@ from . import config, readers
 
 DEMO_DAYS = 91
 DEMO_SEED = 0x70C3A
-DEMO_SOURCES = ("claude", "gemini", "codex", "opencode")
+DEMO_SOURCES = ("claude", "gemini", "codex", "opencode", "antigravity")
 
 _MODELS = {
     "claude": ("claude-sonnet-4-5", "claude-opus-4-1"),
     "gemini": ("gemini-2.5-pro", "gemini-2.5-flash"),
     "codex": ("gpt-5-codex", "gpt-5-mini"),
     "opencode": ("deepseek-v4.1-flash", "kimi-k2.6"),
+    "antigravity": ("gemini-3-pro", "gemini-3-flash"),
 }
 _PROJECTS = (
     "pixel-garden",
