@@ -2,7 +2,7 @@ import csv
 import io
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -184,9 +184,9 @@ class DashboardRuntimeTests(unittest.TestCase):
         cls._overflow_path = Path(cls._tmp.name) / "synthetic-dashboard-other.html"
         overflow_records = [
             interval_record("2026-01-01", f"model-{index}", 200, f"synthetic-base-{index}")
-            for index in range(7)
+            for index in range(8)
         ] + [
-            interval_record("2026-02-05", "model-6", 1, "synthetic-keep"),
+            interval_record("2026-02-05", "model-7", 1, "synthetic-keep"),
             interval_record("2026-01-06", "other", 5, "synthetic-raw-other"),
             interval_record("2026-01-06", "older-<img src=x onerror=window.__otherXss=1>", 40, "synthetic-overflow-a"),
             interval_record("2026-01-07", "older-<img src=x onerror=window.__otherXss=1>", 20, "synthetic-overflow-b"),
@@ -2190,15 +2190,8 @@ class DashboardRuntimeTests(unittest.TestCase):
         try:
             self.assertEqual(0, page.locator("#donut-legend img, #delta-list img").count())
             self.assertIsNone(page.evaluate("window.__otherXss"))
-            page.locator("#donut-legend .other-model-details summary").click()
-            self.assertGreaterEqual(
-                page.locator("#donut-legend .other-model-details summary").evaluate(
-                    "el => el.getBoundingClientRect().height"
-                ),
-                44,
-            )
-            self.assertIn(name, page.locator("#donut-legend .other-model-details").inner_text())
-            self.assertIn("70 Token", page.locator("#donut-legend .other-model-details").inner_text())
+            self.assertIn(name, page.locator("#donut-legend").inner_text())
+            self.assertIn("70", page.locator("#donut-legend").inner_text())
             page.evaluate("setGran('month')")
             details = page.locator("#delta-list .delta-other-details")
             self.assertEqual(
@@ -2218,8 +2211,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertEqual(["5", "5", "0"], remainder.locator("td").all_inner_texts())
             self.assertEqual(0, details.locator("button[data-delta-model]").count())
             self.assertIsNone(page.evaluate("window.__otherXss"))
-            page.locator("#donut-legend .other-model-details summary").click()
-            self.assertIn(name, page.locator("#donut-legend .other-model-details").text_content())
+            self.assertIn(name, page.locator("#donut-legend").text_content())
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:
@@ -2230,15 +2222,15 @@ class DashboardRuntimeTests(unittest.TestCase):
         try:
             page.evaluate("setGran('month')")
             page.locator('#donut-legend [data-model-toggle="other"]').click()
-            self.assertIn("70 Token", page.locator("#donut-legend .other-model-details").text_content())
+            self.assertIn("70", page.locator("#donut-legend").text_content())
             self.assertEqual(0, page.locator("#delta-list .delta-other-details").count())
             page.locator('#donut-legend [data-model-toggle="other"]').click()
             page.evaluate("() => { DATA.other_models = []; renderDonut(); renderAttribution(); }")
-            self.assertIn("暂无可展示的具体模型名", page.locator("#donut-legend").inner_text())
+            self.assertEqual("未识别的剩余量", page.locator('#donut-legend [data-model-toggle="other"] span:nth-child(2)').inner_text())
             self.assertEqual(0, page.locator("#delta-list .delta-other-details").count())
             page.evaluate("applyLanguage('en', false)")
             page.evaluate("renderDonut()")
-            self.assertIn("Specific names are unavailable", page.locator("#donut-legend").inner_text())
+            self.assertEqual("Unidentified remainder", page.locator('#donut-legend [data-model-toggle="other"] span:nth-child(2)').inner_text())
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:
@@ -2251,7 +2243,6 @@ class DashboardRuntimeTests(unittest.TestCase):
             )
             try:
                 page.evaluate("applyLanguage('en', false)")
-                page.locator("#donut-legend .other-model-details summary").click()
                 page.locator("#delta-list .delta-other-details summary").click()
                 self.assertIn("Models within Other", page.locator("#delta-list").inner_text())
                 self.assertIn("Unidentified remainder", page.locator("#delta-list").inner_text())
@@ -4026,10 +4017,12 @@ class DashboardRuntimeTests(unittest.TestCase):
             }""", name)
             summary_text = page.locator("#other-model-summary").inner_text()
             self.assertIn(f"{name} (Codex)", summary_text)
-            trend_title = page.locator('#trend-legend [data-model-toggle="other"]').get_attribute("title") or ""
-            self.assertIn(f"{name} (Codex)", trend_title)
-            donut_title = page.locator('#donut-legend [data-model-toggle="other"]').get_attribute("title") or ""
-            self.assertIn(f"{name} (Codex)", donut_title)
+            trend_btn = page.locator(f'#trend-legend [data-other-toggle="{name}"]')
+            self.assertIn(name, trend_btn.inner_text())
+            self.assertIn("Codex", trend_btn.inner_text())
+            donut_btn = page.locator(f'#donut-legend [data-other-toggle="{name}"]')
+            self.assertIn(name, donut_btn.inner_text())
+            self.assertIn("Codex", donut_btn.inner_text())
             self.assertEqual([], page_errors)
             self.assertEqual([], console_errors)
         finally:
@@ -4152,6 +4145,112 @@ class DashboardRuntimeTests(unittest.TestCase):
                     "Configured local sources: Claude Code (includes Claude App Code using the same local logs; counted once) / Codex / Gemini CLI / OpenCode / Antigravity",
                     en_line,
                 )
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
+    def test_other_itemized_legends_slices_filter_and_hud(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            records = []
+            # 8 primary models across sources
+            primaries = [
+                ("claude", "claude-opus-4-1", 8000),
+                ("claude", "claude-sonnet-4-5", 7000),
+                ("codex", "gpt-5-codex", 6000),
+                ("codex", "gpt-5-mini", 5000),
+                ("gemini", "gemini-2.5-pro", 4000),
+                ("opencode", "kimi-k2.6", 3500),
+                ("opencode", "deepseek-v4.1", 3000),
+                ("antigravity", "gemini-3-pro", 2500),
+            ]
+            for src, model, total in primaries:
+                records.append({
+                    "source": src,
+                    "ts": "2026-09-09T10:00:00Z",
+                    "date": "2026-09-09",
+                    "model": model,
+                    "input": total,
+                    "output": 0,
+                    "cache_read": 0,
+                    "cache_write": 0,
+                    "total": total,
+                    "session": f"s-{model}",
+                    "cwd": "/repo/app",
+                })
+            # 4 folded models across multiple sources; fold-alpha is largest on today (2026-09-10)
+            folded = [
+                ("antigravity", "fold-alpha", 900),
+                ("gemini", "fold-beta", 700),
+                ("codex", "fold-gamma", 500),
+                ("opencode", "fold-delta", 300),
+            ]
+            for src, model, total in folded:
+                records.append({
+                    "source": src,
+                    "ts": "2026-09-10T10:00:00Z",
+                    "date": "2026-09-10",
+                    "model": model,
+                    "input": total,
+                    "output": 0,
+                    "cache_read": 0,
+                    "cache_write": 0,
+                    "total": total,
+                    "session": f"s-{model}",
+                    "cwd": "/repo/app",
+                })
+            # Ensure latest_backend is an already-retained primary model so all 4 fold-* stay in Other.
+            records.append({
+                "source": "claude",
+                "ts": "2026-09-10T11:00:00Z",
+                "date": "2026-09-10",
+                "model": "claude-opus-4-1",
+                "input": 100,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 100,
+                "session": "s-claude-latest",
+                "cwd": "/repo/app",
+            })
+            payload = dashboard_payload.build_payload(
+                records,
+                generated_at=datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc),
+            )
+            html_path = Path(tmpdir) / "itemized-other.html"
+            html_path.write_text(
+                report_dashboard.render_dashboard(
+                    dashboard_wire.encode_payload(payload),
+                    language="en",
+                ),
+                encoding="utf-8",
+            )
+            context, page, page_errors, console_errors = self.new_page(path=html_path)
+            try:
+                # 1. Neutral gray color for Other on light/dark
+                self.assertEqual("#646973", payload["colors"]["light"]["other"])
+                self.assertEqual("#8b929e", payload["colors"]["dark"]["other"])
+                # 2. Donut & trend legends list all 8 colored + 4 gray rows individually (no single 'Other xx%' row)
+                self.assertEqual(8, page.locator("#donut-legend [data-model-toggle]").count())
+                self.assertEqual(4, page.locator("#donut-legend [data-other-toggle]").count())
+                self.assertEqual(4, page.locator("#trend-legend [data-other-toggle]").count())
+                donut_texts = page.locator("#donut-legend .other-sub-item-btn").all_inner_texts()
+                self.assertIn("fold-alpha", donut_texts[0])
+                self.assertIn("Antigravity", donut_texts[0])
+                self.assertIn("900", donut_texts[0])
+                self.assertIn("fold-delta", donut_texts[3])
+                # 3. Donut SVG splits Other into 4 gray segments
+                self.assertEqual(4, page.locator('#donut [data-other-model]').count())
+                # 4. Today HUD Top model shows real model name (fold-alpha), never 'Other'
+                hud_top = page.locator("#hud-top").inner_text().strip()
+                self.assertEqual("fold-alpha", hud_top)
+                # 5. More models dropdown filters a single folded model accurately
+                page.locator("#filter-none").click()
+                page.locator("#more-models-dropdown summary").click()
+                page.locator('#more-models-dropdown input[data-other-filter="fold-beta"]').check()
+                self.assertEqual("700", page.locator("#k-total-exact").inner_text().strip())
+                self.assertEqual("fold-beta", page.locator("#k-dom").inner_text().strip())
+                self.assertEqual(1, page.locator("#donut [data-other-model]").count())
                 self.assertEqual([], page_errors)
                 self.assertEqual([], console_errors)
             finally:

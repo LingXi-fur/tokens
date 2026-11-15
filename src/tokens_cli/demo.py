@@ -93,7 +93,12 @@ def build_demo(today=None, sources=None):
                 tzinfo=config.TZ,
             )
 
-            model_scale = 1.18 if model in ("claude-opus-4-1", "gemini-2.5-pro") else 0.9
+            if model in ("claude-opus-4-1", "gemini-2.5-pro"):
+                model_scale = 1.18
+            elif model in ("gemini-3-flash", "gpt-5-mini"):
+                model_scale = 0.26
+            else:
+                model_scale = 0.92
             jitter = 0.82 + rng.random() * 0.38
             base = int(92000 * daily_scale * model_scale * jitter)
             output = max(1800, int(base * (0.12 + rng.random() * 0.07)))

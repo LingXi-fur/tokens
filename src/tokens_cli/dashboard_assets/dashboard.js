@@ -438,7 +438,14 @@ function toggleLanguage(){
   renderDonut();renderAttribution();
 }
 
-const state = { gran: 'month', models: new Set(DATA.models), focusPeriod:null, compare:false, range:'all', rangeDate:'', renderedRangeStateKey:null };
+const state = { gran: 'month', models: new Set(DATA.models), otherModels: new Set(), focusPeriod:null, compare:false, range:'all', rangeDate:'', renderedRangeStateKey:null };
+function allOtherSubModels(){
+  const totals=Object.create(null);
+  (DATA.other_models||[]).forEach(row=>Object.entries(row?.models||{}).forEach(([name,value])=>{totals[name]=(totals[name]||0)+Number(value||0);}));
+  return Object.entries(totals).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([name])=>name);
+}
+if(state.models.has('other'))allOtherSubModels().forEach(name=>state.otherModels.add(name));
+let previousOtherModels=null;
 const intervalState = {active:false,start:null,end:null,bStart:null,dragStart:-1,dragEnd:-1};
 const deltaEvidenceState = {model:null,scope:null};
 const peakState = {period:null,opener:null};
@@ -453,7 +460,7 @@ let lastTotal = 0;
 let stateRevision=0,derivedRevision=-1,derivedCache={};
 function invalidateDerived(){stateRevision++;derivedCache={};derivedRevision=stateRevision;}
 function memoDerived(key,build){if(derivedRevision!==stateRevision){derivedCache={};derivedRevision=stateRevision;}if(!Object.prototype.hasOwnProperty.call(derivedCache,key))derivedCache[key]=build();return derivedCache[key];}
-function stateKey(){return state.gran+'|'+[...state.models].sort().join(',')+'|'+(state.focusPeriod||'')+'|'+(typeof rangeStateKey==='function'?rangeStateKey():'legacy');}
+function stateKey(){return state.gran+'|'+[...state.models].sort().join(',')+'|'+[...(state.otherModels||[])].sort().join(',')+'|'+(state.focusPeriod||'')+'|'+(typeof rangeStateKey==='function'?rangeStateKey():'legacy');}
 const LABEL = {day:'日期', week:'周(始)', month:'月份'};
 const RANGE_PRESETS=Object.freeze(['all','today','yesterday','last7','custom']);
 const ISO_DAY_RE=/^\d{4}-\d{2}-\d{2}$/;
@@ -576,11 +583,56 @@ const otherModelTotals=days=>{
   (DATA.other_models||[]).forEach(row=>{if(!selected.has(row.day))return;Object.entries(row.models||{}).forEach(([name,value])=>totals[name]=(totals[name]||0)+value);});
   return totals;
 };
-function otherModelBreakdown(){
+const otherByDayMap=(()=>{
+  let cachedSrc=null,cachedMap=null;
+  return ()=>{
+    if(cachedSrc===DATA.other_models&&cachedMap)return cachedMap;
+    cachedSrc=DATA.other_models;
+    cachedMap=Object.create(null);
+    (DATA.other_models||[]).forEach(row=>{
+      if(row&&row.day)cachedMap[row.day]=row.models||{};
+    });
+    return cachedMap;
+  };
+})();
+function allOtherModelsSelected(){
+  const all=allOtherSubModels();
+  return !all.length||(state.models.has('other')&&(!state.otherModels||all.every(name=>state.otherModels.has(name))));
+}
+function effectiveOtherValue(period,gran,rawOther){
+  if(!state.models.has('other'))return 0;
+  if(allOtherModelsSelected())return rawOther||0;
+  const byDay=otherByDayMap(),days=periodScopeDays(period,gran);
+  let sum=0;
+  days.forEach(day=>{
+    const models=byDay[day];if(!models)return;
+    (state.otherModels||[]).forEach(name=>{sum+=Number(models[name]||0);});
+  });
+  return sum;
+}
+function otherSubBreakdownForPeriod(period,gran,rawOther,onlySelected=true){
+  const byDay=otherByDayMap(),days=periodScopeDays(period,gran);
+  const totals=Object.create(null);
+  days.forEach(day=>{
+    const models=byDay[day];if(!models)return;
+    Object.entries(models).forEach(([name,value])=>{
+      if(!onlySelected||state.otherModels.has(name))totals[name]=(totals[name]||0)+Number(value||0);
+    });
+  });
+  const named=sortedModels(totals,true).filter(([,v])=>v>0);
+  const namedSum=sumWhere(named,entry=>entry[1]);
+  const residual=allOtherModelsSelected()?Math.max(0,(rawOther||0)-namedSum):0;
+  return {named,residual};
+}
+function otherModelBreakdown(onlySelected=false){
   const rows=scopedGranRows().filter(row=>!state.focusPeriod||row.period===state.focusPeriod);
   const days=rows.flatMap(row=>periodScopeDays(row.period,state.gran));
-  const named=sortedModels(otherModelTotals(days),true);
-  return {named,residual:sumWhere(rows,row=>row.models?.other||0)-sumWhere(named,entry=>entry[1])};
+  const rawTotals=otherModelTotals(days);
+  const totals=onlySelected?Object.fromEntries(Object.entries(rawTotals).filter(([name])=>state.otherModels.has(name))):rawTotals;
+  const named=sortedModels(totals,true);
+  const rawNamedSum=sumWhere(Object.values(rawTotals),v=>v);
+  const residual=Math.max(0,sumWhere(rows,row=>row.models?.other||0)-rawNamedSum);
+  return {named,residual};
 }
 function otherModelSources(name){
   const labels=DATA.source_labels||{claude:'Claude Code',codex:'Codex',gemini:'Gemini CLI',opencode:'OpenCode',antigravity:'Antigravity'};
@@ -696,7 +748,12 @@ function selectedRows(all=false){
     if(state.focusPeriod&&!all) src=src.filter(r=>r.period===state.focusPeriod);
     return src.map(r=>{
       const models={},modelCalls={}; let total=0,calls=0;
-      state.models.forEach(m=>{ const v=r.models[m]||0; if(v){models[m]=v;total+=v;}const c=(r.model_calls||{})[m]||0;if(c){modelCalls[m]=c;calls+=c;} });
+      state.models.forEach(m=>{
+        const v=m==='other'?effectiveOtherValue(r.period,state.gran,r.models[m]||0):(r.models[m]||0);
+        if(v){models[m]=v;total+=v;}
+        const c=(r.model_calls||{})[m]||0;
+        if(c&&(m!=='other'||v>0||allOtherModelsSelected())){modelCalls[m]=c;calls+=c;}
+      });
       return {period:r.period, calls, models, modelCalls, total};
     });
   });
@@ -718,7 +775,7 @@ function animateNum(el, to, dur, formatter=fmt){
 function selectedDayModelTotals(day){
   const totals={};DATA.models.forEach(model=>totals[model]=0);
   const daily=DATA.day?.find(row=>row.period===day)?.models;
-  if(daily){DATA.models.forEach(model=>{if(state.models.has(model))totals[model]=daily[model]||0;});return totals;}
+  if(daily){DATA.models.forEach(model=>{if(state.models.has(model))totals[model]=model==='other'?effectiveOtherValue(day,'day',daily[model]||0):(daily[model]||0);});return totals;}
   const detail=DATA.day_details?.[day];
   Object.entries(detail?.hourly_models||{}).forEach(([model,hours])=>{if(state.models.has(model))totals[model]=sumList(hours);});return totals;
 }
@@ -928,19 +985,34 @@ function renderKPI(){
   const total=sumBy(rows,'total'); lastTotal=total;
   const calls=sumBy(rows,'calls');
   const mtot=modelTotals(rows);
-  const domEntry=topModelOf(mtot), dom=domEntry?domEntry[0]:'—';
+  const expandedMtot={};
+  let expandedCount=0;
+  Object.entries(mtot).forEach(([m,v])=>{
+    if(v<=0)return;
+    if(m==='other'){
+      const {named,residual}=otherModelBreakdown(true);
+      if(named.length){
+        named.forEach(([name,subVal])=>{if(subVal>0){expandedMtot[name]={key:'other',label:name,value:subVal};expandedCount++;}});
+        if(residual>0){expandedMtot['__residual__']={key:'other',label:pretty(m),value:residual};expandedCount++;}
+        return;
+      }
+    }
+    expandedMtot[m]={key:m,label:pretty(m),value:v};expandedCount++;
+  });
+  const domObj=Object.values(expandedMtot).sort((a,b)=>b.value-a.value)[0]||null;
+  const dom=domObj?domObj.label:'—';
   animateNum(document.getElementById('k-total'), total, 600, human);
   document.getElementById('k-total-exact').textContent=fmt(total);
   document.getElementById('k-total-u').textContent = 'tk · 紧凑显示';
   animateNum(document.getElementById('k-calls'), calls, 500);
-  animateNum(document.getElementById('k-models'), Object.keys(mtot).length, 400);
-  document.getElementById('k-dom').textContent = dom!=='—' ? pretty(dom) : '—';
-  const domShare=dom!=='—'&&total>0?pct(mtot[dom],total):'';
+  animateNum(document.getElementById('k-models'), expandedCount, 400);
+  document.getElementById('k-dom').textContent = dom;
+  const domShare=domObj&&total>0?pct(domObj.value,total):'';
   document.getElementById('k-dom-share').textContent = domShare;
   document.getElementById('k-dom-share-fill').style.width = domShare;
   // 主力卡色点与模型身份色对齐；无数据时隐藏
   const domDot=document.getElementById('k-dom-dot');
-  if(domDot){domDot.hidden=dom==='—';domDot.style.background=dom==='—'?'':modelColor(dom);}
+  if(domDot){domDot.hidden=!domObj;domDot.style.background=domObj?modelColor(domObj.key):'';}
   renderDominantShift(rows);
   // 完整周期做整期环比；进行中的周/月只比较双方相同数量的完整天。
   renderDelta(rows);
@@ -1066,6 +1138,25 @@ function renderBar(){
     }
     let segs=''; let y0=padT+plotH;
     state.models.forEach(m=>{ const v=r.models[m]||0; if(v<=0) return;
+      if(m==='other'){
+        const {named,residual}=otherSubBreakdownForPeriod(r.period,state.gran,v,true);
+        const parts=[...named.map(([name,val])=>({name,val,isResidual:false}))];
+        if(residual>0)parts.push({name:dashboardLanguage==='en'?'Unidentified remainder':'未识别的剩余量',val:residual,isResidual:true});
+        if(parts.length){
+          const fullH=(v/vmax)*plotH,gap=parts.length>1?2:0,totalGap=gap*(parts.length-1),availH=Math.max(1,fullH-totalGap);
+          let curY=y0;
+          parts.forEach((part,idx)=>{
+            const partH=Math.max(0.8,(part.val/v)*availH);
+            const py=curY-partH;
+            const sources=part.isResidual?[]:otherModelSources(part.name);
+            const srcLabel=sources.length?' ('+sources.join(', ')+')':'';
+            segs+='<rect class="seg model-mark other-sub-seg" data-model="other" data-other-model="'+esc(part.name)+'"'+dataSignalAttrs('model','other',part.name,part.val,'trend',false)+' x="'+x.toFixed(1)+'" y="'+py.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+partH.toFixed(1)+'" rx="2" fill="'+modelColor('other')+'"><title>'+esc(r.period)+' · '+esc(part.name+srcLabel)+': '+fmt(part.val)+' ('+pct(part.val,r.total)+')</title></rect>';
+            curY=py-(idx<parts.length-1?gap:0);
+          });
+          y0-=fullH;
+          return;
+        }
+      }
       const h=(v/vmax)*plotH, y=y0-h;
       segs+='<rect class="seg model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'trend',false)+' x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="2" fill="'+modelColor(m)+'"><title>'+esc(r.period)+' · '+esc(pretty(m))+': '+fmt(v)+' ('+pct(v,r.total)+')</title></rect>';
       y0-=h;
@@ -1116,6 +1207,24 @@ function renderBar(){
   const markers=[...box.querySelectorAll('.moment-marker')];markers.forEach((el,i)=>{el.__moment=moments[i];el.addEventListener('focus',()=>{clearScrub();describeMoment(el,false);});el.addEventListener('keydown',e=>handleMomentKey(e,markers,i));});
 }
 
+function toggleOtherSubModel(name){
+  const nextOther=new Set(state.otherModels);
+  if(nextOther.has(name))nextOther.delete(name);
+  else nextOther.add(name);
+  const nextModels=new Set(state.models);
+  if(nextOther.size>0)nextModels.add('other');
+  else nextModels.delete('other');
+  setModels(nextModels,null,nextOther);
+}
+function renderOtherLegendRow(name,value,total,on,kind){
+  const sources=otherModelSources(name),en=dashboardLanguage==='en';
+  const srcTag=sources.length?'<small class="legend-source">'+esc(sources.join(', '))+'</small>':'';
+  const cls=kind==='donut'?'dl-item other-sub-item-btn':'tl-item other-sub-item-btn';
+  const dotCls=kind==='donut'?'ldot':'tldot';
+  const label=name+(sources.length?' ('+sources.join(', ')+')':'')+': '+fmt(value)+' ('+pct(value,total)+')';
+  const item='<button type="button" class="'+cls+(on?'':' off')+'" aria-pressed="'+on+'" data-other-toggle="'+esc(name)+'" title="'+esc(label)+'"'+dataSignalAttrs('model','other',name,value,kind==='donut'?'composition':'legend',false)+'><span class="'+dotCls+'" style="background:'+modelColor('other')+'"></span><span class="legend-model-name">'+esc(name)+srcTag+'</span><em>'+fmt(value)+' · '+pct(value,total)+'</em></button>';
+  return kind==='donut'?'<li class="model-mark other-sub-item" data-model="other" data-other-model="'+esc(name)+'">'+item+'</li>':item;
+}
 function renderDonut(){
   const rows=selectedRows();
   const entries=sortedModels(modelTotals(rows));
@@ -1123,27 +1232,70 @@ function renderDonut(){
   const box=document.getElementById('donut');
   /* 图例由全模型驱动：全不选时仍能从这里勾回（切片 pin=true 委托不动，图例按钮 pin=false 避免双触发） */
   const legendValue=Object.fromEntries(entries);
-  const legend=document.getElementById('donut-legend'),detailsOpen=!!legend.querySelector('.other-model-details[open]');
-  const otherHover=DATA.models.includes('other')?otherModelHoverSummary():'';
-  legend.innerHTML=DATA.models.map(m=>{
-    const on=state.models.has(m),value=legendValue[m]||0,tip=m==='other'&&otherHover?' title="'+esc(otherHover)+'"':'';
-    return '<li class="model-mark" data-model="'+esc(m)+'"><button type="button" class="dl-item'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="'+esc(m)+'"'+tip+dataSignalAttrs('model',m,pretty(m),value,'composition',false)+'><span class="ldot" style="background:'+modelColor(m)+'"></span><span>'+esc(pretty(m))+'</span><em>'+pct(value,total)+'</em></button></li>';
-  }).join('')+(DATA.models.includes('other')?'<li class=other-model-legend>'+otherModelDetails()+'</li>':'');
-  if(detailsOpen)legend.querySelector('.other-model-details')?.setAttribute('open','');
+  const legend=document.getElementById('donut-legend');
+  const namedModels=DATA.models.filter(m=>m!=='other');
+  const legendRows=namedModels.map(m=>{
+    const on=state.models.has(m),value=legendValue[m]||0;
+    return '<li class="model-mark" data-model="'+esc(m)+'"><button type="button" class="dl-item'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),value,'composition',false)+'><span class="ldot" style="background:'+modelColor(m)+'"></span><span>'+esc(pretty(m))+'</span><em>'+pct(value,total)+'</em></button></li>';
+  });
+  if(DATA.models.includes('other')){
+    const {named,residual}=otherModelBreakdown(false);
+    const otherAllRows=scopedGranRows().filter(row=>!state.focusPeriod||row.period===state.focusPeriod);
+    const allTotal=sumWhere(otherAllRows,r=>sumWhere(Object.entries(r.models||{}),([m,v])=>m==='other'?effectiveOtherValue(r.period,state.gran,v):(state.models.has(m)?v:0)))||total;
+    if(named.length){
+      named.forEach(([name,value])=>{
+        legendRows.push(renderOtherLegendRow(name,value,allTotal||total,state.models.has('other')&&state.otherModels.has(name),'donut'));
+      });
+    }
+    if(residual>0){
+      const remLabel=dashboardLanguage==='en'?'Unidentified remainder':'未识别的剩余量';
+      const on=state.models.has('other');
+      legendRows.push('<li class="model-mark other-sub-item" data-model="other"><button type="button" class="dl-item other-sub-item-btn'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="other"'+dataSignalAttrs('model','other',remLabel,residual,'composition',false)+'><span class="ldot" style="background:'+modelColor('other')+'"></span><span class="legend-model-name">'+esc(remLabel)+'</span><em>'+fmt(residual)+' · '+pct(residual,allTotal||total)+'</em></button></li>');
+    }
+    if(!named.length&&residual<=0){
+      const on=state.models.has('other'),value=legendValue.other||0;
+      legendRows.push('<li class="model-mark" data-model="other"><button type="button" class="dl-item'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="other"'+dataSignalAttrs('model','other',pretty('other'),value,'composition',false)+'><span class="ldot" style="background:'+modelColor('other')+'"></span><span>'+esc(pretty('other'))+'</span><em>'+pct(value,total)+'</em></button></li>');
+    }
+  }
+  legend.innerHTML=legendRows.join('');
   if(total===0){ box.innerHTML=contextEmptyHTML('rhythm'); return; }
   const size=220, cx=size/2, cy=size/2, r=size/2-8;
-  let angle=-Math.PI/2; const p=['<svg viewBox="0 0 '+size+' '+size+'" class="pie">'];
+  const donutSlices=[];
   entries.forEach(([m,v])=>{
-    const frac=v/total, a0=angle, a1=angle+frac*2*Math.PI;
-    const titleText=esc(pretty(m))+' '+pct(v,total)+(m==='other'&&otherHover?'\n'+esc(otherHover):'');
-    if(frac>=0.999){
-      p.push('<circle class="slice model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'composition')+' cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+modelColor(m)+'"><title>'+titleText+'</title></circle>');
-    }else{
-      const large=frac>0.5?1:0;
-      const x0=cx+r*Math.cos(a0), y0=cy+r*Math.sin(a0), x1=cx+r*Math.cos(a1), y1=cy+r*Math.sin(a1);
-      p.push('<path class="slice model-mark" data-model="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),v,'composition')+' d="M '+cx+' '+cy+' L '+x0.toFixed(2)+' '+y0.toFixed(2)+' A '+r+' '+r+' 0 '+large+' 1 '+x1.toFixed(2)+' '+y1.toFixed(2)+' Z" fill="'+modelColor(m)+'"><title>'+titleText+'</title></path>');
+    if(m==='other'){
+      const {named,residual}=otherModelBreakdown(true);
+      const namedSum=sumWhere(named,entry=>entry[1]);
+      const effResidual=allOtherModelsSelected()?Math.max(0,v-namedSum):0;
+      if(named.length||effResidual>0){
+        named.forEach(([name,subVal])=>{if(subVal>0)donutSlices.push({model:'other',otherModel:name,label:name,value:subVal,sources:otherModelSources(name)});});
+        if(effResidual>0)donutSlices.push({model:'other',otherModel:'__residual__',label:dashboardLanguage==='en'?'Unidentified remainder':'未识别的剩余量',value:effResidual,sources:[]});
+        return;
+      }
     }
-    angle=a1;
+    donutSlices.push({model:m,otherModel:null,label:pretty(m),value:v,sources:[]});
+  });
+  let angle=-Math.PI/2; const p=['<svg viewBox="0 0 '+size+' '+size+'" class="pie">'];
+  const gapRad=2/r;
+  donutSlices.forEach((slice,idx)=>{
+    const frac=slice.value/total, span=frac*2*Math.PI;
+    const prevIsOther=idx>0&&donutSlices[idx-1].model==='other'&&slice.model==='other';
+    const nextIsOther=idx<donutSlices.length-1&&donutSlices[idx+1].model==='other'&&slice.model==='other';
+    const leadGap=prevIsOther?Math.min(gapRad*0.5,span*0.2):0;
+    const trailGap=nextIsOther?Math.min(gapRad*0.5,span*0.2):0;
+    const a0=angle+leadGap, a1=angle+span-trailGap;
+    const srcNote=slice.sources.length?' ('+slice.sources.join(', ')+')':'';
+    const titleText=esc(slice.label+srcNote)+': '+fmt(slice.value)+' ('+pct(slice.value,total)+')';
+    const otherAttr=slice.otherModel?' data-other-model="'+esc(slice.otherModel)+'"':'';
+    const m=slice.model,v=slice.value;
+    const sigAttrs=slice.otherModel?dataSignalAttrs('model',m,slice.label,v,'composition'):dataSignalAttrs('model',m,pretty(m),v,'composition');
+    if(frac>=0.999&&donutSlices.length===1){
+      p.push('<circle class="slice model-mark" data-model="'+esc(m)+'"'+otherAttr+sigAttrs+' cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+modelColor(m)+'"><title>'+titleText+'</title></circle>');
+    }else if(a1>a0){
+      const large=(a1-a0)>Math.PI?1:0;
+      const x0=cx+r*Math.cos(a0), y0=cy+r*Math.sin(a0), x1=cx+r*Math.cos(a1), y1=cy+r*Math.sin(a1);
+      p.push('<path class="slice model-mark" data-model="'+esc(m)+'"'+otherAttr+sigAttrs+' d="M '+cx+' '+cy+' L '+x0.toFixed(2)+' '+y0.toFixed(2)+' A '+r+' '+r+' 0 '+large+' 1 '+x1.toFixed(2)+' '+y1.toFixed(2)+' Z" fill="'+modelColor(m)+'"><title>'+titleText+'</title></path>');
+    }
+    angle+=span;
   });
   p.push('<circle class="pie-hole" cx="'+cx+'" cy="'+cy+'" r="'+(r*0.58).toFixed(1)+'"/>');
   p.push('<text x="'+cx+'" y="'+(cy-2)+'" text-anchor="middle" class="pie-center">'+human(total)+'</text>');
@@ -1153,14 +1305,36 @@ function renderDonut(){
 
 function renderTrendLegend(){
   const box=document.getElementById('trend-legend');if(!box)return;
-  const rows=scopedGranRows(),all=sumBy(rows,'total'),otherHover=DATA.models.includes('other')?otherModelHoverSummary():'';
-  box.innerHTML=DATA.models.map(m=>{const on=state.models.has(m),value=sumWhere(rows,r=>(r.models||{})[m]||0),tip=m==='other'&&otherHover?' title="'+esc(otherHover)+'"':'';return '<button type="button" class="tl-item'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="'+esc(m)+'"'+tip+dataSignalAttrs('model',m,pretty(m),value,'legend',false)+'><span class="tldot" style="background:'+modelColor(m)+'"></span><span>'+esc(pretty(m))+'</span><em>'+pct(value,all)+'</em></button>';}).join('');
+  const rows=scopedGranRows(),all=sumBy(rows,'total');
+  const namedModels=DATA.models.filter(m=>m!=='other');
+  const items=namedModels.map(m=>{const on=state.models.has(m),value=sumWhere(rows,r=>(r.models||{})[m]||0);return '<button type="button" class="tl-item'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="'+esc(m)+'"'+dataSignalAttrs('model',m,pretty(m),value,'legend',false)+'><span class="tldot" style="background:'+modelColor(m)+'"></span><span>'+esc(pretty(m))+'</span><em>'+pct(value,all)+'</em></button>';});
+  if(DATA.models.includes('other')){
+    const days=rows.flatMap(row=>periodScopeDays(row.period,state.gran));
+    const totals=otherModelTotals(days),named=sortedModels(totals,true);
+    const rawOther=sumWhere(rows,r=>(r.models||{}).other||0),namedSum=sumWhere(named,e=>e[1]),residual=Math.max(0,rawOther-namedSum);
+    if(named.length){
+      named.forEach(([name,value])=>items.push(renderOtherLegendRow(name,value,all,state.models.has('other')&&state.otherModels.has(name),'trend')));
+    }
+    if(residual>0){
+      const remLabel=dashboardLanguage==='en'?'Unidentified remainder':'未识别的剩余量';
+      const on=state.models.has('other');
+      items.push('<button type="button" class="tl-item other-sub-item-btn'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="other"'+dataSignalAttrs('model','other',remLabel,residual,'legend',false)+'><span class="tldot" style="background:'+modelColor('other')+'"></span><span class="legend-model-name">'+esc(remLabel)+'</span><em>'+fmt(residual)+' · '+pct(residual,all)+'</em></button>');
+    }
+    if(!named.length&&residual<=0){
+      const on=state.models.has('other');
+      items.push('<button type="button" class="tl-item'+(on?'':' off')+'" aria-pressed="'+on+'" data-model-toggle="other"'+dataSignalAttrs('model','other',pretty('other'),rawOther,'legend',false)+'><span class="tldot" style="background:'+modelColor('other')+'"></span><span>'+esc(pretty('other'))+'</span><em>'+pct(rawOther,all)+'</em></button>');
+    }
+  }
+  box.innerHTML=items.join('');
   box.querySelectorAll('[data-model-toggle]').forEach(button=>button.addEventListener('click',()=>{const model=button.dataset.modelToggle,next=new Set(state.models);next.has(model)?next.delete(model):next.add(model);setModels(next); }));
+  box.querySelectorAll('[data-other-toggle]').forEach(button=>button.addEventListener('click',()=>toggleOtherSubModel(button.dataset.otherToggle)));
 }
 
 /* Donut 图例筛选：委托一次，重渲染按钮不丢事件 */
 const donutLegend=document.getElementById('donut-legend');
 donutLegend.addEventListener('click',event=>{
+  const otherBtn=event.target.closest('[data-other-toggle]');
+  if(otherBtn){toggleOtherSubModel(otherBtn.dataset.otherToggle);return;}
   const button=event.target.closest('[data-model-toggle]');if(!button)return;
   const model=button.dataset.modelToggle,next=new Set(state.models);
   next.has(model)?next.delete(model):next.add(model);setModels(next);
@@ -1843,23 +2017,60 @@ function reconcileSignalState(){
   if(signalState.peek&&!signalVisible(signalState.peek)){signalState.peek=null;signalState.peekSource=null;}
   if(signalState.pinnedSignal&&!signalVisible(signalState.pinnedSignal))signalState.pinnedSignal=null;
 }
-function setModels(next,label){clearScrub();resetInterval();peakState.period=null;previousModels=new Set(state.models);state.models=new Set(next);reconcileTrailState();invalidateDerived();reconcileSignalState();renderFilters();renderDataViews();announceViewChange(label||('模型筛选已更新 · '+state.models.size+'/'+DATA.models.length+' 个模型'),['section-overview','section-trend','section-top']);}
+function setModels(next,label){clearScrub();resetInterval();peakState.period=null;
+  const nextOther=arguments[2];
+  previousModels=new Set(state.models);previousOtherModels=new Set(state.otherModels);
+  state.models=new Set(next);
+  if(nextOther!==undefined){
+    state.otherModels=new Set(nextOther);
+  }else if(state.models.has('other')&&!previousModels.has('other')){
+    allOtherSubModels().forEach(name=>state.otherModels.add(name));
+  }else if(!state.models.has('other')){
+    state.otherModels.clear();
+  }
+  reconcileTrailState();invalidateDerived();reconcileSignalState();renderFilters();renderDataViews();
+  announceViewChange(label||('模型筛选已更新 · '+selectedModelDisplayCount().selected+'/'+selectedModelDisplayCount().total+' 个模型'),['section-overview','section-trend','section-top']);
+}
+function selectedModelDisplayCount(){
+  const named=DATA.models.filter(m=>m!=='other'),subs=allOtherSubModels();
+  if(!DATA.models.includes('other')||!subs.length)return {selected:state.models.size,total:DATA.models.length};
+  const selected=named.filter(m=>state.models.has(m)).length+subs.filter(m=>state.models.has('other')&&state.otherModels.has(m)).length;
+  return {selected,total:named.length+subs.length};
+}
 function renderFilterLedger(){
-  const rows=scopedGranRows(),all=sumBy(rows,'total'),selected=sumWhere(rows,r=>modelSum(r.models,state.models)),en=dashboardLanguage==='en';
-  document.getElementById('filter-summary').innerHTML=en?'Selected <b>'+state.models.size+'/'+DATA.models.length+'</b> models · covering <b>'+pct(selected,all)+'</b> Token · <span class=scope-tag>'+esc(rangeLabel())+'</span>':'已选 <b>'+state.models.size+'/'+DATA.models.length+'</b> 个模型 · 覆盖 <b>'+pct(selected,all)+'</b> Token · <span class=scope-tag>'+esc(rangeLabel())+'</span>';document.getElementById('filter-undo').disabled=!previousModels;
+  const rows=scopedGranRows(),all=sumBy(rows,'total'),en=dashboardLanguage==='en';
+  const selected=sumWhere(rows,r=>sumWhere(Object.entries(r.models||{}),([m,v])=>m==='other'?effectiveOtherValue(r.period,state.gran,v):(state.models.has(m)?v:0)));
+  const count=selectedModelDisplayCount();
+  document.getElementById('filter-summary').innerHTML=en?'Selected <b>'+count.selected+'/'+count.total+'</b> models · covering <b>'+pct(selected,all)+'</b> Token · <span class=scope-tag>'+esc(rangeLabel())+'</span>':'已选 <b>'+count.selected+'/'+count.total+'</b> 个模型 · 覆盖 <b>'+pct(selected,all)+'</b> Token · <span class=scope-tag>'+esc(rangeLabel())+'</span>';
+  document.getElementById('filter-undo').disabled=!previousModels;
 }
 function renderFilters(){
   const box=document.getElementById('filters');
   if(DATA.models.length===0){ box.innerHTML='<span class=hint>无模型数据</span>'; return; }
-  const otherHover=DATA.models.includes('other')?otherModelHoverSummary():'';
-  box.innerHTML=DATA.models.map(m=>{
+  const wasOpen=!!box.querySelector('#more-models-dropdown[open]');
+  const subs=DATA.models.includes('other')?allOtherSubModels():[];
+  const namedModels=DATA.models.filter(m=>m!=='other'||!subs.length);
+  const en=dashboardLanguage==='en';
+  let html=namedModels.map(m=>{
     const on=state.models.has(m);
     return '<label class="chip'+(on?'':' off')+'"'+dataSignalAttrs('model',m,pretty(m),0,'filters',false)+'><input type=checkbox value="'+esc(m)+'" '+(on?'checked':'')+'><span class=cdot style="background:'+modelColor(m)+'"></span>'+esc(pretty(m))+'</label>';
   }).join('');
-  box.querySelectorAll('input').forEach(cb=>{
+  if(subs.length){
+    const subCount=subs.filter(name=>state.models.has('other')&&state.otherModels.has(name)).length;
+    const summaryLabel=en?'More models ('+subCount+'/'+subs.length+')':'更多模型 ('+subCount+'/'+subs.length+')';
+    html+='<details class="more-models-dropdown" id="more-models-dropdown"'+(wasOpen?' open':'')+'><summary class="chip more-models-trigger'+(subCount?'':' off')+'">'+esc(summaryLabel)+' ▾</summary><div class="more-models-menu" role="group" aria-label="'+esc(en?'More models':'更多模型')+'">'+subs.map(name=>{
+      const on=state.models.has('other')&&state.otherModels.has(name),sources=otherModelSources(name);
+      const srcTag=sources.length?'<small class="more-model-source">'+esc(sources.join(', '))+'</small>':'';
+      return '<label class="more-model-option'+(on?'':' off')+'"><input type=checkbox data-other-filter="'+esc(name)+'" '+(on?'checked':'')+'><span class=cdot style="background:'+modelColor('other')+'"></span><span class="more-model-name">'+esc(name)+'</span>'+srcTag+'</label>';
+    }).join('')+'</div></details>';
+  }
+  box.innerHTML=html;
+  box.querySelectorAll('input[value]').forEach(cb=>{
     cb.addEventListener('change',e=>{const next=new Set(state.models);e.target.checked?next.add(e.target.value):next.delete(e.target.value);setModels(next);});
-    const baseTip=dashboardLanguage==='en'?'Click to toggle model filter':'点击切换模型筛选';
-    cb.closest('.chip').title=cb.value==='other'&&otherHover?baseTip+'\n'+otherHover:baseTip;
+    cb.closest('.chip').title=en?'Click to toggle model filter':'点击切换模型筛选';
+  });
+  box.querySelectorAll('input[data-other-filter]').forEach(cb=>{
+    cb.addEventListener('change',e=>toggleOtherSubModel(e.target.dataset.otherFilter));
   });
   renderFilterLedger();
 }
@@ -1940,9 +2151,9 @@ document.getElementById('range-date').addEventListener('change',event=>{
   const details=document.getElementById('daily-table-details');if(details)details.open=true;
   applyRange('custom',value);
 });
-document.getElementById('filter-all').addEventListener('click',()=>setModels(DATA.models,'已选择全部模型'));
-document.getElementById('filter-none').addEventListener('click',()=>setModels([],'已清空模型筛选'));
-document.getElementById('filter-undo').addEventListener('click',()=>{if(!previousModels)return;clearScrub();state.models=new Set(previousModels);previousModels=null;reconcileTrailState();invalidateDerived();reconcileSignalState();renderFilters();renderDataViews();announceViewChange('已撤销上一次模型筛选',['section-overview','section-trend','section-top']);});
+document.getElementById('filter-all').addEventListener('click',()=>setModels(DATA.models,'已选择全部模型',allOtherSubModels()));
+document.getElementById('filter-none').addEventListener('click',()=>setModels([],'已清空模型筛选',[]));
+document.getElementById('filter-undo').addEventListener('click',()=>{if(!previousModels)return;clearScrub();const prevO=previousOtherModels;state.models=new Set(previousModels);state.otherModels=prevO?new Set(prevO):new Set(state.models.has('other')?allOtherSubModels():[]);previousModels=null;previousOtherModels=null;reconcileTrailState();invalidateDerived();reconcileSignalState();renderFilters();renderDataViews();announceViewChange('已撤销上一次模型筛选',['section-overview','section-trend','section-top']);});
 
 function lbRows(items,sessionRows=false,kind='project'){
   if(!items || !items.length) return contextEmptyHTML(kind);
@@ -2289,7 +2500,7 @@ function insightSelected(){return (DATA.models||[]).filter(model=>state.models.h
 function insightRowsByDay(){const out={};(DATA.day||[]).forEach(row=>{if(row&&isoDayValid(row.period))out[row.period]=row;});return out;}
 function insightDayTotals(){
   const selected=insightSelected(),out={};
-  (DATA.day||[]).forEach(row=>{if(!row||!isoDayValid(row.period))return;let total=0;selected.forEach(model=>{total+=Number(row.models?.[model])||0;});out[row.period]=total;});
+  (DATA.day||[]).forEach(row=>{if(!row||!isoDayValid(row.period))return;let total=0;selected.forEach(model=>{total+=model==='other'?effectiveOtherValue(row.period,'day',row.models?.[model]||0):(Number(row.models?.[model])||0);});out[row.period]=total;});
   return out;
 }
 /* 当天按模型筛选的 24 小时桶；无记录日视为全零，有记录但缺小时明细时返回 null（不能伪造）。 */
@@ -2418,7 +2629,11 @@ function insightStreamDays(){
 function renderShareStream(){
   const box=document.getElementById('share-stream');if(!box)return;
   const days=insightStreamDays(),selected=insightSelected(),en=insightEn();
-  const rowsByDay={};Object.entries(insightRowsByDay()).forEach(([day,row])=>rowsByDay[day]=row.models||{});
+  const rowsByDay={};Object.entries(insightRowsByDay()).forEach(([day,row])=>{
+    const m=Object.assign({},row.models||{});
+    if(Object.prototype.hasOwnProperty.call(m,'other'))m.other=effectiveOtherValue(day,'day',m.other||0);
+    rowsByDay[day]=m;
+  });
   const mode=insightState.streamMode==='volume'?'volume':'share';
   const stream=days.length>=2&&selected.length?InsightCore.shareStream({days,rows:rowsByDay,models:selected,mode,smooth:mode==='share'?7:3}):null;
   if(!stream||!stream.layers.length||stream.max<=0){box.hidden=true;insightState.stream=null;return;}
@@ -2468,10 +2683,27 @@ function drawShareStream(stream){
 }
 function streamDayHtml(stream,index){
   const en=insightEn(),day=stream.days[index],raw=stream.raw[index],total=stream.totals[index];
-  const items=Object.entries(raw).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const expanded=[];
+  Object.entries(raw).forEach(([model,value])=>{
+    if(value<=0)return;
+    if(model==='other'){
+      const {named,residual}=otherSubBreakdownForPeriod(day,'day',value,true);
+      if(named.length||residual>0){
+        named.forEach(([name,subVal])=>{if(subVal>0)expanded.push({key:'other',label:name,sources:otherModelSources(name),value:subVal});});
+        if(residual>0)expanded.push({key:'other',label:en?'Unidentified remainder':'未识别的剩余量',sources:[],value:residual});
+        return;
+      }
+    }
+    expanded.push({key:model,label:pretty(model),sources:[],value});
+  });
+  expanded.sort((a,b)=>b.value-a.value);
   let html='<b>'+esc(day+' '+insightWeekday(day))+'</b><span class=tip-total>'+esc(total>0?fmt(total)+' Token':(en?'No records':'无记录'))+'</span>';
-  items.slice(0,5).forEach(([model,value])=>{html+='<span><i class=tip-dot style="background:'+esc(modelColor(model))+'"></i>'+esc(pretty(model))+' <em>'+esc(pct(value,total))+'</em></span>';});
-  if(items.length>5)html+='<span class=tip-more>'+esc((en?'+':'另 ')+(items.length-5)+(en?' more':' 个模型'))+'</span>';
+  const maxItems=expanded.some(item=>item.key==='other')?expanded.length:5;
+  expanded.slice(0,maxItems).forEach(item=>{
+    const src=item.sources.length?' ('+item.sources.join(', ')+')':'';
+    html+='<span><i class=tip-dot style="background:'+esc(modelColor(item.key))+'"></i>'+esc(item.label+src)+' <em>'+esc(fmt(item.value)+' · '+pct(item.value,total))+'</em></span>';
+  });
+  if(expanded.length>maxItems)html+='<span class=tip-more>'+esc((en?'+':'另 ')+(expanded.length-maxItems)+(en?' more':' 个模型'))+'</span>';
   html+='<small>'+esc(en?'Click to set as date range':'点击设为统计范围')+'</small>';
   return html;
 }
@@ -2615,7 +2847,22 @@ function renderHud(){
   if(!today||(isoDayValid(until)&&today>until)||!(DATA.day||[]).length){hud.hidden=true;return;}
   const en=insightEn(),totals=selectedDayModelTotals(today),total=sumList(Object.values(totals));
   const row=rows[today],calls=insightSelected().reduce((sum,model)=>sum+(Number(row?.model_calls?.[model])||0),0);
-  let top=null;Object.entries(totals).forEach(([model,value])=>{if(value>0&&(!top||value>top[1]))top=[model,value];});
+  const hudCandidates=[];
+  Object.entries(totals).forEach(([model,value])=>{
+    if(value<=0)return;
+    if(model==='other'){
+      const {named,residual}=otherSubBreakdownForPeriod(today,'day',value,true);
+      if(named.length){
+        named.forEach(([name,subVal])=>{if(subVal>0)hudCandidates.push({key:'other',label:name,value:subVal});});
+        return;
+      }
+      if(residual>0)hudCandidates.push({key:'other',label:pretty(model),value:residual});
+      return;
+    }
+    hudCandidates.push({key:model,label:pretty(model),value});
+  });
+  hudCandidates.sort((a,b)=>b.value-a.value);
+  const top=hudCandidates[0]||null;
   hud.hidden=false;hud.setAttribute('aria-label',en?'Today usage HUD':'今日用量浮窗');
   document.getElementById('hud-title').textContent=en?'Today':'今日';
   document.getElementById('hud-calls-k').textContent=en?'Calls':'调用';
@@ -2626,7 +2873,7 @@ function renderHud(){
   document.getElementById('hud-mini').textContent=human(total);
   document.getElementById('hud-calls').textContent=row?fmt(calls):'—';
   const topEl=document.getElementById('hud-top'),dot=document.getElementById('hud-dot');
-  topEl.textContent=top?pretty(top[0]):'—';topEl.title=top?pretty(top[0]):'';dot.style.background=top?modelColor(top[0]):'var(--border-2)';
+  topEl.textContent=top?top.label:'—';topEl.title=top?top.label:'';dot.style.background=top?modelColor(top.key):'var(--border-2)';
   const race=insightState.race,deltaEl=document.getElementById('hud-delta');
   if(race&&race.delta!==null){deltaEl.dataset.lead=race.lead;deltaEl.textContent=(race.lead==='ahead'?'▲ ':race.lead==='behind'?'▼ ':'')+insightSignedPct(race.delta)+(en?' vs yesterday, same time':' 较昨日同一时刻');}
   else{delete deltaEl.dataset.lead;deltaEl.textContent=race?(en?'No usage by this time yesterday':'昨日此时尚无用量'):'';}
