@@ -237,7 +237,8 @@ class DoctorOpenCodeTests(unittest.TestCase):
         db_patch, router_patch = self._patches()
         with db_patch, router_patch, mock.patch("sys.stdout", stdout):
             result = cli.main(
-                ["doctor", "--models", "--source", "opencode", "--json"])
+                ["doctor", "--models", "--source", "opencode", "--json",
+                 "--no-cache"])
         self.assertEqual(0, result)
         payload = json.loads(stdout.getvalue())
         self.assertEqual(["opencode"], payload["sources"])
