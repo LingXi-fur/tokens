@@ -24,6 +24,7 @@ class Source:
     quota_supported: bool = True
     size_exempt: bool = True
     strict_discovery: bool = True
+    sqlite_wal: bool = False
 
     @property
     def files(self):
@@ -70,9 +71,22 @@ SOURCES = (
         root=lambda: config.OPENCODE_DB, root_kind="file",
         files_name="opencode_files", parse_name="opencode_parse",
         billing_keys_name="_OPENCODE_BILLING_KEYS", billing_name="_opencode_billing",
-        docs_path="~/.local/share/opencode",
+        docs_path="~/.local/share/opencode", sqlite_wal=True,
+    ),
+    Source(
+        name="antigravity", label="Antigravity",
+        root=lambda: _antigravity_root(), root_kind="dir",
+        files_name="antigravity_files", parse_name="antigravity_parse",
+        billing_keys_name="_ANTIGRAVITY_BILLING_KEYS", billing_name="_antigravity_billing",
+        docs_path="~/.gemini/antigravity", quota_supported=False,
+        size_exempt=True, strict_discovery=False, sqlite_wal=True,
     ),
 )
+
+
+def _antigravity_root():
+    from . import antigravity_usage
+    return antigravity_usage._get_root()
 BY_NAME = {source.name: source for source in SOURCES}
 NAMES = tuple(source.name for source in SOURCES)
 

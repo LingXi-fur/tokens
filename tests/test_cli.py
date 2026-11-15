@@ -192,10 +192,10 @@ class CliTests(unittest.TestCase):
         self.assertGreater(len(records), 250)
         # OpenCode is now the fourth synthetic source; the other source names
         # and the demo's stable shape are unchanged.
-        self.assertEqual({"claude", "gemini", "codex", "opencode"},
+        self.assertEqual({"claude", "gemini", "codex", "opencode", "antigravity"},
                          {row["source"] for row in records})
         self.assertGreater(len({row["model"] for row in records}), 4)
-        self.assertLessEqual(len({row["model"] for row in records}), 8)
+        self.assertLessEqual(len({row["model"] for row in records}), 10)
         self.assertGreater(len({row["cwd"] for row in records}), 4)
         self.assertGreater(len({row["session"] for row in records}), 10)
         self.assertTrue(all(row["cwd"].startswith("/synthetic/") for row in records))

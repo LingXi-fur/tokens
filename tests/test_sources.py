@@ -11,7 +11,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from tokens_cli import cli, config, doctor, sources  # noqa: E402
+from tokens_cli import antigravity_usage, cli, config, doctor, sources  # noqa: E402
 
 
 class AutoSourceTests(unittest.TestCase):
@@ -22,6 +22,7 @@ class AutoSourceTests(unittest.TestCase):
         self.gemini = self.root / "gemini"
         self.codex = self.root / "codex"
         self.opencode = self.root / "opencode" / "opencode.db"
+        self.antigravity = self.root / "antigravity"
         self.patches = [
             mock.patch.object(config, "CLAUDE_PROJECTS", str(self.claude)),
             mock.patch.object(config, "GEMINI_TMP", str(self.gemini)),
@@ -29,6 +30,8 @@ class AutoSourceTests(unittest.TestCase):
             mock.patch.object(config, "CODEX_ARCHIVED_SESSIONS",
                               str(self.root / "codex-archive")),
             mock.patch.object(config, "OPENCODE_DB", str(self.opencode)),
+            mock.patch.object(antigravity_usage, "ROOT", str(self.antigravity)),
+            mock.patch.dict(os.environ, {"TOKENS_ANTIGRAVITY_DIR": ""}),
         ]
         for patcher in self.patches:
             patcher.start()
@@ -42,16 +45,16 @@ class AutoSourceTests(unittest.TestCase):
         self.codex.mkdir()
         detected, skipped = sources.detect()
         self.assertEqual(["codex"], [source.name for source in detected])
-        self.assertEqual({"claude", "gemini", "opencode"},
+        self.assertEqual({"claude", "gemini", "opencode", "antigravity"},
                          {row["name"] for row in skipped})
 
     def test_all_four_present_detects_all(self):
-        for directory in (self.claude, self.gemini, self.codex):
+        for directory in (self.claude, self.gemini, self.codex, self.antigravity):
             directory.mkdir()
         self.opencode.parent.mkdir()
         self.opencode.write_bytes(b"")
         detected, skipped = sources.detect()
-        self.assertEqual(["claude", "gemini", "codex", "opencode"],
+        self.assertEqual(["claude", "gemini", "codex", "opencode", "antigravity"],
                          [source.name for source in detected])
         self.assertEqual([], skipped)
 
@@ -126,7 +129,7 @@ class AutoSourceTests(unittest.TestCase):
         (self.codex / "rollout-a.jsonl").write_text("{}\n", encoding="utf-8")
         report = doctor.collect(sources=["codex"])
         rows = {row["source"]: row for row in report["discovery"]}
-        self.assertEqual({"claude", "gemini", "codex", "opencode"}, set(rows))
+        self.assertEqual({"claude", "gemini", "codex", "opencode", "antigravity"}, set(rows))
         self.assertTrue(rows["codex"]["exists"])
         self.assertEqual(1, rows["codex"]["files"])
         self.assertFalse(rows["claude"]["exists"])
