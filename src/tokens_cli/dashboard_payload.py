@@ -85,19 +85,25 @@ def _model_registry(records):
     first_seen = {}
     last_seen = {}
     token_totals = defaultdict(int)
+    source_totals = defaultdict(int)
+    source_model_totals = defaultdict(lambda: defaultdict(int))
     saw_other = False
     for record in records:
         model = _record_model(record)
         if model == OTHER_MODEL:
             saw_other = True
             continue
+        source = record.get("source") or "unknown"
+        total = record.get("total", 0) or 0
         first_key = _model_first_seen_key(record)
         if model not in first_seen or first_key < first_seen[model]:
             first_seen[model] = first_key
         last_key = _model_last_seen_key(record)
         if model not in last_seen or last_key > last_seen[model]:
             last_seen[model] = last_key
-        token_totals[model] += record.get("total", 0) or 0
+        token_totals[model] += total
+        source_totals[source] += total
+        source_model_totals[source][model] += total
 
     # Stable passes keep activity and first-seen order as usage tie-breakers.
     ranked = sorted(first_seen, key=lambda model: (first_seen[model], model))
@@ -105,14 +111,40 @@ def _model_registry(records):
     ranked.sort(key=lambda model: token_totals[model], reverse=True)
     retained = ranked[:MODEL_IDENTITY_CAPACITY]
     if len(ranked) > MODEL_IDENTITY_CAPACITY:
-        # Reserve comparison identities and the latest backend, then fill by usage.
+        # Guarantee each active source's top model a slot, then keep comparison/recent models and fill by usage.
+        rank_index = {model: index for index, model in enumerate(ranked)}
+        active_sources = sorted(
+            (source for source, total in source_totals.items() if total > 0),
+            key=lambda source: (-source_totals[source], source),
+        )
+        retained = []
+        retained_set = set()
+        for source in active_sources:
+            models_for_source = source_model_totals[source]
+            leader = min(
+                models_for_source,
+                key=lambda model: (-models_for_source[model], rank_index[model]),
+            )
+            if models_for_source[leader] > 0 and leader not in retained_set:
+                retained.append(leader)
+                retained_set.add(leader)
+                if len(retained) >= MODEL_IDENTITY_CAPACITY:
+                    break
         recent = max(ranked, key=lambda model: (last_seen[model], model))
-        required = {model for model in COMPARISON_MODELS if model in first_seen}
-        required.add(recent)
-        retained = [model for model in ranked if model in required]
-        retained += [model for model in ranked if model not in required][
-            :MODEL_IDENTITY_CAPACITY - len(retained)
-        ]
+        for model in (*COMPARISON_MODELS, recent):
+            if (
+                model in first_seen
+                and model not in retained_set
+                and len(retained) < MODEL_IDENTITY_CAPACITY
+            ):
+                retained.append(model)
+                retained_set.add(model)
+        for model in ranked:
+            if len(retained) >= MODEL_IDENTITY_CAPACITY:
+                break
+            if model not in retained_set:
+                retained.append(model)
+                retained_set.add(model)
     retained.sort(key=lambda model: (first_seen[model], model))
     overflow = [model for model in ranked if model not in retained]
     aliases = {model: model for model in retained}

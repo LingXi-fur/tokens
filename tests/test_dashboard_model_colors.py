@@ -12,10 +12,10 @@ from tokens_cli import dashboard_payload
 
 
 class DashboardModelColorTests(unittest.TestCase):
-    def record(self, model, day, total, hour=0, suffix=None):
+    def record(self, model, day, total, hour=0, suffix=None, source="claude"):
         suffix = suffix or model
         return {
-            "source": "claude",
+            "source": source,
             "ts": f"{day}T{hour:02d}:00:00Z",
             "date": day,
             "model": model,
@@ -349,6 +349,57 @@ class DashboardModelColorTests(unittest.TestCase):
                 baseline["colors"]["light"][model],
                 narrowed["colors"]["light"][model],
             )
+
+    def test_each_active_source_keeps_its_top_model_even_when_small(self):
+        records = [
+            # Heavy sources with multiple models competing for global top-7.
+            self.record("claude-opus-4-1", "2026-07-01", 500_000, 1, source="claude"),
+            self.record("claude-sonnet-4-5", "2026-07-01", 400_000, 2, source="claude"),
+            self.record("claude-haiku-4-5", "2026-07-01", 300_000, 3, source="claude"),
+            self.record("gpt-5-codex", "2026-07-02", 450_000, 1, source="codex"),
+            self.record("gpt-5-mini", "2026-07-02", 250_000, 2, source="codex"),
+            self.record("kimi-k2.6", "2026-07-03", 200_000, 1, source="opencode"),
+            self.record("deepseek-v4.1", "2026-07-03", 180_000, 2, source="opencode"),
+            # Small (~1%) sources whose top models would otherwise be folded into Other.
+            self.record("gemini-2.5-pro", "2026-07-04", 20_000, 1, source="gemini"),
+            self.record("gemini-2.5-flash", "2026-07-04", 5_000, 2, source="gemini"),
+            self.record("gemini-4-hydrogen", "2026-07-05", 15_000, 1, source="antigravity"),
+            self.record("gemini-4-argon", "2026-07-05", 4_000, 2, source="antigravity"),
+        ]
+        payload = dashboard_payload.build_payload(records)
+        self.assertEqual(8, len(payload["models"]))
+        for guaranteed in (
+            "claude-opus-4-1",
+            "gpt-5-codex",
+            "kimi-k2.6",
+            "gemini-2.5-pro",
+            "gemini-4-hydrogen",
+        ):
+            self.assertIn(guaranteed, payload["models"])
+            self.assertNotEqual(
+                payload["colors"]["light"][guaranteed],
+                payload["colors"]["light"][dashboard_payload.OTHER_MODEL],
+            )
+        # Filtering to a narrowed range keeps identical colors for surviving models.
+        narrowed = dashboard_payload.build_payload(records, since="2026-07-03")
+        for model in narrowed["models"]:
+            self.assertEqual(
+                payload["colors"]["dark"][model],
+                narrowed["colors"]["dark"][model],
+            )
+
+    def test_more_than_capacity_sources_prioritizes_higher_total_sources(self):
+        records = [
+            self.record(f"model-src-{idx}", f"2026-07-{idx + 1:02d}", (idx + 1) * 100, source=f"src-{idx}")
+            for idx in range(9)
+        ]
+        payload = self.payload(records)
+        self.assertEqual(8, len(payload["models"]))
+        for idx in range(2, 9):
+            self.assertIn(f"model-src-{idx}", payload["models"])
+        self.assertIn(dashboard_payload.OTHER_MODEL, payload["models"])
+        self.assertNotIn("model-src-0", payload["models"])
+        self.assertNotIn("model-src-1", payload["models"])
 
 
 if __name__ == "__main__":
