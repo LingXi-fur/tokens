@@ -2736,12 +2736,12 @@ function renderSnapshotMeta(){
   const detail=document.getElementById('snapshot-detail');
   if(detail)detail.textContent =
     (en?'Generated day ':'生成日 ')+(generatedDay()||(en?'unknown':'未知'))+' ('+(isoDayValid(DATA.calendar_day)?(en?'top-level calendar_day':'顶层 calendar_day'):(en?'generated-date fallback':'generated 日期回退'))+')'+(DATA.anonymized?(en?' · anonymized export (identifiers replaced)':' · 脱敏导出（标识已替换）'):'')+(DATA.range.latest_backend?(en?' · Latest recorded backend in report range: ':' · 报告范围最近记录后端：')+(DATA.range.latest_backend_folded?(en?'other models (folded into Other)':'其他模型（归入 Other）'):DATA.range.latest_backend):'');
-  const sourceNames=DATA.source_labels||{claude:'Claude Code',codex:'Codex',gemini:'Gemini CLI',opencode:'OpenCode'};
-  const coverage=[];
-  if(DATA.source.includes('claude'))coverage.push(en?'Claude Code (includes Claude App Code using the same local logs; counted once)':'Claude Code（含复用同一本地日志的 Claude App Code，仅计一次）');
-  if(DATA.source.includes('codex'))coverage.push('Codex');
-  if(DATA.source.includes('gemini'))coverage.push('Gemini CLI');
-  if(DATA.source.includes('opencode'))coverage.push('OpenCode');
+  const sourceNames=DATA.source_labels||{claude:'Claude Code',codex:'Codex',gemini:'Gemini CLI',opencode:'OpenCode',antigravity:'Antigravity'};
+  const coverage=(Array.isArray(DATA.source)?DATA.source:[]).map(source=>{
+    const label=sourceNames[source]||source;
+    if(source==='claude')return en?`${label} (includes Claude App Code using the same local logs; counted once)`:`${label}（含复用同一本地日志的 Claude App Code，仅计一次）`;
+    return label;
+  });
   document.getElementById('source-coverage').textContent=(coverage.length?(en?'Configured local sources: ':'已启用本地来源：')+coverage.join(' / '):(en?'No local source selected':'未选择本地来源'));
   const boundary=document.getElementById('source-boundary');
   if(boundary)boundary.textContent=en?'Claude chat / Cowork: not connected, tokens unknown. Other devices and cloud sessions are not verified; not an account-wide total.':'Claude 普通聊天 / Cowork：未接入，Token 未知。其他设备及云端会话覆盖未验证；非账号全量。';
