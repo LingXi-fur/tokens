@@ -68,6 +68,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- The dashboard's "Configured local sources" line is built from the source registry labels instead of a hardcoded four-source list, so Antigravity and future sources appear automatically; the README preview was re-shot (dark, English, K/M units, Antigravity in the legend, Today HUD clear of every button). / 顶部“已启用本地来源”改为按来源注册表生成，Antigravity 及以后新增的来源会自动出现；README 预览图已重拍（暗色英文、K/M 单位、图例含 Antigravity、Today HUD 不遮挡按钮）。
 - Model identities: every source with usage now keeps its top model as a named, colored series instead of disappearing into Other (remaining slots still go by usage; with more sources than slots, larger sources win). Colors stay tied to the model across filters and date ranges, and the Other summary and hover list each folded model with its source. / 模型身份：每个有用量的来源都至少保住用量最大的模型，不再被折叠进 Other；颜色跟随模型、过滤不换色；Other 的汇总和悬停会列出被折叠模型及其来源。
 - English dashboard no longer shows Chinese units or granularity words: compact numbers use K/M/B through one shared formatter and the Signal Dock uses Day/Week/Month; the Chinese UI keeps 万/亿. / 英文界面不再出现“万/亿/月”：数字统一用 K/M/B，粒度词走 i18n；中文界面保留万/亿。
 - `serve` no longer prints tracebacks when a browser disconnects mid-response (BrokenPipe/ConnectionReset/ConnectionAborted are logged at debug level), and its startup lines (including source discovery) are flushed to the log immediately. A concurrency test confirms 1,000 parallel requests trigger no extra scans. `serve` 在浏览器中途断开时不再刷 Traceback，启动日志立即写出。
