@@ -114,7 +114,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
   <div class=range-head>
    <span class=range-k data-i18n-key="DATE RANGE · Statistics">DATE RANGE · 统计日期</span>
    <div class=range-presets id=range-presets role=group aria-label="日期范围快捷选择"></div>
-   <label class=range-date-wrap><span data-i18n-key="Specific day">指定日</span> <input type=date id=range-date></label>
+   <label class=range-date-wrap><span data-i18n-key="Specific day">指定日</span><span class=range-date-box><input type=text id=range-date class=range-date-input inputmode=numeric maxlength=10 placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" autocomplete=off><button type=button id=range-date-pick class=range-date-pick aria-label="从日历选择日期" title="从日历选择日期">📅</button><input type=date id=range-date-picker class=range-date-native tabindex=-1 aria-hidden=true></span></label>
   </div>
   <div class=range-ledger id=range-ledger role=status aria-live=polite></div>
  </div>

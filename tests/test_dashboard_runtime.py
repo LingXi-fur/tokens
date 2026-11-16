@@ -4256,6 +4256,117 @@ class DashboardRuntimeTests(unittest.TestCase):
             finally:
                 context.close()
 
+    def test_polish_legend_layout_date_input_and_table_other_export(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            records = [
+                {"source": "claude", "ts": "2026-09-09T10:00:00Z", "date": "2026-09-09", "model": "claude-opus-4-1", "input": 8000, "output": 0, "cache_read": 0, "cache_write": 0, "total": 8000, "session": "s1", "cwd": "/repo"},
+                {"source": "opencode", "ts": "2026-09-09T10:05:00Z", "date": "2026-09-09", "model": "claude-opus-4-1", "input": 1000, "output": 0, "cache_read": 0, "cache_write": 0, "total": 1000, "session": "s2", "cwd": "/repo"},
+                {"source": "claude", "ts": "2026-09-09T10:10:00Z", "date": "2026-09-09", "model": "claude-sonnet-4-5", "input": 7000, "output": 0, "cache_read": 0, "cache_write": 0, "total": 7000, "session": "s3", "cwd": "/repo"},
+                {"source": "codex", "ts": "2026-09-09T10:15:00Z", "date": "2026-09-09", "model": "gpt-5-codex", "input": 6000, "output": 0, "cache_read": 0, "cache_write": 0, "total": 6000, "session": "s4", "cwd": "/repo"},
+                {"source": "codex", "ts": "2026-09-09T10:20:00Z", "date": "2026-09-09", "model": "gpt-5-mini", "input": 5000, "output": 0, "cache_read": 0, "cache_write": 0, "total": 5000, "session": "s5", "cwd": "/repo"},
+                {"source": "gemini", "ts": "2026-09-09T10:25:00Z", "date": "2026-09-09", "model": "gemini-2.5-pro", "input": 4000, "output": 0, "cache_read": 0, "cache_write": 0, "total": 4000, "session": "s6", "cwd": "/repo"},
+                {"source": "opencode", "ts": "2026-09-09T10:30:00Z", "date": "2026-09-09", "model": "kimi-k2.6", "input": 3500, "output": 0, "cache_read": 0, "cache_write": 0, "total": 3500, "session": "s7", "cwd": "/repo"},
+                {"source": "opencode", "ts": "2026-09-09T10:35:00Z", "date": "2026-09-09", "model": "deepseek-v4.1", "input": 3000, "output": 0, "cache_read": 0, "cache_write": 0, "total": 3000, "session": "s8", "cwd": "/repo"},
+                {"source": "antigravity", "ts": "2026-09-09T10:40:00Z", "date": "2026-09-09", "model": "gemini-3-pro", "input": 2500, "output": 0, "cache_read": 0, "cache_write": 0, "total": 2500, "session": "s9", "cwd": "/repo"},
+                {"source": "antigravity", "ts": "2026-09-10T10:00:00Z", "date": "2026-09-10", "model": "fold-alpha-super-long-model-name", "input": 900, "output": 0, "cache_read": 0, "cache_write": 0, "total": 900, "session": "s10", "cwd": "/repo"},
+                {"source": "gemini", "ts": "2026-09-10T10:05:00Z", "date": "2026-09-10", "model": "fold-beta", "input": 700, "output": 0, "cache_read": 0, "cache_write": 0, "total": 700, "session": "s11", "cwd": "/repo"},
+                {"source": "claude", "ts": "2026-09-10T11:00:00Z", "date": "2026-09-10", "model": "claude-opus-4-1", "input": 100, "output": 0, "cache_read": 0, "cache_write": 0, "total": 100, "session": "s12", "cwd": "/repo"},
+            ]
+            payload = dashboard_payload.build_payload(
+                records,
+                generated_at=datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc),
+            )
+            html_path = Path(tmpdir) / "polish.html"
+            html_path.write_text(
+                report_dashboard.render_dashboard(
+                    dashboard_wire.encode_payload(payload),
+                    language="zh",
+                ),
+                encoding="utf-8",
+            )
+            context = self._browser.new_context(
+                viewport={"width": 1440, "height": 900},
+                locale="zh-CN",
+                reduced_motion="reduce",
+            )
+            page = context.new_page()
+            page_errors, console_errors = [], []
+            page.on("pageerror", lambda e: page_errors.append(str(e)))
+            page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
+            try:
+                page.goto(html_path.as_uri(), wait_until="load")
+                page.evaluate("applyLanguage('en', false)")
+                # 1. Unified single-line legend with model name, source (multi-source joined), exact tokens, share
+                items = page.evaluate("""() => [...document.querySelectorAll('#donut-legend .dl-item')].map(el => ({
+                    text: el.innerText.replace(/\\s+/g, ' '),
+                    title: el.getAttribute('title') || '',
+                    h: Math.round(el.getBoundingClientRect().height)
+                }))""")
+                self.assertEqual(10, len(items))
+                heights = {item["h"] for item in items}
+                self.assertEqual(1, len(heights), items)
+                self.assertIn("Claude Code, OpenCode", items[0]["text"])
+                self.assertIn("9,100", items[0]["text"])
+                self.assertIn("fold-alpha-super-long-model-name", items[-2]["title"])
+                # 2. Hourly Buckets card does not stretch to Model mix height
+                card_h = page.evaluate("""() => ({
+                    donut: document.getElementById('donut').closest('.card').getBoundingClientRect().height,
+                    block: document.getElementById('block-bars').closest('.card').getBoundingClientRect().height
+                })""")
+                self.assertLess(card_h["block"], card_h["donut"] - 100)
+                # 3. zh-CN locale + English UI has no Chinese date units (年/月/日) on date controls/tables
+                date_info = page.evaluate("""() => {
+                    const inp = document.getElementById('range-date');
+                    const pick = document.getElementById('range-date-pick');
+                    const scopeText = [
+                        document.getElementById('range-controls')?.innerText || '',
+                        document.getElementById('range-ledger')?.innerText || '',
+                        document.querySelector('.section-dock')?.innerText || '',
+                        document.getElementById('trend-table-details')?.innerText || '',
+                        document.getElementById('donut-legend')?.innerText || '',
+                    ].join('\\n');
+                    return {
+                        type: inp.type,
+                        placeholder: inp.placeholder,
+                        aria: inp.getAttribute('aria-label') || '',
+                        pickAria: pick?.getAttribute('aria-label') || '',
+                        scopeText,
+                    };
+                }""")
+                self.assertEqual("text", date_info["type"])
+                self.assertEqual("YYYY-MM-DD", date_info["placeholder"])
+                for ch in ("年", "月", "日"):
+                    self.assertNotIn(ch, date_info["placeholder"])
+                    self.assertNotIn(ch, date_info["aria"])
+                    self.assertNotIn(ch, date_info["pickAria"])
+                    self.assertNotIn(ch, date_info["scopeText"])
+                # 4. Period table Other (N) expands into sub-columns + CSV/Markdown exports expand Other
+                page.locator("#trend-table-details summary").click()
+                toggle = page.locator("#table-other-toggle")
+                self.assertIn("Other (2)", toggle.inner_text())
+                other_cell_title = page.locator("#tbody td.col-other").first.get_attribute("title") or ""
+                self.assertIn("fold-alpha-super-long-model-name", other_cell_title)
+                self.assertIn("900", other_cell_title)
+                toggle.click()
+                self.assertEqual(2, page.locator("#thead th.col-other-sub").count())
+                toggle.click()
+                self.assertEqual(0, page.locator("#thead th.col-other-sub").count())
+                exports = page.evaluate("""() => {
+                    const out = [];
+                    const orig = downloadBlob;
+                    downloadBlob = (content, type, name) => out.push({name, content});
+                    try { exportCSV(); exportMarkdown(); } finally { downloadBlob = orig; }
+                    return out;
+                }""")
+                csv_head = exports[0]["content"].splitlines()[0]
+                self.assertIn("fold-alpha-super-long-model-name (Antigravity)", csv_head)
+                self.assertIn("fold-beta (Gemini CLI)", csv_head)
+                self.assertIn("fold-alpha-super-long-model-name (Antigravity)", exports[1]["content"])
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
 
 if __name__ == "__main__":
     unittest.main()
