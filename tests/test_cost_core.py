@@ -135,7 +135,7 @@ CASES = [
     ("official-pricing-2026-11-15-google-openai-anthropic",
      cost_block([
          ["2026-11-15", 0, [1000000, 1000000, 1000000, 0, 500000], 3500000, 1, False],
-         ["2026-11-15", 1, [1000000, 1000000, 1000000, 1000000, 500000], 4500000, 1, False],
+         ["2026-11-15", 1, [1000000, 1000000, 1000000, 0, 500000], 3500000, 1, False],
          ["2026-11-15", 2, [1000000, 1000000, 1000000, 0, 0], 3000000, 1, False],
          ["2026-11-15", 3, [1000000, 1000000, 1000000, 1000000, 0], 4000000, 1, False],
      ], [
@@ -491,8 +491,8 @@ class CostCoreContractTests(unittest.TestCase):
         self.assertEqual("BigInt:16375000000000", by_id["gpro"]["costScaled"])
         self.assertEqual("google", by_id["gpro"]["reference"]["vendor"])
         self.assertEqual("2026-11-15", by_id["gpro"]["reference"]["date"])
-        # gemini-4-hydrogen: 1.50 + 7.50 + 0.075 + 1.875 + 0.5*7.50 = $14.70
-        self.assertEqual("BigInt:14700000000000", by_id["ghyd"]["costScaled"])
+        # gemini-4-hydrogen: 1.50 + 7.50 + 0.075 + 0.5*7.50 = $12.825（官网未单列缓存写）
+        self.assertEqual("BigInt:12825000000000", by_id["ghyd"]["costScaled"])
         self.assertEqual("google", by_id["ghyd"]["reference"]["vendor"])
         # gpt-5.3-codex: 1.75 + 14 + 0.175 = $15.925
         self.assertEqual("BigInt:15925000000000", by_id["codex53"]["costScaled"])
