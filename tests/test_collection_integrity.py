@@ -7,6 +7,7 @@ only source finders and explicitly injected boundary failures are substituted.
 No helpers from test_large_claude_logs are imported: the authoring worktree may
 have an older HEAD than the checkout against which this candidate is validated.
 """
+from tests import _hermetic  # noqa: F401
 import builtins
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy

@@ -1,4 +1,5 @@
 """Auto-discovery and source-registry contracts with synthetic roots only."""
+from tests import _hermetic  # noqa: F401
 import io
 import json
 import os

@@ -6,6 +6,7 @@ the embedded payload, interactions drive the shared date range, both languages
 render without leftovers, motion is gated, and narrow viewports neither overflow
 nor shrink touch targets.
 """
+from tests import _hermetic  # noqa: F401
 
 import json
 import re

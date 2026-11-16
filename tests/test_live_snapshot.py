@@ -1,4 +1,5 @@
 """Only synthetic payloads and temporary files exercise the snapshot boundary."""
+from tests import _hermetic  # noqa: F401
 import copy
 import hashlib
 import json

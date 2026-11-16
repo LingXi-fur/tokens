@@ -1,4 +1,5 @@
 """Synthetic contracts for the production monthly-budget core."""
+from tests import _hermetic  # noqa: F401
 import json
 import shutil
 import subprocess

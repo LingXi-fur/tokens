@@ -19,6 +19,7 @@ Aligned to the shipped implementation (agent ad754fd96388025b3,
   * csvCell formula guard: ``'`` prefix when the cell starts (after leading
     whitespace / control chars) with ``= + - @``; RFC4180 quoting otherwise.
 """
+from tests import _hermetic  # noqa: F401
 
 import csv
 import io

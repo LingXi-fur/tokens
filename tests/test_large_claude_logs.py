@@ -3,6 +3,7 @@
 No real source discovery, router, title, sidecar, cache, or network is used.
 The >64 MiB cases write both ordinary lines and giant projected JSON lines in chunks.
 """
+from tests import _hermetic  # noqa: F401
 import builtins
 from contextlib import ExitStack, contextmanager
 from datetime import timezone

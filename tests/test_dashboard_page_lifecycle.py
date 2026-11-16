@@ -1,4 +1,5 @@
 """Failure ownership contracts for the real synthetic browser page helpers."""
+from tests import _hermetic  # noqa: F401
 import unittest
 from pathlib import Path
 from types import SimpleNamespace

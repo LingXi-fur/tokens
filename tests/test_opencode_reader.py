@@ -4,6 +4,7 @@ The reader opens the database read-only and projects only tokens/model/time
 through SQL ``json_extract``; message bodies never enter Python. These tests
 build a throwaway database with the v2 schema subset the reader touches.
 """
+from tests import _hermetic  # noqa: F401
 import json
 import os
 import sqlite3

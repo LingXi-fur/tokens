@@ -9,6 +9,7 @@ protocol, then drives it in Chromium. Old-backend scenarios default status to
 Only synthetic records are used. Nothing here opens port 8765, the private
 cache, raw session logs, or any upload path.
 """
+from tests import _hermetic  # noqa: F401
 import json
 import os
 import sys

@@ -1,4 +1,5 @@
 """Synthetic tests for the opt-in maintenance verifier, not a recursive suite."""
+from tests import _hermetic  # noqa: F401
 
 import importlib.util
 import io

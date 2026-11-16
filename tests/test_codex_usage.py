@@ -1,4 +1,5 @@
 """Synthetic Codex collection contracts; never inspect real application data."""
+from tests import _hermetic  # noqa: F401
 import json
 from datetime import timezone
 from pathlib import Path

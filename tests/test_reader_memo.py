@@ -1,4 +1,5 @@
 """Synthetic-only, actual source-I/O tests for the private per-reader memo."""
+from tests import _hermetic  # noqa: F401
 from collections import Counter
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy

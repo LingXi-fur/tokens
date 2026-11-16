@@ -1,4 +1,5 @@
 """Pure terrain contracts, run without browser, private data or asset loading."""
+from tests import _hermetic  # noqa: F401
 from pathlib import Path
 import subprocess
 import unittest
