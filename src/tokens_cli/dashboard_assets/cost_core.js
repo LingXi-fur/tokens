@@ -17,10 +17,11 @@ const COST_VERSION=1,COST_MAX_ENTRIES=4000;
    tier/limit 仅溯源展示。全部条目一律取官方价，缓存写取 5 分钟档。
    页面不主动请求 vendor URL。 */
 const COST_REFERENCE={
-  date:'2026-11-06',currency:'USD',
+  date:'2026-11-15',currency:'USD',
   vendors:{
     anthropic:{label:'Anthropic',date:'2026-11-06',url:'https://platform.claude.com/docs/en/about-claude/pricing'},
     openai:{label:'OpenAI',date:'2026-11-06',url:'https://developers.openai.com/api/docs/pricing'},
+    google:{label:'Google',date:'2026-11-15',url:'https://ai.google.dev/gemini-api/docs/pricing'},
     deepseek:{label:'DeepSeek',date:'2026-11-06',url:'https://api-docs.deepseek.com/quick_start/pricing'},
     zai:{label:'Z.ai',date:'2026-11-06',url:'https://docs.z.ai/guides/overview/pricing'},
     moonshot:{label:'Moonshot AI',date:'2026-11-06',url:'https://platform.kimi.ai/docs/pricing'}
@@ -35,6 +36,12 @@ const COST_REFERENCE={
     'gpt-5.6-luna':{vendor:'openai',rates:['0.20','1.20','0.02','0.25',''],tier:'Standard 短上下文档 ≤272K'},
     'gpt-5.6-terra':{vendor:'openai',rates:['2','12','0.20','2.50',''],tier:'Standard 短上下文档 ≤272K'},
     'gpt-6-luna':{vendor:'openai',date:'2026-11-06',rates:['0.10','0.50','0.01','0.125',''],tier:'Standard 短上下文档 ≤272K'},
+    'gpt-5.3-codex':{vendor:'openai',date:'2026-11-15',rates:['1.75','14','0.175','',''],tier:'Standard；官网未单列缓存写'},
+    'gemini-4-hydrogen':{vendor:'google',date:'2026-11-15',rates:['1.50','7.50','0.075','1.875','7.50'],tier:'Global Endpoint 标准档；思考 token 同输出价'},
+    'gemini-2.5-pro':{vendor:'google',date:'2026-11-15',rates:['1.25','10','0.125','','10'],tier:'Standard ≤200K 上下文档；思考 token 同输出价'},
+    'gemini-2.5-flash':{vendor:'google',date:'2026-11-15',rates:['0.30','2.50','0.03','','2.50'],tier:'Standard Paid；思考 token 同输出价'},
+    'gemini-3-flash-preview':{vendor:'google',date:'2026-11-15',rates:['0.50','3','0.05','','3'],tier:'Standard Paid（Legacy preview）；思考 token 同输出价'},
+    'gemini-3-pro-preview':{vendor:'google',date:'2026-11-15',rates:['2','12','','','12'],tier:'Standard ≤200K（已于 2026-03-09 下线）；思考 token 同输出价'},
     'deepseek-flash':{vendor:'deepseek',rates:['0.30','1.20','0.006','',''],tier:'峰时基准（off-peak 五折）'},
     'deepseek-v4-flash':{vendor:'deepseek',rates:['0.30','1.20','0.006','',''],tier:'峰时基准（off-peak 五折；官网注明由 V4.1-Flash 按同价服务）'},
     'deepseek-v4-pro':{vendor:'deepseek',rates:['1.32','3.96','0.044','',''],tier:'峰时基准（off-peak 五折）'},
@@ -44,6 +51,7 @@ const COST_REFERENCE={
     'glm-5.3-flash':{vendor:'zai',date:'2026-11-06',rates:['0.15','0.50','0.03','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
     /* 直写 provider 前缀的记录（非 CCR hex 别名）：同后端同价，精确名单独入表。 */
     'zhipu/glm-5.3-flash':{vendor:'zai',date:'2026-11-06',rates:['0.15','0.50','0.03','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
+    'claude-fable-5-1':{vendor:'anthropic',date:'2026-11-15',rates:['10','50','0.25','12.50',''],tier:'官方价（Legacy）；缓存写取 5 分钟档'},
     'claude-opus-5.5':{vendor:'anthropic',date:'2026-11-06',rates:['4','20','0.20','5',''],tier:'官方价，缓存读 0.05×基础输入；缓存写取 5 分钟档'},
     'claude-sonnet-5.5':{vendor:'anthropic',date:'2026-11-06',rates:['2','10','0.10','2.50',''],tier:'官方价，缓存读 0.05×基础输入；缓存写取 5 分钟档'},
     'claude-haiku-5.5':{vendor:'anthropic',date:'2026-11-06',rates:['0.10','0.50','0.01','0.125',''],tier:'官方价 ≤100K 上下文档；>100K 为 $0.50/$2.50；缓存写取 5 分钟档'},

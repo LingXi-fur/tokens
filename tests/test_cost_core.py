@@ -123,15 +123,41 @@ CASES = [
          ["2026-07-01", 0, [2500000, 0, 0, 0, 0], 2500000, 1, False],
      ], [model("gpt-6.1-sol", "in", "openai"), model("gpt-6.1-sol", "out", "openai")]),
      ["2026-07-01"], ["in"], USD),
-    ("invalid-rows-counted-as-unknown",
+     ("invalid-rows-counted-as-unknown",
+      cost_block([
+          ["2026-07-01", 0],
+          ["2026/07/01", 0, [1, 1, 0, 0, 0], 2, 1, False],
+          ["2026-07-01", 99, [1, 1, 0, 0, 0], 2, 1, False],
+          ["2026-07-01", 0, [1, 1, 0, 0, 0], 2, 1.5, False],
+          ["2026-07-01", 0, [1000000, 0, 0, 0, 0], 1000000, 2, False],
+      ], [model("gpt-6.1-sol", "m", "openai")]),
+      ["2026-07-01"], ["m"], USD),
+    ("official-pricing-2026-11-15-google-openai-anthropic",
      cost_block([
-         ["2026-07-01", 0],
-         ["2026/07/01", 0, [1, 1, 0, 0, 0], 2, 1, False],
-         ["2026-07-01", 99, [1, 1, 0, 0, 0], 2, 1, False],
-         ["2026-07-01", 0, [1, 1, 0, 0, 0], 2, 1.5, False],
-         ["2026-07-01", 0, [1000000, 0, 0, 0, 0], 1000000, 2, False],
-     ], [model("gpt-6.1-sol", "m", "openai")]),
-     ["2026-07-01"], ["m"], USD),
+         ["2026-11-15", 0, [1000000, 1000000, 1000000, 0, 500000], 3500000, 1, False],
+         ["2026-11-15", 1, [1000000, 1000000, 1000000, 1000000, 500000], 4500000, 1, False],
+         ["2026-11-15", 2, [1000000, 1000000, 1000000, 0, 0], 3000000, 1, False],
+         ["2026-11-15", 3, [1000000, 1000000, 1000000, 1000000, 0], 4000000, 1, False],
+     ], [
+         model("gemini-2.5-pro", "gpro", "gemini"),
+         model("gemini-4-hydrogen", "ghyd", "antigravity"),
+         model("gpt-5.3-codex", "codex53", "codex"),
+         model("claude-fable-5-1", "fable", "claude"),
+     ]),
+     ["2026-11-15"], ["gpro", "ghyd", "codex53", "fable"], USD),
+    ("unpriced-internal-models-stay-pending",
+     cost_block([
+         ["2026-11-15", 0, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+         ["2026-11-15", 1, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+         ["2026-11-15", 2, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+         ["2026-11-15", 3, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+     ], [
+         model("gemini-4-argon-trial", "argon", "antigravity"),
+         model("gemini-3.8-flash-n", "flashn", "antigravity"),
+         model("claude-opus-5-5-medium", "opusm", "antigravity"),
+         model("codex-auto-review", "autorev", "codex"),
+     ]),
+     ["2026-11-15"], ["argon", "flashn", "opusm", "autorev"], USD),
 ]
 
 VIEW_KEYS = ["supported", "currency", "referenceCount", "totalIncomplete", "entries",
@@ -293,8 +319,8 @@ class CostCoreContractTests(unittest.TestCase):
     def test_parts_and_reference_are_frozen_values(self):
         self.assertEqual(["input", "output", "cache_read", "cache_write", "thoughts"],
                          json.loads(self.result["helpers"]["parts"]))
-        self.assertEqual("2026-11-06", self.result["helpers"]["referenceDate"])
-        self.assertEqual("anthropic,openai,deepseek,zai,moonshot", self.result["helpers"]["referenceVendors"])
+        self.assertEqual("2026-11-15", self.result["helpers"]["referenceDate"])
+        self.assertEqual("anthropic,openai,google,deepseek,zai,moonshot", self.result["helpers"]["referenceVendors"])
 
     def test_default_config(self):
         self.assertEqual({"v": 1, "currency": "USD", "reference": True, "prices": {}},
@@ -454,6 +480,35 @@ class CostCoreContractTests(unittest.TestCase):
         self.assertEqual({"entry": None, "reference": None}, got[2])  # unknown model
         self.assertEqual("n", got[3]["entry"]["note"])
         self.assertIsNone(got[3]["reference"])  # explicit entry beats reference
+
+    def test_official_pricing_2026_11_15(self):
+        view = self.result["views"]["official-pricing-2026-11-15-google-openai-anthropic"]
+        self.assertEqual(4, view["pricedCount"])
+        self.assertEqual(0, view["pendingCount"])
+        self.assertTrue(view["fullEstimate"])
+        by_id = {e["model"]["identity"]: e for e in view["entries"]}
+        # gemini-2.5-pro: 1.25 + 10 + 0.125 + 0.5*10 = $16.375
+        self.assertEqual("BigInt:16375000000000", by_id["gpro"]["costScaled"])
+        self.assertEqual("google", by_id["gpro"]["reference"]["vendor"])
+        self.assertEqual("2026-11-15", by_id["gpro"]["reference"]["date"])
+        # gemini-4-hydrogen: 1.50 + 7.50 + 0.075 + 1.875 + 0.5*7.50 = $14.70
+        self.assertEqual("BigInt:14700000000000", by_id["ghyd"]["costScaled"])
+        self.assertEqual("google", by_id["ghyd"]["reference"]["vendor"])
+        # gpt-5.3-codex: 1.75 + 14 + 0.175 = $15.925
+        self.assertEqual("BigInt:15925000000000", by_id["codex53"]["costScaled"])
+        self.assertEqual("openai", by_id["codex53"]["reference"]["vendor"])
+        # claude-fable-5-1: 10 + 50 + 0.25 + 12.50 = $72.75
+        self.assertEqual("BigInt:72750000000000", by_id["fable"]["costScaled"])
+        self.assertEqual("anthropic", by_id["fable"]["reference"]["vendor"])
+
+    def test_unpriced_internal_models_stay_pending(self):
+        view = self.result["views"]["unpriced-internal-models-stay-pending"]
+        self.assertEqual(0, view["pricedCount"])
+        self.assertEqual(4, view["pendingCount"])
+        self.assertFalse(view["anyPriced"])
+        self.assertFalse(view["fullEstimate"])
+        for entry in view["entries"]:
+            self.assertIsNone(entry["reference"])
 
 
 if __name__ == "__main__":
