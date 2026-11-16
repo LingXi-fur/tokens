@@ -1,5 +1,6 @@
 """费用账本（cost ledger）后端合成用例：reader 计费证据、payload cost 块、
 缓存 v4→v5 与 wire 往返。不依赖浏览器；不读取真实日志。"""
+from tests import _hermetic  # noqa: F401
 import json
 import sys
 import tempfile

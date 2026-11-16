@@ -1,3 +1,4 @@
+from tests import _hermetic  # noqa: F401
 import re
 import unittest
 import xml.etree.ElementTree as ET

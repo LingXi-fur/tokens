@@ -1,3 +1,4 @@
+from tests import _hermetic  # noqa: F401
 import io
 import sys
 import unittest

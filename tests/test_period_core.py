@@ -6,6 +6,7 @@ dominant-model shift badge, delta attribution and the copied view summary.
 It is self-contained (no DOM, DATA, state, language or clock), so these tests
 run it alone under Node and pin the edge cases directly.
 """
+from tests import _hermetic  # noqa: F401
 
 import re
 import shutil

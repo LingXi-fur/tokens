@@ -4,6 +4,7 @@ All files and databases are temporary. Scanners receive synthetic JSONL with a
 sentinel body string; tests assert the sentinel, cwd, and session never reach
 text or JSON output.
 """
+from tests import _hermetic  # noqa: F401
 import io
 import json
 import os

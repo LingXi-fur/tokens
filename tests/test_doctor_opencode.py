@@ -4,6 +4,7 @@ Every test builds a throwaway SQLite database with the OpenCode v2 schema
 subset and never reads a real log or database. Message bodies contain a
 sentinel string so leaks are detectable.
 """
+from tests import _hermetic  # noqa: F401
 import io
 import json
 import os

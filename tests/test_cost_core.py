@@ -11,6 +11,7 @@ accounting) and the sanitize/parse helpers. Python-side tests pin the asset
 assembly order (cost_core.js concatenated before dashboard.js inside the single
 <script>) so production cannot silently ship without the shared core.
 """
+from tests import _hermetic  # noqa: F401
 
 import json
 import shutil

@@ -1,4 +1,5 @@
 """Data-first world layer: page-memory rates, explicit scope and safe fallback."""
+from tests import _hermetic  # noqa: F401
 import unittest
 
 from tests import test_world_runtime as runtime

@@ -1,4 +1,5 @@
 """Synthetic scan telemetry and restored-snapshot contracts."""
+from tests import _hermetic  # noqa: F401
 import http.client
 import json
 from pathlib import Path

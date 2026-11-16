@@ -1,4 +1,5 @@
 """Observer must not change reader results or failure contracts."""
+from tests import _hermetic  # noqa: F401
 import json
 from pathlib import Path
 import sys

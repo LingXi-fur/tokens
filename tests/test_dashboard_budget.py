@@ -1,4 +1,5 @@
 """Monthly budget integration; synthetic HTML and isolated browser only."""
+from tests import _hermetic  # noqa: F401
 import json
 import os
 import tempfile

@@ -5,6 +5,7 @@ same time of day, the per-day model share stream, and the activity calendar with
 streak statistics. It is self-contained (no DOM, DATA, state, language or clock),
 so these tests run it alone under Node and pin the edge cases directly.
 """
+from tests import _hermetic  # noqa: F401
 
 import re
 import shutil

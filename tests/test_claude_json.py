@@ -5,6 +5,7 @@ projection helpers.  Only json.loads and the three fixed projection levels below
 specify which values survive.  No source logs, filesystem fixtures, or services
 are needed by this module.
 """
+from tests import _hermetic  # noqa: F401
 
 import json
 import math

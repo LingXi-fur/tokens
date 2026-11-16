@@ -1,4 +1,5 @@
 """Standalone synthetic prototype browser checks. Never load private profiles."""
+from tests import _hermetic  # noqa: F401
 import importlib.util
 import json
 import os

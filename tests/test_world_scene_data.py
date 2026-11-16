@@ -1,4 +1,5 @@
 """Synthetic-only 3D adapter and standalone build contracts."""
+from tests import _hermetic  # noqa: F401
 import importlib.util
 import json
 from pathlib import Path

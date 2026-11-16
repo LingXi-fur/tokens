@@ -6,6 +6,7 @@ the backend aggregation itself is out of scope here). No private logs, no
 network, no screenshots. Browser selection via TOKENS_DASHBOARD_BROWSER
 (webkit supported). Run this file alone; it is not part of the full regression.
 """
+from tests import _hermetic  # noqa: F401
 
 import json
 import os

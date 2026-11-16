@@ -11,6 +11,7 @@ cost 块，不手工注入/覆盖）→ 真实 dashboard HTML → Playwright 验
 - 价格全部通过真实编辑器 UI 填写并保存（fill + #cost-save），不直接写
   localStorage；unknown（tool>0）记录不可计价。
 """
+from tests import _hermetic  # noqa: F401
 
 import json
 import os

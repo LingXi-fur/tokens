@@ -1,4 +1,5 @@
 """Report-day, trusted-component and shared-cost contracts for synthetic world."""
+from tests import _hermetic  # noqa: F401
 import copy
 import importlib.util
 import json
