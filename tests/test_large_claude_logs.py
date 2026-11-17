@@ -381,7 +381,23 @@ class LargeClaudeLogsTests(unittest.TestCase):
                                side_effect=lambda: factory(**limits)):
             yield
 
-    def test_giant_lines_keep_usage_at_head_middle_and_tail(self):
+    def test_fast_reader_matches_legacy_records_exactly(self):
+        path = self.write([
+            event("fast-a", 7),
+            {"type": "user", "timestamp": "2026-10-20T10:00:01Z",
+             "sessionId": "synthetic-session", "cwd": "/synthetic/project",
+             "message": {"role": "user", "content": "synthetic non-usage line"}},
+            event("fast-b", 11),
+        ])
+        fast = readers.claude_parse(str(path))
+        with mock.patch.object(readers, "CLAUDE_FAST_JSON_BYTES", 0), \
+                mock.patch.object(readers, "CLAUDE_PREFILTER_NON_USAGE", False):
+            legacy = readers.claude_parse(str(path))
+        self.assertEqual(legacy, fast)
+        self.assertEqual(2, len(fast))
+        self.assertEqual(30, sum(row["total"] for row in fast))
+
+
         first, last = event("before"), event("after", 19)
         for position in ("head", "middle", "tail"):
             with self.subTest(position=position):

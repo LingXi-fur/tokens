@@ -267,6 +267,11 @@ MAX_FILE_BYTES = 64 * 1024 * 1024
 # Claude 的小行缓冲阈值，不是物理行长度上限；标题/Codex 原行长策略不变。
 MAX_LINE_BYTES = 4 * 1024 * 1024
 CLAUDE_READ_CHUNK_BYTES = 64 * 1024
+# Small lines that carry usage can use the C JSON decoder; larger lines keep the
+# bounded projection parser so giant content is never materialized.
+CLAUDE_FAST_JSON_BYTES = 256 * 1024
+CLAUDE_PREFILTER_NON_USAGE = True
+_DEFAULT_PROJECTION_PARSER = _claude_json.ProjectionParser
 MAX_CLAUDE_RECORDS = 100000
 MAX_CLAUDE_RETAINED_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_RECORDS = 1000000
@@ -873,6 +878,7 @@ def _claude_projected_lines(reader):
         prefix.clear()
         return candidate
 
+    fast_enabled = _claude_json.ProjectionParser is _DEFAULT_PROJECTION_PARSER
     for piece, finished in _claude_line_chunks(reader):
         if not bad:
             try:
@@ -884,8 +890,26 @@ def _claude_projected_lines(reader):
                     parser.feed(piece)
                 if finished:
                     if parser is None:
-                        parser = start_parser()
-                    projected = parser.finish_line()
+                        # A line without the usage marker cannot become a
+                        # Claude record; skip the expensive projection parser.
+                        if (fast_enabled and CLAUDE_PREFILTER_NON_USAGE
+                                and b'"usage"' not in prefix):
+                            prefix.clear()
+                            parser = None
+                        elif fast_enabled and len(prefix) <= CLAUDE_FAST_JSON_BYTES:
+                            try:
+                                projected = json.loads(prefix)
+                            except (TypeError, ValueError, RecursionError):
+                                projected = None
+                            prefix.clear()
+                            parser = None
+                            if projected is not None:
+                                yield projected
+                        else:
+                            parser = start_parser()
+                    if parser is not None:
+                        projected = parser.finish_line()
+                        yield projected
             except _claude_json.ProjectionLimit as exc:
                 prefix.clear()
                 raise CollectionIncompleteError("claude", exc.reason) from None
@@ -894,9 +918,6 @@ def _claude_projected_lines(reader):
                 bad = True
                 parser = None
                 prefix.clear()
-            else:
-                if finished:
-                    yield projected
         if finished:
             parser = None
             prefix.clear()
