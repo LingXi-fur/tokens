@@ -1284,17 +1284,13 @@ def _save_cache(cache):
         fchmod = getattr(os, "fchmod", None)
         if callable(fchmod):
             fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fd = None
-            written = 0
-            encoder = json.JSONEncoder(ensure_ascii=False, separators=(",", ":"),
-                                       allow_nan=False)
-            for chunk in encoder.iterencode(cache):
-                raw = chunk.encode("utf-8")
-                if written + len(raw) > MAX_CACHE_BYTES:
-                    return False
-                fh.write(raw)
-                written += len(raw)
+            json.dump(cache, fh, ensure_ascii=False, separators=(",", ":"),
+                      allow_nan=False)
+            fh.flush()
+            if os.fstat(fh.fileno()).st_size > MAX_CACHE_BYTES:
+                return False
         os.replace(tmp, config.CACHE_FILE)
         return True
     except (OSError, ValueError, RecursionError):
