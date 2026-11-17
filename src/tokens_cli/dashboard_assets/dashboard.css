@@ -628,12 +628,24 @@ body[data-live=prepare] #meta{display:none}
 .cost-hero-label{font-size:12.5px;color:var(--muted);line-height:1.55}
 .cost-chips{display:flex;flex-wrap:wrap;gap:6px}
 .cost-chip{font-size:11px;color:var(--muted);border:1px solid var(--glass-brd);border-radius:999px;padding:3px 9px;background:var(--surface-2);font-variant-numeric:tabular-nums}
+.cost-chip-toggle{appearance:none;font-family:inherit;cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+.cost-chip-toggle:hover{border-color:var(--border-2);color:var(--ink)}
+.cost-chip-toggle:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
+.cost-chip-toggle[aria-expanded="true"]{border-color:var(--accent-2);color:var(--ink);background:var(--accent-soft)}
+.cost-pending-list{margin-top:4px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+.cost-pending-head{font-size:11px;color:var(--faint);margin-bottom:6px}
+.cost-pending-list ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.cost-pending-list li{font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cost-pending-source{color:var(--muted)}
+.cost-pending-tokens{font-weight:650}
 .cost-notice{font-size:11.5px;color:var(--accent-2)}
 .cost-bars{display:flex;flex-direction:column;gap:8px;min-width:0;padding:14px;border:1px solid var(--glass-brd);border-radius:16px;background:var(--glass)}
 .cost-bars-head{font-size:11px;letter-spacing:.05em;color:var(--faint)}
-.cost-bar-row{display:grid;grid-template-columns:minmax(120px,.9fr) minmax(80px,2fr) auto;gap:10px;align-items:center;font-size:12.5px;border-radius:8px;padding:2px 4px}
+.cost-bar-row{display:grid;grid-template-columns:minmax(140px,1.05fr) minmax(80px,1.85fr) auto;gap:10px;align-items:center;font-size:12.5px;border-radius:8px;padding:2px 4px}
 .cost-bar-row:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
-.cost-bar-name{display:flex;align-items:center;gap:7px;color:var(--ink);min-width:0;overflow-wrap:anywhere}
+.cost-bar-name{display:flex;align-items:baseline;gap:6px;color:var(--ink);min-width:0;flex-wrap:wrap}
+.cost-bar-model,.cost-table-model-name{min-width:0;overflow-wrap:anywhere}
+.cost-source-tag{color:var(--faint);font-size:10.5px;font-weight:400;white-space:nowrap}
 .cost-dot{display:inline-block;width:9px;height:9px;border-radius:3px;flex:none}
 .cost-bar-track{display:block;height:10px;border-radius:6px;background:var(--track);overflow:hidden}
 .cost-bar-fill{display:block;height:100%;border-radius:6px;transition:width .3s ease}

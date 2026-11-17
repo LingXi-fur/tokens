@@ -1691,6 +1691,145 @@ class DashboardCostReferenceTests(unittest.TestCase):
         self.assertNoErrors(page_errors, console_errors)
         context.close()
 
+    def test_same_name_models_show_source_labels_pending_list_and_csv_source(self):
+        records = [
+            {
+                "source": "codex",
+                "ts": "2026-07-01T10:00:00Z",
+                "date": "2026-07-01",
+                "model": "gpt-6.1-sol",
+                "input": 1_000_000,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 1_000_000,
+                "session": "s-codex",
+                "cwd": "/repo",
+                "billing": {"v": 1, "uncertain": False, "parts": [1_000_000, 0, 0, 0, 0]},
+            },
+            {
+                "source": "opencode",
+                "ts": "2026-07-01T10:05:00Z",
+                "date": "2026-07-01",
+                "model": "gpt-6.1-sol",
+                "input": 1_000_000,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 1_000_000,
+                "session": "s-opencode",
+                "cwd": "/repo",
+                "billing": {"v": 1, "uncertain": False, "parts": [1_000_000, 0, 0, 0, 0]},
+            },
+            {
+                "source": "antigravity",
+                "ts": "2026-07-01T10:10:00Z",
+                "date": "2026-07-01",
+                "model": "pending-heavy",
+                "input": 1_200_000,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 1_200_000,
+                "session": "s-anti",
+                "cwd": "/repo",
+                "billing": {"v": 1, "uncertain": False, "parts": [1_200_000, 0, 0, 0, 0]},
+            },
+            {
+                "source": "codex",
+                "ts": "2026-07-01T10:15:00Z",
+                "date": "2026-07-01",
+                "model": "pending-light",
+                "input": 300_000,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 300_000,
+                "session": "s-codex-2",
+                "cwd": "/repo",
+                "billing": {"v": 1, "uncertain": False, "parts": [300_000, 0, 0, 0, 0]},
+            },
+        ]
+        with mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={}), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title", return_value=""
+        ), mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={}):
+            payload = report_dashboard.build_payload(
+                records, since="2026-07-01", until="2026-07-01",
+                generated_at=datetime(2026, 7, 2, 12, 0),
+            )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            html_path = Path(tmpdir) / "cost-same-name.html"
+            html_path.write_text(
+                report_dashboard.render_dashboard(
+                    dashboard_wire.encode_payload(payload),
+                    language="zh",
+                ),
+                encoding="utf-8",
+            )
+            context, page, page_errors, console_errors = self.new_page(path=html_path)
+            self.seed_config(page, {
+                "version": 1,
+                "currency": "USD",
+                "reference": True,
+                "prices": {
+                    price_key("gpt-6.1-sol", "codex"): {"rates": ["2", "0", "0", "0", "0"], "note": ""},
+                    price_key("gpt-6.1-sol", "opencode"): {"rates": ["1", "0", "0", "0", "0"], "note": ""},
+                },
+            })
+            self.open_ledger(page)
+            # 1. Both gpt-6.1-sol bars show distinct source labels + tooltip includes source label
+            bars = page.locator(".cost-bar-row").all()
+            sol_bars = [b for b in bars if "gpt-6.1-sol" in b.inner_text()]
+            self.assertEqual(2, len(sol_bars))
+            sol_texts = [b.inner_text() for b in sol_bars]
+            self.assertTrue(any("Codex" in t for t in sol_texts), sol_texts)
+            self.assertTrue(any("OpenCode" in t for t in sol_texts), sol_texts)
+            sol_titles = [b.get_attribute("title") or "" for b in sol_bars]
+            self.assertTrue(any("Codex" in t for t in sol_titles), sol_titles)
+            self.assertTrue(any("OpenCode" in t for t in sol_titles), sol_titles)
+            # Table rows also carry source labels
+            page.locator("#cost-details summary").click()
+            table_text = page.locator("#cost-table-body").inner_text()
+            self.assertIn("Codex", table_text)
+            self.assertIn("OpenCode", table_text)
+            # 2. Pending pricing chip toggles sorted itemized list in both ZH and EN without Chinese units
+            toggle = page.locator("#cost-pending-toggle")
+            self.assertEqual("false", toggle.get_attribute("aria-expanded"))
+            self.assertIn("待定价模型: 2", toggle.inner_text())
+            toggle.focus()
+            page.keyboard.press("Enter")
+            self.assertEqual("true", page.locator("#cost-pending-toggle").get_attribute("aria-expanded"))
+            pending_items = page.locator("#cost-pending-list li").all_inner_texts()
+            self.assertEqual(2, len(pending_items))
+            self.assertIn("pending-heavy", pending_items[0])
+            self.assertIn("Antigravity", pending_items[0])
+            self.assertIn("1,200,000 tokens", pending_items[0])
+            self.assertIn("pending-light", pending_items[1])
+            self.assertIn("300,000 tokens", pending_items[1])
+            page.evaluate("applyLanguage('en', false)")
+            page.wait_for_function("()=>document.getElementById('cost-pending-toggle')?.textContent.includes('models pending pricing: 2')")
+            en_list = page.locator("#cost-pending-list").inner_text()
+            for cjk in ("万", "亿", "次", "待定价"):
+                self.assertNotIn(cjk, en_list)
+            page.locator("#cost-pending-toggle").click()
+            self.assertEqual(0, page.locator("#cost-pending-list").count())
+            # 3. Export CSV includes source and source_label after model in exact header order
+            csv_text = page.evaluate("""() => {
+                let captured = '';
+                const orig = downloadBlob;
+                downloadBlob = content => { captured = content; };
+                try { exportCostCSV(); } finally { downloadBlob = orig; }
+                return captured;
+            }""").lstrip("\ufeff")
+            csv_lines = csv_text.splitlines()
+            headers = csv_lines[0].split(",")
+            self.assertIn("source", headers)
+            self.assertEqual(headers.index("model") + 1, headers.index("source_label"))
+            self.assertIn("Codex", csv_text)
+            self.assertIn("OpenCode", csv_text)
+            self.assertNoErrors(page_errors, console_errors)
+            context.close()
+
 
 if __name__ == "__main__":
     unittest.main()

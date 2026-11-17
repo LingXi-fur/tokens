@@ -4653,7 +4653,7 @@ function initLiveDashboard(){
 /* ---- 费用账本 Cost Ledger：官方参考／本地手填单价估算，非实际扣费；私人手填价只存本机 ---- */
 const COST_KEY='tk-cost-v1',COST_MAX_JSON=262144;
 const COST_PAGE_SIZE=12,COST_EDITOR_PAGE_SIZE=8;
-const costState={page:0,editorPage:0};
+const costState={page:0,editorPage:0,pendingOpen:false};
 let costPriceRevision=0,costStorageMode='ok',costPrices=null,costDraft=null,costPendingCurrency=null;
 let costPendingFromReference=false;
 let costPendingRestoreKey=null,costEditorQuery='';
@@ -4671,6 +4671,7 @@ function costReferenceFor(model){return CostCore.referenceFor(model);}
 function costEffectivePrice(model,config){return CostCore.effectivePrice(model,config);}
 /* 官方公开参考价数值/日期/来源冻结在 cost_core.js 的 CostCore.reference，未重新定价。 */
 function costT(zh,en){return dashboardLanguage==='en'?en:zh;}
+function costSourceLabel(source){const labels=DATA.source_labels||{};return labels[source]||source||'';}
 function costPartLabel(part){const zh={input:'输入',output:'输出',cache_read:'缓存读',cache_write:'缓存写',thoughts:'思考(Gemini)'},en={input:'Input',output:'Output',cache_read:'Cache read',cache_write:'Cache write',thoughts:'Thoughts (Gemini)'};return costT(zh[part]||part,en[part]||part);}
 function costGroup(bi){return bi.toString().replace(/\B(?=(\d{3})+(?!\d))/g,',');}
 function costLoadConfig(){
@@ -4899,7 +4900,7 @@ function costEntryStatus(e){
   return e.fullPriced?costT('已定价','priced'):costT('待定价','pending');
 }
 function costBarTitle(e,view){
-  const lines=[costT('日志来源','source')+': '+e.model.source];
+  const lines=[costT('日志来源','source')+': '+costSourceLabel(e.model.source)];
   COST_PARTS.forEach((name,c)=>{
     if(e.partSums[c]===0n)return;
     const rate=e.rates[c]===null?costT('待定价','pending'):e.rateTexts[c];
@@ -4908,6 +4909,12 @@ function costBarTitle(e,view){
   lines.push(costT('调用','calls')+': '+costGroup(e.calls)+' · '+costEntryStatus(e));
   lines.push(e.reference?costT('官方参考估算，非渠道实际扣费','Official reference estimate; not actual channel charges')+' · '+costReferenceLabel(e.reference):costT('按当前配置渠道单价估算，非实际扣费','Estimated with your configured channel unit prices; not actual charges'));
   return lines.join('\n');
+}
+function costPendingItems(view){
+  return view.entries
+    .filter(e=>!e.fullPriced)
+    .map(e=>({entry:e,tokens:e.partSums.reduce((a,b)=>a+b,0n)}))
+    .sort((a,b)=>(a.tokens>b.tokens?-1:a.tokens<b.tokens?1:a.entry.model.model.localeCompare(b.entry.model.model)||a.entry.model.source.localeCompare(b.entry.model.source)));
 }
 function renderCostPagerInto(pager,page,pageCount,onStep,total){
   if(!pager)return;
@@ -4938,24 +4945,29 @@ function renderCostLedger(){
   const heroAmount=view.pricedCount===0?'—':esc(costMoneyText(view.subtotal,view.currency));
   const heroLabel=!view.entries.length?costT('所选区间没有可计价用量','No priceable usage in the selected range'):view.fullEstimate&&view.anyPriced?costT('估算总费用','Estimated total cost'):view.anyPriced?costT('已定价小计（存在待定价或口径未确认项，不显示完整总额）','Priced subtotal (pending or unverified items exist; no full total)'):costT('待定价','Pending pricing');
   const coveredCalls=view.totalCalls-view.unknownCalls,coveredTokens=view.totalTokens-view.unknownTokens;
-  const chips=[costT('币种','Currency')+' '+view.currency,costT('调用覆盖','call coverage')+' '+costGroup(coveredCalls)+'/'+costGroup(view.totalCalls)];
+  const chips=[{text:costT('币种','Currency')+' '+view.currency},{text:costT('调用覆盖','call coverage')+' '+costGroup(coveredCalls)+'/'+costGroup(view.totalCalls)}];
   // Token 覆盖仅在 total_incomplete=false 时给出；BigInt 半进位到 0.1%，避免 Number 精度丢失
   if(!view.totalIncomplete&&view.totalTokens>0n){
     const pctTenths=(coveredTokens*1000n*2n+view.totalTokens)/(view.totalTokens*2n);
     const pctText=Number(pctTenths)>=1000?'100':(Number(pctTenths)/10).toFixed(1);
-    chips.push(costT('Token 覆盖','token coverage')+' '+costGroup(coveredTokens)+'/'+costGroup(view.totalTokens)+' · '+pctText+'%');
+    chips.push({text:costT('Token 覆盖','token coverage')+' '+costGroup(coveredTokens)+'/'+costGroup(view.totalTokens)+' · '+pctText+'%'});
   }
-  if(view.unknownCalls>0n||view.unknownTokens>0n)chips.push(costT('口径未确认','unverified')+': '+costGroup(view.unknownCalls)+' '+costT('次','calls')+' / '+costGroup(view.unknownTokens)+' tk');
-  if(costPrices.reference&&view.currency==='USD')chips.push(costT('官方参考命中','Official reference matches')+': '+view.referenceCount);
-  if(view.pendingCount>0)chips.push(costT('待定价模型','models pending pricing')+': '+view.pendingCount);
-  if(view.invalidRows>0)chips.push(costT('非法数据行','invalid rows')+': '+view.invalidRows);
+  if(view.unknownCalls>0n||view.unknownTokens>0n)chips.push({text:costT('口径未确认','unverified')+': '+costGroup(view.unknownCalls)+' '+costT('次','calls')+' / '+costGroup(view.unknownTokens)+' tk'});
+  if(costPrices.reference&&view.currency==='USD')chips.push({text:costT('官方参考命中','Official reference matches')+': '+view.referenceCount});
+  if(view.pendingCount>0)chips.push({text:costT('待定价模型','models pending pricing')+': '+view.pendingCount,pendingToggle:true});
+  if(view.invalidRows>0)chips.push({text:costT('非法数据行','invalid rows')+': '+view.invalidRows});
+  const pendingItems=view.pendingCount>0?costPendingItems(view):[];
+  const pendingOpen=!!(costState.pendingOpen&&pendingItems.length);
+  const chipsHtml=chips.map(c=>c.pendingToggle?'<button type="button" class="cost-chip cost-chip-toggle" id="cost-pending-toggle" aria-expanded="'+String(pendingOpen)+'" aria-controls="cost-pending-list" title="'+esc(costT('点击展开或收起待定价模型列表','Click to expand or collapse pending pricing models'))+'">'+esc(c.text)+'</button>':'<span class="cost-chip">'+esc(c.text)+'</span>').join('');
+  const pendingListHtml=pendingOpen?'<div class="cost-pending-list" id="cost-pending-list" role="region" aria-label="'+esc(costT('待定价模型列表','Models pending pricing'))+'"><div class="cost-pending-head">'+esc(costT('待定价模型明细（按 Token 量降序）','Models pending pricing (sorted by tokens)'))+'</div><ul>'+pendingItems.map(({entry,tokens})=>'<li><span class="cost-pending-model">'+esc(entry.model.model)+'</span> · <span class="cost-pending-source">'+esc(costSourceLabel(entry.model.source))+'</span> · <b class="cost-pending-tokens">'+costGroup(tokens)+' tokens</b></li>').join('')+'</ul></div>':'';
   const notice=costStorageNoticeText();
-  const heroHtml='<div class="cost-hero"><div class="cost-amount"><span class="cost-cur">'+view.currency+'</span><span class="cost-value">'+heroAmount+'</span></div><div class="cost-hero-label">'+esc(heroLabel)+'</div><div class="cost-chips">'+chips.map(c=>'<span class="cost-chip">'+esc(c)+'</span>').join('')+'</div>'+(notice?'<div class="cost-notice" role="status">'+esc(notice)+'</div>':'')+(view.totalIncomplete?'<div class="cost-notice" role="status">'+esc(costT('部分日志的 Token 总量不可用（total_incomplete）：不显示完整 Token 总量与覆盖比例，费用估算可能不完整；调用覆盖仍有效。','Token totals are unavailable for some logs (total_incomplete): full token totals and coverage ratios are hidden and the estimate may be understated; call coverage remains valid.'))+'</div>':'')+'</div>';
+  const heroHtml='<div class="cost-hero"><div class="cost-amount"><span class="cost-cur">'+view.currency+'</span><span class="cost-value">'+heroAmount+'</span></div><div class="cost-hero-label">'+esc(heroLabel)+'</div><div class="cost-chips">'+chipsHtml+'</div>'+pendingListHtml+(notice?'<div class="cost-notice" role="status">'+esc(notice)+'</div>':'')+(view.totalIncomplete?'<div class="cost-notice" role="status">'+esc(costT('部分日志的 Token 总量不可用（total_incomplete）：不显示完整 Token 总量与覆盖比例，费用估算可能不完整；调用覆盖仍有效。','Token totals are unavailable for some logs (total_incomplete): full token totals and coverage ratios are hidden and the estimate may be understated; call coverage remains valid.'))+'</div>':'')+'</div>';
   const bars=slice.map(e=>{
     const color=e.hidden?'var(--faint)':modelColor(e.model.identity);
     const width=e.fullPriced&&view.maxCost>0n?Number(e.costScaled*10000n/view.maxCost)/100:0;
     const amount=e.fullPriced?esc(costMoneyText(e.costScaled,view.currency)):esc(costEntryStatus(e));
-    return '<div class="cost-bar-row'+(e.fullPriced?'':' is-pending')+'" tabindex="0" role="img" title="'+esc(costBarTitle(e,view))+'"><span class="cost-bar-name"><i class="cost-dot" style="background:'+color+'"></i>'+esc(e.model.model)+'</span><span class="cost-bar-track"><span class="cost-bar-fill" style="width:'+width.toFixed(2)+'%;background:'+color+'"></span></span><span class="cost-bar-amt">'+amount+'</span></div>';
+    const srcLabel=costSourceLabel(e.model.source);
+    return '<div class="cost-bar-row'+(e.fullPriced?'':' is-pending')+'" tabindex="0" role="img" title="'+esc(costBarTitle(e,view))+'"><span class="cost-bar-name"><i class="cost-dot" style="background:'+color+'"></i><span class="cost-bar-model">'+esc(e.model.model)+'</span><small class="cost-source-tag">'+esc(srcLabel)+'</small></span><span class="cost-bar-track"><span class="cost-bar-fill" style="width:'+width.toFixed(2)+'%;background:'+color+'"></span></span><span class="cost-bar-amt">'+amount+'</span></div>';
   }).join('');
   const barsHtml='<div class="cost-bars"><div class="cost-bars-head">'+costT('模型费用（每模型横条，固定 identity 色）','Model costs (bars use fixed identity colors)')+'</div>'+(view.entries.length?bars:'<div class="cost-empty-inline">'+costT('当前筛选下没有计价用量。','No priceable usage under the current filters.')+'</div>')+'<div class="dest-pager cost-pager" id="cost-pager"></div></div>';
   const referenceEnabled=costPrices.reference&&view.currency==='USD';
@@ -4966,13 +4978,16 @@ function renderCostLedger(){
   const sources=referenceEnabled?'<p class="cost-reference-sources">'+costT('官方来源（点击才访问）：','Official sources (visited only when clicked): ')+Object.values(COST_REFERENCE.vendors).filter(v=>v.url).map(v=>'<a href="'+esc(v.url)+'" target="_blank" rel="noopener noreferrer">'+esc(v.label)+'</a>').join(' · ')+'</p>':'';
   const footHtml='<div class="cost-notes">'+notes.map(n=>'<p>'+esc(n)+'</p>').join('')+sources+'</div>';
   host.innerHTML='<div class="cost-hero-row">'+heroHtml+barsHtml+'</div>'+footHtml;
+  const pendingToggle=document.getElementById('cost-pending-toggle');
+  if(pendingToggle)pendingToggle.addEventListener('click',()=>{costState.pendingOpen=!costState.pendingOpen;renderCostLedger();document.getElementById('cost-pending-toggle')?.focus();});
   renderCostPagerInto(document.getElementById('cost-pager'),costState.page,pageCount,step=>{costState.page=Math.max(0,Math.min(costState.page+step,pageCount-1));renderCostLedger();},view.entries.length);
   const head=document.getElementById('cost-table-head'),bodyEl=document.getElementById('cost-table-body');
   if(head)head.innerHTML='<tr><th>'+costT('模型','Model')+'</th><th>'+costT('日志来源','source')+'</th>'+COST_PARTS.map(p=>'<th>'+costPartLabel(p)+'</th>').join('')+'<th>'+costT('调用','Calls')+'</th><th>'+costT('费用（更多小数）','Cost (more decimals)')+'</th><th>'+costT('状态','Status')+'</th></tr>';
   if(bodyEl)bodyEl.innerHTML=slice.map(e=>{
     const color=e.hidden?'var(--faint)':modelColor(e.model.identity);
+    const srcLabel=costSourceLabel(e.model.source);
     const parts=COST_PARTS.map((p,c)=>'<td class="num">'+(e.partSums[c]>0n?costGroup(e.partSums[c]):'—')+'</td>').join('');
-    return '<tr><td><span class="cost-table-model"><i class="cost-dot" style="background:'+color+'"></i>'+esc(e.model.model)+'</span></td><td>'+esc(e.model.source)+'</td>'+parts+'<td class="num">'+costGroup(e.calls)+'</td><td class="num">'+(e.fullPriced?esc(costMoneyText(e.costScaled,view.currency,true)):esc(costEntryStatus(e)))+'</td><td>'+esc(costEntryStatus(e))+'</td></tr>';
+    return '<tr><td><span class="cost-table-model"><i class="cost-dot" style="background:'+color+'"></i><span class="cost-table-model-name">'+esc(e.model.model)+'</span><small class="cost-source-tag">'+esc(srcLabel)+'</small></span></td><td>'+esc(srcLabel)+'</td>'+parts+'<td class="num">'+costGroup(e.calls)+'</td><td class="num">'+(e.fullPriced?esc(costMoneyText(e.costScaled,view.currency,true)):esc(costEntryStatus(e)))+'</td><td>'+esc(costEntryStatus(e))+'</td></tr>';
   }).join('');
   const costDetails=document.getElementById('cost-details');
   if(costDetails){const summary=costDetails.querySelector('summary');
@@ -4980,23 +4995,23 @@ function renderCostLedger(){
 }
 /* 费用 CSV：复用 costView 当前粒度/选区/模型筛选/币种/有效价；全部 entries 不限分页；固定英文机器字段；
    不含会话/标题/项目路径/备注；uncertain 不在 entries，由 summary 行汇总，不造完整总额 */
-const COST_CSV_COLUMNS=['row_type','granularity','period','source','model','currency','status','input_tokens','output_tokens','cache_read_tokens','cache_write_tokens','thoughts_tokens','input_rate','output_rate','cache_read_rate','cache_write_rate','thoughts_rate','estimated_cost','total_calls','unknown_calls','unknown_tokens','invalid_rows','total_incomplete','full_estimate','priced_subtotal'];
+const COST_CSV_COLUMNS=['row_type','granularity','period','source','model','source_label','currency','status','input_tokens','output_tokens','cache_read_tokens','cache_write_tokens','thoughts_tokens','input_rate','output_rate','cache_read_rate','cache_write_rate','thoughts_rate','estimated_cost','total_calls','unknown_calls','unknown_tokens','invalid_rows','total_incomplete','full_estimate','priced_subtotal'];
 function exportCostCSV(){
   const info=rangeInfo(),view=costView(),gran=state.gran,period=state.focusPeriod||(info.since?info.since+'..'+info.until:'ALL');
   const rows=[COST_CSV_COLUMNS.slice()];
   const blanks=n=>Array(n).fill('');
   if(!view.supported){
-    rows.push(['summary',gran,period,'','','','unsupported',...blanks(18)]);
+    rows.push(['summary',gran,period,'','','','','unsupported',...blanks(18)]);
   }else{
     view.entries.forEach(e=>{
       const status=e.hidden?'hidden':e.fullPriced?(e.reference?'priced_reference':'priced_custom'):'pending';
-      rows.push(['entry',gran,period,e.model.source,e.model.model,view.currency,status,
+      rows.push(['entry',gran,period,e.model.source,e.model.model,costSourceLabel(e.model.source),view.currency,status,
         ...e.partSums.map(v=>v.toString()),
         ...e.rateTexts.map(r=>String(r||'')),
         e.fullPriced?costExactMoney(e.costScaled):'',
         ...blanks(7)]);
     });
-    rows.push(['summary',gran,period,'','','',view.entries.length?'summary':'no_entries',
+    rows.push(['summary',gran,period,'','','','',view.entries.length?'summary':'no_entries',
       ...blanks(11),
       view.totalCalls.toString(),view.unknownCalls.toString(),view.unknownTokens.toString(),String(view.invalidRows),String(view.totalIncomplete===true),String(view.fullEstimate===true),
       view.anyPriced?costExactMoney(view.subtotal):'']);
