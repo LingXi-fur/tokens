@@ -5,7 +5,7 @@
 
 **See where your AI coding tokens go — without sending your logs anywhere.**
 
-Turn local Claude Code, Gemini CLI, and Codex records into terminal summaries, a loopback-only live dashboard, or one self-contained offline HTML file.
+Turn local Claude Code, Gemini CLI, Codex, OpenCode, and Antigravity records into terminal summaries, a loopback-only live dashboard, or one self-contained offline HTML file.
 
 [![Live demo](https://img.shields.io/badge/demo-try%20in%20browser-2f6fd6)](https://lingxi-fur.github.io/tokens/demo/)
 [![CI](https://github.com/LingXi-fur/tokens/actions/workflows/ci.yml/badge.svg)](https://github.com/LingXi-fur/tokens/actions/workflows/ci.yml)
@@ -31,7 +31,7 @@ Open the [interactive synthetic demo](https://lingxi-fur.github.io/tokens/demo/)
 
 AI coding tools already leave usage records on your machine, but each tool stores and counts them differently. `tokens` gives you one inspectable local view:
 
-- **See usage from Claude Code, Gemini CLI, and Codex** in one report while keeping each source's reported token semantics visible.
+- **See usage from Claude Code, Gemini CLI, Codex, OpenCode, and Antigravity** in one report (auto-discovered when readable via `--source auto`) while keeping each source's reported token semantics visible.
 - **Find changes worth inspecting:** daily, weekly, and monthly trends, two-period comparisons (with a dominant-model shift badge when the top model changes), and peak periods. Copy a compact text summary of the current view—with its delta when available—into notes or messages.
 - **Follow token destinations:** a project and model overview beside per-session cards, tracing model, source, project, and session details where the logs provide them.
 - **Check subscription quota windows:** run `tokens quota` for official Codex rate-limit snapshots and explicit Claude capacity estimates with projected limit times, without sending logs anywhere.
@@ -51,7 +51,7 @@ cd tokens
 ./run serve --open
 ```
 
-Claude is the default source. If you use Gemini CLI or Codex, add `--source gemini` or `--source codex` to `serve`; repeat `--source` to combine sources. Otherwise, their logs will not appear.
+Without `--source` (`--source auto`), `tokens` checks paths and permissions for all five registered sources in `sources.py` (Claude Code, Gemini CLI, Codex, OpenCode, and Antigravity) and enables every readable source without opening logs. Pass explicit `--source` flags (e.g. `--source gemini` or `--source antigravity`, repeatable and combinable with `auto`) to limit the sources for a run.
 
 `./run doctor` checks paths, candidate file counts, timezone, output, and cache permissions. It does not parse message contents or print project and session identifiers.
 
@@ -81,7 +81,7 @@ No local logs yet? Open a full synthetic dashboard generated through the same re
 ./run demo --open
 ```
 
-The demo writes `out/dashboard-demo.html` from generated sample data only. It does not read Claude Code, Gemini CLI, or Codex logs.
+The demo writes `out/dashboard-demo.html` from generated sample data only. It does not read local Claude Code, Gemini CLI, Codex, OpenCode, or Antigravity logs.
 
 Create an offline archive instead:
 
@@ -103,7 +103,7 @@ tokens doctor
 tokens serve --open
 ```
 
-If you use Gemini CLI or Codex, add `--source gemini` or `--source codex` to `tokens serve --open`.
+To narrow a run to specific tools, pass repeatable `--source` flags to `tokens serve --open`.
 
 ### Optional local command install
 
@@ -161,7 +161,7 @@ Reports are written to `./out` by default. Use `--output DIR` to choose another 
 
 ## What can you learn?
 
-Find your busiest days, compare two equal-length periods, and see which **recorded** models, projects, or sessions contributed to the difference. Names folded into `Other` are listed beside the model filters with their token totals for the current period. They share the `Other` color and group filter, not separate model filters; anonymized reports do not expose unavailable names. When source records provide the fields, you can:
+Find your busiest days, compare two equal-length periods, and see which **recorded** models, projects, or sessions contributed to the difference. Up to eight top models keep distinct palette colors (at least one slot guaranteed per active source), while `Other` uses neutral gray and itemizes every folded model individually across legends, donut slices, tooltips, period-table expansion (`Other (N)`), exports, and a "More models" filter; Today HUD's top model always resolves to a real model name, and anonymized reports omit folded names. When source records provide the fields, you can:
 
 - **Spot changes:** explore daily, weekly, and monthly trends, peak periods, and token composition.
 - **Follow the records:** filter by source and model, inspect project and session aggregates, and see original model names grouped under Other in a non-anonymized dashboard.
@@ -173,9 +173,9 @@ Token change describes usage, not productivity or code quality. Cache Read is ca
 
 ### Local cost estimates
 
-The **Cost ledger** estimates model costs from independently recorded billing components. It ships with built-in official **reference prices** for twenty-six exact model names and also accepts prices you enter under **Set prices**. With no local settings, it shows USD reference estimates by default and writes nothing to browser storage until you save.
+The **Cost ledger** estimates model costs from independently recorded billing components. It ships with built-in official **reference prices** checked on 2026-11-15 (including Google Gemini, OpenAI, Anthropic, DeepSeek, Z.ai, and Moonshot) and also accepts prices you enter under **Set prices**. Unpublished vendor components stay blank instead of being estimated, and retired or internal model names stay unpriced. With no local settings, it shows USD reference estimates by default and writes nothing to browser storage until you save.
 
-- **Built-in reference prices** are official USD rates per million tokens, verified on 2026-11-06 for twenty-seven precise model names, all at each model's official rates: OpenAI Standard short-context tiers (≤272K), the Anthropic Claude lineup (cache writes at the 5-minute tier), DeepSeek peak-time baselines, Z.ai international USD rates (not the domestic Zhipu equivalent, with GLM's limited-time-free cache writes recorded as zero and bare provider-prefixed records like `zhipu/glm-5.3-flash` listed separately at the same backend's rates), and Moonshot Kimi. The page never requests them from a provider; published rates travel with the page assets, and vendor source links open only when you click them.
+- **Built-in reference prices** are official USD rates per million tokens verified against each vendor's pricing page on 2026-11-15: Google Gemini (`gemini-4-hydrogen`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3-flash-preview`, with thinking tokens billed at the output rate and unpublished components like cache writes left blank), OpenAI Standard short-context tiers (≤272K, plus `gpt-5.3-codex`), the Anthropic Claude lineup (plus `claude-fable-5-1`; cache writes at the 5-minute tier), DeepSeek peak-time baselines, Z.ai international USD rates (not the domestic Zhipu equivalent, with GLM's limited-time-free cache writes recorded as zero and bare provider-prefixed records like `zhipu/glm-5.3-flash` listed separately at the same backend's rates), and Moonshot Kimi. The page never requests them from a provider; published rates travel with the page assets, and vendor source links open only when you click them.
 - **Manual prices** are keyed by log source and original model, including individual models grouped under Other, and take full priority over the built-in reference for that entry. A log source is not a provider or billing channel; model names may reflect routing aliases rather than billing SKUs. A configured zero price is free usage, while a blank price remains unknown. Saving an all-empty set keeps that explicit choice instead of letting reference prices fill back in, and CNY never draws on the USD reference prices. Gemini thoughts are a separate component.
 - **Set prices** includes a **Use official reference price (USD)** switch. If the current currency is CNY with prices already entered, enabling it first asks you to confirm, then does both at once: it clears your custom entries including notes and switches to USD. No exchange rate is assumed and entries are not converted; cancelling keeps the current prices and currency. Configurations saved before this switch existed carry no reference flag, so they keep their currency and manual prices with the reference layer off.
 - **Restore official reference** acts on one model at a time inside the price editor. It appears only for a USD draft with the reference layer on, a non-hidden model whose exact name hits a built-in reference, and a saved override for that source/model — an all-empty entry, an explicit zero, or a note-only entry all count as overrides. Confirming clears that entry's unit prices and note only; other models are untouched. Cancelling changes nothing, and closing the editor without saving persists nothing. Re-entering a price afterwards creates a normal override again.
@@ -197,7 +197,7 @@ Older offline snapshots without billing data must be regenerated to use the ledg
 | OpenCode | `~/.local/share/opencode/opencode.db` (SQLite, honors `XDG_DATA_HOME`) | Yes | Yes | Total is input + output + reasoning + cache read + cache write; OpenCode input excludes cache and output excludes reasoning. Read-only; only token, model, and time fields are queried, never message text. |
 | Antigravity | `~/.gemini/antigravity/conversations/*.db` (SQLite, overridable via `TOKENS_ANTIGRAVITY_DIR`) | No | Yes | Total is input + output + cache read. Read-only; only token, model, and timestamp fields are queried, never conversation payloads or summaries. Uses an undocumented private format, so app upgrades may require updating the reader. |
 
-Claude is the default source. Repeat `--source` to combine tools:
+All readable sources in `sources.py` are enabled automatically by `--source auto`; repeat `--source` to narrow or combine specific tools (for example, adding `--source antigravity`):
 
 Codex `.jsonl.zst` archives require `zstd` to be discoverable on the collecting process's `PATH`; uncompressed logs do not. A background service can have a different environment from an interactive terminal. `./run doctor --source codex` reports dependency discovery for the process running that command, not necessarily the background service. If collection reports `collection · codex · decompressor_unavailable`, check the service's environment rather than skipping archives; the existing service must reload its configured environment before that change takes effect. Enabling a source is not proof of collected usage: verify a successful snapshot and actual source records.
 
@@ -236,19 +236,22 @@ Codex collection supports legacy `token_count` and newer `token_usage_record` ev
 ## CLI essentials
 
 ```text
-./run [day|week|month|all|dashboard|demo|serve|doctor] [options]
-tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # after local install
+./run [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]
+tokens [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]  # after local install
 ```
 
 | Option | Purpose |
 |---|---|
-| `--source claude\|gemini\|codex` | Select a source; repeat to combine sources. |
+| `--source antigravity\|claude\|codex\|gemini\|opencode\|auto` | Select a source (default `auto` enables every readable source); repeat to combine sources. |
 | `--since YYYY-MM-DD` / `--until YYYY-MM-DD` | Limit the inclusive report range. |
 | `--timezone AREA/CITY` | Override the detected system timezone. |
 | `--lang en\|zh` | Terminal and static HTML language; default follows system locale (`TOKENS_LANG` overrides it). |
 | `--output DIR` | Choose the report directory; default is `./out`. |
 | `--html` | Add a static HTML report to terminal modes. |
+| `--dashboard` | Write the interactive offline dashboard regardless of positional range. |
 | `--anonymize` | Pseudonymize identifiers in dashboard or live mode. |
+| `--models` | With `doctor`, show model attribution groups (including OpenCode). |
+| `--json` | With `doctor --models` or `quota`, print machine-readable JSON. |
 | `--interval SECONDS` | Set the background log-scan interval; minimum 1, default 300. Browser checks are separate. |
 | `--port PORT` | Set loopback port; default 8765, or 0 for an available port. |
 | `--open` | Open generated file or local URL in the default browser. |
@@ -284,7 +287,7 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 ## Current boundaries
 
 - Public setup currently starts from a source checkout; registry install commands are intentionally not advertised until a verified release exists. The 0.3.0 local candidate does not change this: it is offline and local-only, and no verified public 0.3.0 package-index release is claimed.
-- Claude is the only default source. Gemini and Codex must be selected explicitly.
+- Without `--source` (`auto`), every readable registered source across Claude Code, Gemini CLI, Codex, OpenCode, and Antigravity is enabled by path/permission checks without opening logs; explicit `--source` filters restrict discovery to the named sources.
 - Claude and Codex JSONL files are no longer skipped merely for exceeding 64 MiB. Long physical lines, including those over 4 MiB, use bounded streaming JSON validation and usage projection. Depth, token, retained-data, and numeric limits still apply; this is not an unlimited-memory or completeness guarantee.
 - An incomplete collection does not publish a partial report as a successful result. Live scans keep the last successful snapshot, or show no snapshot if none exists. Record cache v8 rebuilds incompatible older entries without deleting old cache files.
 - Windows cache setup handles missing `os.fchmod`. Safe-read stat compatibility is still under synthetic diagnosis: a closed-writer/read-only-open probe captures the actual comparison snapshots without relaxing production checks. Diagnostic output is not a compatibility fix. Firefox/WebKit checks also remain unresolved; passing local backend tests is not evidence that the full cross-platform CI is green.
@@ -294,7 +297,7 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 
 ## Troubleshooting
 
-**No logs found?** Run `./run doctor`. If Claude is not your tool, try `./run day --source gemini` or `./run day --source codex`. To explore without any local logs, run `./run demo --open`; an installed checkout can use `tokens demo --open`.
+**No logs found?** Run `./run doctor` to inspect auto-discovered and skipped sources. To focus on a single tool, try `./run day --source gemini` or `./run day --source antigravity`. To explore without any local logs, run `./run demo --open`; an installed checkout can use `tokens demo --open`.
 
 **Dashboard numbers do not change?** `./run dashboard` creates an offline snapshot. Use `./run serve --open` for live updates.
 
