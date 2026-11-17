@@ -46,6 +46,12 @@ BROWSER_TESTS = (
     "tests.test_cost_end_to_end.CostEndToEndUiTests",
 )
 TIMEOUTS = {"logic": 900, "browser": 1800}
+# Tests that can only run on one platform. Skipping them elsewhere is expected
+# and must not fail the scope; any other skip still does.
+PLATFORM_ONLY_TESTS = {
+    "tests.test_large_claude_logs.LargeClaudeLogsTests.test_capture_stat_fields_at_failing_safe_open": "win32",
+    "tests.test_large_claude_logs.WindowsStatDiagnosticTests.test_raw_stat_diagnostic": "win32",
+}
 
 
 def clean_environment(parent, base):
@@ -157,28 +163,45 @@ def isolate_browser(launches, tmp):
     BrowserType.launch_persistent_context = no_persistent_profile
 
 
-def summarize_issues(result):
+def test_name(test):
+    """Return a safe dotted test id, or "unknown"."""
+    try:
+        parent = getattr(test, "test_case", None)
+        name = (parent if parent is not None else test).id()
+        if (not isinstance(name, str) or len(name) > 240 or
+                not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*", name)):
+            return "unknown"
+        return name
+    except Exception:
+        return "unknown"
+
+
+def split_platform_skips(skipped, platform=None):
+    """Split skips into (expected platform-only skips, other skips)."""
+    platform = sys.platform if platform is None else platform
+    expected, other = [], []
+    for entry in skipped:
+        required = PLATFORM_ONLY_TESTS.get(test_name(entry[0]))
+        (expected if required is not None and required != platform else other).append(entry)
+    return expected, other
+
+
+def summarize_issues(result, platform=None):
     """Index outcomes without diagnostic text or parameterized subtest names."""
     issues = []
     total = 0
+    platform_skips, other_skips = split_platform_skips(result.skipped, platform)
     groups = (
         ("failure", result.failures), ("error", result.errors),
-        ("skip", result.skipped), ("expected_failure", result.expectedFailures),
+        ("skip", other_skips), ("platform_skip", platform_skips),
+        ("expected_failure", result.expectedFailures),
         ("unexpected_success", result.unexpectedSuccesses),
     )
     for category, entries in groups:
         total += len(entries)
         for entry in entries[:max(0, 20 - len(issues))]:
             test = entry if category == "unexpected_success" else entry[0]
-            try:
-                parent = getattr(test, "test_case", None)
-                name = (parent if parent is not None else test).id()
-                if (not isinstance(name, str) or len(name) > 240 or
-                        not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*", name)):
-                    name = "unknown"
-            except Exception:
-                name = "unknown"
-            issues.append({"category": category, "test": name})
+            issues.append({"category": category, "test": test_name(test)})
     return {"issues": issues, "issues_omitted": total - len(issues)}
 
 
@@ -196,7 +219,7 @@ def worker(config_path):
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
     report = {"status": "failed", "run": 0, "passed": 0, "failures": 0,
               "errors": 0, "skipped": 0, "expected_failures": 0,
-              "unexpected_successes": 0, "launches": [],
+              "unexpected_successes": 0, "platform_skipped": 0, "launches": [],
               "issues": [], "issues_omitted": 0}
     started = time.monotonic()
     try:
@@ -216,7 +239,9 @@ def worker(config_path):
                       skipped=len(result.skipped), expected_failures=len(result.expectedFailures),
                       unexpected_successes=len(result.unexpectedSuccesses))
         report.update(summarize_issues(result))
-        ok = (result.wasSuccessful() and result.testsRun > 0 and not result.skipped
+        platform_skips, other_skips = split_platform_skips(result.skipped)
+        report["platform_skipped"] = len(platform_skips)
+        ok = (result.wasSuccessful() and result.testsRun > 0 and not other_skips
               and not result.expectedFailures
               and (config["scope"] != "browser" or bool(report["launches"])))
         report["status"] = "passed" if ok else "failed"

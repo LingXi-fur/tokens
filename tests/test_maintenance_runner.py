@@ -201,6 +201,43 @@ class Check(unittest.TestCase):
         self.assertEqual((12, 12, 3), (len(result.failures), len(result.errors), len(result.skipped)))
         self.assertNotIn("synthetic-private", json.dumps(summary))
 
+    def test_only_declared_platform_only_skips_are_expected(self):
+        class Named:
+            def __init__(self, value):
+                self.value = value
+
+            def id(self):
+                return self.value
+
+        windows_only = next(iter(verifier.PLATFORM_ONLY_TESTS))
+        self.assertEqual("win32", verifier.PLATFORM_ONLY_TESTS[windows_only])
+        other = "tests.test_example.Example.test_other"
+        skipped = [(Named(windows_only), "synthetic"), (Named(other), "synthetic")]
+
+        expected, rest = verifier.split_platform_skips(skipped, platform="darwin")
+        self.assertEqual([windows_only], [entry[0].id() for entry in expected])
+        self.assertEqual([other], [entry[0].id() for entry in rest])
+
+        # On the platform the test targets, a skip is unexpected again.
+        expected, rest = verifier.split_platform_skips(skipped, platform="win32")
+        self.assertEqual([], expected)
+        self.assertEqual(2, len(rest))
+
+        result = unittest.TestResult()
+        result.skipped = skipped
+        summary = verifier.summarize_issues(result, platform="darwin")
+        self.assertEqual([{"category": "skip", "test": other},
+                          {"category": "platform_skip", "test": windows_only}],
+                         summary["issues"])
+
+    def test_declared_platform_only_tests_exist(self):
+        root = Path(__file__).resolve().parents[1]
+        for name in verifier.PLATFORM_ONLY_TESTS:
+            module, cls, method = name.rsplit(".", 2)
+            text = (root / (module.replace(".", "/") + ".py")).read_text(encoding="utf-8")
+            self.assertIn(f"class {cls}(", text, name)
+            self.assertIn(f"def {method}(", text, name)
+
     def test_failure_skip_empty_import_error_and_expected_failure_are_not_passes(self):
         cases = [
             ("def test_bad(self): self.fail('synthetic failure')", "failures"),
