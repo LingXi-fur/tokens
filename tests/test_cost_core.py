@@ -146,19 +146,36 @@ CASES = [
          model("claude-fable-5-1", "fable", "claude"),
      ]),
      ["2026-11-15"], ["gpro", "ghyd", "codex53", "fable"], USD),
-    ("unpriced-internal-models-stay-pending",
+     ("unpriced-internal-models-stay-pending",
+      cost_block([
+          ["2026-11-15", 0, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+          ["2026-11-15", 1, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+          ["2026-11-15", 2, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+          ["2026-11-15", 3, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+          ["2026-11-18", 4, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+          ["2026-11-18", 5, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+          ["2026-11-18", 6, [1000000, 500000, 0, 0, 500000], 2000000, 1, False],
+      ], [
+          model("gemini-4-argon-trial", "argon", "antigravity"),
+          model("gemini-3.8-flash-n", "flashn", "antigravity"),
+          model("claude-opus-5-5-medium", "opusm", "antigravity"),
+          model("codex-auto-review", "autorev", "codex"),
+          model("gpt-reserve", "reserve", "codex"),
+          model("codex-unknown", "unknown", "codex"),
+          model("gemini-3-pro-preview", "g3pro", "gemini"),
+      ]),
+      ["2026-11-15", "2026-11-18"], ["argon", "flashn", "opusm", "autorev", "reserve", "unknown", "g3pro"], USD),
+    ("official-pricing-2026-11-18-deepseek-and-gpt62sol",
      cost_block([
-         ["2026-11-15", 0, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
-         ["2026-11-15", 1, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
-         ["2026-11-15", 2, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
-         ["2026-11-15", 3, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+         ["2026-11-18", 0, [1000000, 1000000, 1000000, 0, 500000], 3500000, 1, False],
+         ["2026-11-18", 1, [1000000, 1000000, 1000000, 0, 500000], 3500000, 1, False],
+         ["2026-11-18", 2, [1000000, 1000000, 1000000, 1000000, 0], 4000000, 1, False],
      ], [
-         model("gemini-4-argon-trial", "argon", "antigravity"),
-         model("gemini-3.8-flash-n", "flashn", "antigravity"),
-         model("claude-opus-5-5-medium", "opusm", "antigravity"),
-         model("codex-auto-review", "autorev", "codex"),
+         model("deepseek-v4.1-flash", "dsv41", "opencode"),
+         model("deepseek-v4-pro", "dsv4pro", "opencode"),
+         model("gpt-6.2-sol", "gpt62", "codex"),
      ]),
-     ["2026-11-15"], ["argon", "flashn", "opusm", "autorev"], USD),
+     ["2026-11-18"], ["dsv41", "dsv4pro", "gpt62"], USD),
 ]
 
 VIEW_KEYS = ["supported", "currency", "referenceCount", "totalIncomplete", "entries",
@@ -505,11 +522,32 @@ class CostCoreContractTests(unittest.TestCase):
     def test_unpriced_internal_models_stay_pending(self):
         view = self.result["views"]["unpriced-internal-models-stay-pending"]
         self.assertEqual(0, view["pricedCount"])
-        self.assertEqual(4, view["pendingCount"])
+        self.assertEqual(7, view["pendingCount"])
         self.assertFalse(view["anyPriced"])
         self.assertFalse(view["fullEstimate"])
         for entry in view["entries"]:
             self.assertIsNone(entry["reference"])
+
+    def test_official_pricing_2026_11_18_deepseek_and_gpt62sol(self):
+        view = self.result["views"]["official-pricing-2026-11-18-deepseek-and-gpt62sol"]
+        self.assertEqual(3, view["pricedCount"])
+        self.assertEqual(0, view["pendingCount"])
+        self.assertTrue(view["fullEstimate"])
+        by_id = {e["model"]["identity"]: e for e in view["entries"]}
+        # deepseek-v4.1-flash: 0.30 + 1.20 + 0.006 + 0.5*1.20 = $2.106
+        self.assertEqual("BigInt:2106000000000", by_id["dsv41"]["costScaled"])
+        self.assertEqual("deepseek", by_id["dsv41"]["reference"]["vendor"])
+        self.assertEqual("2026-11-18", by_id["dsv41"]["reference"]["date"])
+        self.assertEqual("", by_id["dsv41"]["rateTexts"][3])  # cache_write unpublished
+        self.assertEqual("1.20", by_id["dsv41"]["rateTexts"][4])  # thoughts == output
+        # deepseek-v4-pro: 1.32 + 3.96 + 0.044 + 0.5*3.96 = $7.304
+        self.assertEqual("BigInt:7304000000000", by_id["dsv4pro"]["costScaled"])
+        self.assertEqual("deepseek", by_id["dsv4pro"]["reference"]["vendor"])
+        self.assertEqual("3.96", by_id["dsv4pro"]["rateTexts"][4])  # thoughts == output
+        # gpt-6.2-sol: 2 + 10 + 0.10 + 2.50 = $14.60
+        self.assertEqual("BigInt:14600000000000", by_id["gpt62"]["costScaled"])
+        self.assertEqual("openai", by_id["gpt62"]["reference"]["vendor"])
+        self.assertEqual("2026-11-18", by_id["gpt62"]["reference"]["date"])
 
 
 if __name__ == "__main__":
