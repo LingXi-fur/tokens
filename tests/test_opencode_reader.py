@@ -103,13 +103,17 @@ class OpenCodeReaderTests(unittest.TestCase):
         self.assertEqual([0, 0, 0, 0, 0], record["billing"]["parts"])
         self.assertEqual(7, record["total"])
 
-    def test_negative_or_bogus_tokens_are_skipped(self):
+    def test_negative_or_bogus_tokens_are_marked_not_counted(self):
         build_db(self.db, [
             ("assistant", assistant({"input": -1, "output": 2, "reasoning": 0})),
             ("assistant", assistant({"input": "9", "output": 2, "reasoning": 0})),
             ("assistant", assistant(TOKENS, created="yesterday")),
         ]).close()
-        self.assertEqual([], readers.opencode_parse(self.db))
+        records = readers.opencode_parse(self.db)
+        self.assertEqual(2, len(records))
+        for record in records:
+            self.assertEqual(0, record["total"])
+            self.assertTrue(record["billing"]["uncertain"])
 
     def test_reporting_timezone_drives_the_date(self):
         build_db(self.db, [("assistant", assistant(TOKENS, created=T0 + 3600 * 1000))]).close()
