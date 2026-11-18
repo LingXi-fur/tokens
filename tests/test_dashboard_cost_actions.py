@@ -56,8 +56,8 @@ SAVE_BLOCKED_MSG = "请先确认或取消恢复官方参考，再保存。"
 CURRENCY_BLOCKED_MSG = "请先确认或取消币种切换，再保存。"
 
 CSV_COLUMNS = [
-    "row_type", "granularity", "period", "source", "model", "currency",
-    "status",
+    "row_type", "granularity", "period", "source", "model", "source_label",
+    "currency", "status",
     "input_tokens", "output_tokens", "cache_read_tokens",
     "cache_write_tokens", "thoughts_tokens",
     "input_rate", "output_rate", "cache_read_rate", "cache_write_rate",
@@ -981,7 +981,7 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
         self.assertNotIn(b"\r", data)  # LF row endings
         _, rows = self.decode_csv(data)
         self.assertEqual(rows[0], CSV_COLUMNS)
-        self.assertEqual(len(rows[0]), 25)
+        self.assertEqual(len(rows[0]), 26)
         self.assertEqual(len(self.entry_rows(rows)), 3)
         self.summary_row(rows)  # exactly one, and it parses
         self.assertNoErrors(page_errors, console_errors)
@@ -1137,7 +1137,7 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
         )
         # Entry rows leave the summary-only columns empty.
         for row in self.entry_rows(rows):
-            self.assertEqual(len(row), 25)
+            self.assertEqual(len(row), 26)
             for col in ("total_calls", "unknown_calls", "unknown_tokens",
                         "invalid_rows", "total_incomplete", "full_estimate",
                         "priced_subtotal"):
@@ -1212,7 +1212,7 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
         self.assertEqual(verified[COL["estimated_cost"]], "0.002")
         self.assertEqual(summary[COL["priced_subtotal"]], "0.002")
         # Summary row carries no per-model token/rate/cost values.
-        for col in CSV_COLUMNS[7:18]:
+        for col in CSV_COLUMNS[8:19]:
             self.assertEqual(summary[COL[col]], "", col)
         self.assertNoErrors(page_errors, console_errors)
         context.close()
@@ -1234,9 +1234,9 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
         summary = rows[1]
         self.assertEqual(summary[COL["row_type"]], "summary")
         self.assertEqual(summary[COL["status"]], "unsupported")
-        self.assertEqual(len(summary), 25)
+        self.assertEqual(len(summary), 26)
         # No entry columns leak into the unsupported row.
-        for col in CSV_COLUMNS[7:]:
+        for col in CSV_COLUMNS[8:]:
             self.assertEqual(summary[COL[col]], "", col)
         self.assertNoErrors(page_errors, console_errors)
         context.close()
