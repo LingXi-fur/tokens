@@ -159,6 +159,32 @@ class CacheWriterCapabilityTests(unittest.TestCase):
 
 
 class TimezoneCacheTests(unittest.TestCase):
+    def test_cache_json_chunks_are_byte_identical_to_one_shot_dumps(self):
+        cache = {
+            "_v": 8,
+            "/p/a.jsonl": {"sig": [1, 2.5, None], "records": [
+                {"model": "模型", "input": 1, "billing": {"reasons": []}}]},
+            "/p/b \"q\".jsonl": {"records": []},
+        }
+        expected = json.dumps(cache, ensure_ascii=False, separators=(",", ":"),
+                              allow_nan=False)
+        self.assertEqual(expected, "".join(readers._iter_cache_json(cache)))
+        self.assertEqual("{}", "".join(readers._iter_cache_json({})))
+        with self.assertRaises(ValueError):
+            "".join(readers._iter_cache_json({"x": float("nan")}))
+
+    def test_cache_write_over_budget_keeps_previous_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_file = Path(tmp) / "records.json"
+            cache_file.write_text("old", encoding="utf-8")
+            with mock.patch.object(readers.config, "CACHE_DIR", tmp), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(cache_file)), \
+                    mock.patch.object(readers, "MAX_CACHE_BYTES", 64):
+                ok = readers._save_cache({"/p": {"records": ["x" * 200]}})
+            self.assertFalse(ok)
+            self.assertEqual("old", cache_file.read_text(encoding="utf-8"))
+            self.assertEqual(["records.json"], sorted(os.listdir(tmp)))
+
     def test_cache_roundtrip_preserves_records_exactly(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
