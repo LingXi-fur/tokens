@@ -387,10 +387,9 @@ class DashboardRuntimeTests(unittest.TestCase):
                 else None,
             )
             target = path or self._path
-            page.goto(
-                target if isinstance(target, str) and "://" in target else target.as_uri(),
-                wait_until="load",
-            )
+            uri = (target if isinstance(target, str) and "://" in target
+                   else Path(target).resolve().as_uri())
+            page.goto(uri, wait_until="load")
             return context, page, page_errors, console_errors
         except BaseException:
             try:

@@ -7,6 +7,7 @@ It is self-contained (no DOM, DATA, state, language or clock), so these tests
 run it alone under Node and pin the edge cases directly.
 """
 from tests import _hermetic  # noqa: F401
+from tests import _node
 
 import re
 import shutil
@@ -28,7 +29,7 @@ HAVE_NODE = shutil.which("node") is not None
 
 def run_node(body):
     script = CORE.read_text(encoding="utf-8") + "\nconst assert=require('node:assert/strict');\nconst P=PeriodCore;\n" + body
-    result = subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True,
+    result = _node.run_node(script, cwd=ROOT, capture_output=True,
                             text=True, encoding="utf-8", check=False)
     if result.returncode:
         raise AssertionError(result.stderr[-4000:])

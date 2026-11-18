@@ -1,5 +1,6 @@
 """Report-day, trusted-component and shared-cost contracts for synthetic world."""
 from tests import _hermetic  # noqa: F401
+from tests import _node
 import copy
 import importlib.util
 import json
@@ -29,7 +30,7 @@ import fs from 'node:fs'; import vm from 'node:vm';
         source += "vm.runInThisContext(fs.readFileSync(" + json.dumps(str(CORE)) + ", 'utf8'));\n"
         source += "const core=globalThis.CostCore, config=core.defaultConfig();\n"
         source += "const fixture=" + json.dumps(payload) + ";\n" + body
-        result = subprocess.run(["node", "--input-type=module", "-e", source], capture_output=True, text=True, timeout=30)
+        result = _node.run_node(source, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr[-3000:])
 
     def test_report_date_not_last_row_or_machine_date(self):

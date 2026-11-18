@@ -41,7 +41,7 @@ class DashboardPageLifecycleTests(unittest.TestCase):
                     expected['accept_downloads'] = True
                 browser.new_context.assert_called_once_with(**expected)
                 path = owner._page if helper is ActionsPageMixin.new_page else owner._path
-                page.goto.assert_called_once_with(path.as_uri(), wait_until='load')
+                page.goto.assert_called_once_with(Path(path).resolve().as_uri(), wait_until='load')
                 self.assertEqual(['pageerror', 'console'], [call.args[0] for call in page.on.call_args_list])
                 context.close()
                 context.close.assert_called_once_with()

@@ -1,5 +1,6 @@
 """Synthetic contracts for the production monthly-budget core."""
 from tests import _hermetic  # noqa: F401
+from tests import _node
 import json
 import shutil
 import subprocess
@@ -44,7 +45,7 @@ const limited=(result,reason)=>{
 
 
 def run_node(body):
-    result = subprocess.run(["node", "-e", harness() + body], cwd=ROOT,
+    result = _node.run_node(harness() + body, cwd=ROOT,
                             capture_output=True, text=True, check=False)
     if result.returncode:
         raise AssertionError(result.stderr[-4000:])

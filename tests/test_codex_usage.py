@@ -303,6 +303,14 @@ class CodexUsageTests(unittest.TestCase):
                         self.assertEqual(good_cache, cache.read_bytes())
 
     @unittest.skipUnless(shutil.which("zstd"), "zstd unavailable")
+    def test_zstd_archive_streams_without_set_blocking(self):
+        path = self.write(header() + [modern()])
+        archive = self.root / "rollout-synthetic.jsonl.zst"
+        with archive.open("wb") as f:
+            subprocess.run([shutil.which("zstd"), "-q", "-c", "--", path], stdout=f, check=True)
+        with mock.patch.object(codex_usage, "_HAS_SET_BLOCKING", False):
+            self.assertEqual(1, len(readers.codex_parse(str(archive))))
+
     def test_zstd_archive_streams_and_corruption_is_not_empty_success(self):
         path = self.write(header() + [modern()])
         archive = self.root / "rollout-synthetic.jsonl.zst"

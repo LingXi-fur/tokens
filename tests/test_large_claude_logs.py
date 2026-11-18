@@ -1619,6 +1619,15 @@ class SafeReadStatProbeTests(unittest.TestCase):
         self.assertTrue(report["events"]["open"]["readonly"])
         original.fdopen.return_value.close.assert_called_once_with()
 
+    def test_cross_api_version_prefers_birthtime_when_ctime_differs(self):
+        before = self.info(st_ctime_ns=400, st_birthtime_ns=400)
+        opened = self.info(st_ctime_ns=401, st_birthtime_ns=400)
+        self.assertEqual(readers._stat_version_cross_api(before),
+                         readers._stat_version_cross_api(opened))
+        changed = self.info(st_ctime_ns=401, st_birthtime_ns=402)
+        self.assertNotEqual(readers._stat_version_cross_api(before),
+                            readers._stat_version_cross_api(changed))
+
     def test_interpretation_matches_real_entry_and_finish_failure_conditions(self):
         for slot in ("opened", "current", "named"):
             for changes, condition in (({"st_ino": 999}, "identity"),

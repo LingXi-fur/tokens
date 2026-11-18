@@ -1,4 +1,5 @@
 from tests import _hermetic  # noqa: F401
+from tests import _node
 import json
 import os
 import re
@@ -922,9 +923,8 @@ state.models=new Set(['beta']);
 const filtered=attributionFor(rows);
 if(filtered.parts.length!==1||filtered.parts[0].model!=='beta'||filtered.parts[0].delta!==35)throw new Error('model filter drift');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script], capture_output=True, text=True, check=False
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -940,9 +940,8 @@ if(!ladder.includes('1000 Token'))throw new Error('target anchor missing');
 const fallback=achievementStory({n:'未知',category:'未知',tier:'prismatic'});
 if(!fallback.includes('彩钻'))throw new Error('tier fallback missing');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script], capture_output=True, text=True, check=False
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_scrub_probe_contracts_keep_preview_memory_only_and_commit_explicit(self):
@@ -1025,9 +1024,8 @@ if(named!=='alpha,zeta,beta')throw new Error(`named tie order changed: ${named}`
 if(topModelOf(tied)?.[0]!=='zeta')throw new Error('default leader changed');
 if(topModelOf(tied,true)?.[0]!=='alpha')throw new Error('named leader changed');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script], capture_output=True, text=True, check=False
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1055,9 +1053,8 @@ const cases=[
 ];
 for(const [x,left,width,count,want] of cases){const got=trendPeriodIndex(x,left,width,count);if(got!==want)throw new Error(`${x}: ${got} !== ${want}`);}
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script], capture_output=True, text=True, check=False
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
@@ -1107,12 +1104,8 @@ if(rhythmLevel(100,[100])!==4)throw new Error('single peak must be hottest');
 if(rhythmLevel(100,[100,100])!==4)throw new Error('tied peaks must be hottest');
 if(rhythmLevel(4,[1,2,3,4])!==4)throw new Error('maximum must be hottest');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1142,12 +1135,8 @@ if(refreshedReplayState(current,{session_series:{}})!==null)throw new Error('rem
 const closed={sid:null,series:[],i:0,timer:null,label:''};
 if(refreshedReplayState(closed,{session_series:{}})!==closed)throw new Error('closed replay');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("if(rp.sid){", script)
         self.assertIn("else closeReplay();", script)
@@ -1228,12 +1217,8 @@ const serialized=JSON.stringify(all);
 for(const secret of ['private-low','private-explore','private-deep','private-cruise','private-sprint','private-priority','private-filter'])if(serialized.includes(secret))throw new Error('entity identifier leaked: '+secret);
 if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new Error('classification evidence missing');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_reuse_parts_are_exact_and_sum_to_total(self):
@@ -1474,12 +1459,8 @@ result=almanacTrendMetrics([
 ],historical);
 if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical range');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1534,12 +1515,8 @@ state.gran='day';DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:nu
 if(deltaWindowInfo([{period:'2026-08-25',total:100},{period:'2026-08-26',total:50}])!==null)throw new Error('partial day should be hidden');
 if(deltaPercent(null)!==null)throw new Error('null window percent');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1557,12 +1534,8 @@ if(previousHigher.value-previousHigher.delta<12)throw new Error('previous-high c
 const equal=barAnnotationLayout(60,60);
 if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         template = report_dashboard._TEMPLATE
@@ -1728,7 +1701,7 @@ DATA.snapshot.id='snap-b';DATA.generated='2026-07-29 12:00';const newerRows=[...
 memory.value='{bad';if(readAlmanacStore(memory).v!==1)throw new Error('malformed storage');
 if(almanacScopeKey({...DATA,anonymized:true})===almanacScopeKey(DATA))throw new Error('raw anon scope');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         template = report_dashboard._TEMPLATE
@@ -1887,7 +1860,7 @@ if(capabilityInfo().find(x=>x.key==='reuse').status!=='off')throw new Error('cac
 DATA.range.until='2026-07-20';if(freshnessInfo().key!=='range')throw new Error('range freshness');
 DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw new Error('empty health');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
     def test_signal_lens_data_moments_and_contextual_empty_contracts(self):
         template = report_dashboard._TEMPLATE
@@ -1958,7 +1931,7 @@ if(mixed.compatible||!mixed.mixed||!mixed.label.includes('混合类型'))throw n
 const missing=signalComparison({pin:{type:'model',id:'a'},peek:null});
 if(missing.compatible||!missing.label.includes('Peek'))throw new Error('missing peek');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -2013,7 +1986,7 @@ const gapRelay=latestModelRelay([rows[0],rows[2]]);if(gapRelay)throw new Error('
 const tieRelay=latestModelRelay([{period:'2026-07-01',total:10,models:{a:10}},{period:'2026-07-02',total:20,models:{a:10,b:10}}]);if(tieRelay)throw new Error('tie relay');
 state.models.clear();if(trailingQuietDays(rows,'2026-07-06').kind!=='no-observation')throw new Error('empty filter');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
     @requires_node
     def test_trend_annotation_rail_maps_merges_and_supports_keyboard(self):
@@ -2057,7 +2030,7 @@ if(events.length!==1||events[0].events.length!==3)throw new Error('monthly merge
 state.gran='day';rows=[{period:'2026-07-01'},{period:'2026-07-02'},{period:'2026-07-08'}];events=momentEventsForRows(rows);
 if(events.length!==3)throw new Error('daily mapping');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         keyboard_helpers = "\n".join(extract_function(name) for name in (
@@ -2088,7 +2061,7 @@ e=event('Enter');if(!handleMomentKey(e,markers,1)||activated!=='2026-07-02'||!e.
 activated=null;e=event(' ');if(!handleMomentKey(e,markers,0)||activated!=='2026-07-01'||!e.prevented)throw new Error('Space');
 e=event('Tab');if(handleMomentKey(e,markers,1)||e.prevented)throw new Error('unhandled key');
 '''
-        result = subprocess.run(["node", "-e", keyboard_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(keyboard_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -2121,7 +2094,7 @@ if(sessions.length!==2||sessions[0][2]!=='sg'||sessions[0][1]!==75||sessions[1][
 state.models=new Set(['b']);projects=aggregateEntities(Object.keys(DATA.day_details),'project');
 if(projects.length!==2||projects[0][2]!=='beta'||projects[0][1]!==90||projects[1][2]!=='alpha'||projects[1][1]!==50)throw new Error('model switch ranking');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_data_trail_structure_accessibility_and_motion_contracts(self):
@@ -2241,7 +2214,7 @@ if(reuse.parts[4]!==15)throw new Error('Other hidden');
 state.focusPeriod=null;derivedCache={};derivedRevision=-1;const allScope=trailScope(),allReuse=trailReuseEvidence('a',allScope);
 if(allScope.total!==410||allScope.calls!==13||allReuse.total!==350||allReuse.parts.join(',')!=='117,78,64,60,31')throw new Error('full-range aggregation');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -2303,7 +2276,7 @@ const event={target,key:'End',prevented:false,preventDefault(){this.prevented=tr
 if(!trailRoving(event)||focused!==items[2]||!event.prevented||items[2].tabIndex!==0)throw new Error('roving End');
 if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!editableTarget({tagName:'DIV',isContentEditable:true})||editableTarget({tagName:'BUTTON'}))throw new Error('editable guard');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         view_start = script.index("function viewParams()")

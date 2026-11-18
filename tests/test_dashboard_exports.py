@@ -1,4 +1,5 @@
 from tests import _hermetic  # noqa: F401
+from tests import _node
 import os
 import shutil
 import subprocess
@@ -94,13 +95,8 @@ Promise.all(downloads.map(async item=>({...item,text:await item.blob.text()}))).
   process.stdout.write(JSON.stringify(items.map(({filename,type,text})=>({filename,type,text}))));
 }).catch(error=>{console.error(error);process.exitCode=1;});
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script, str(SCRIPT)],
-            cwd=ROOT,
-            capture_output=True,
-            encoding="utf-8",
-            check=False,
-        )
+        result = _node.run_node(node_script, str(SCRIPT), cwd=ROOT,
+                                capture_output=True, encoding="utf-8", check=False)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("tokens-day.csv", result.stdout)
         self.assertIn("tokens-day.md", result.stdout)
@@ -133,13 +129,8 @@ for(const text of samples){
   if(/[㐀-鿿]/.test(translated))throw new Error('CJK residue after English translation: '+translated);
 }
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script, str(SCRIPT)],
-            cwd=ROOT,
-            capture_output=True,
-            encoding="utf-8",
-            check=False,
-        )
+        result = _node.run_node(node_script, str(SCRIPT), cwd=ROOT,
+                                capture_output=True, encoding="utf-8", check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
 
