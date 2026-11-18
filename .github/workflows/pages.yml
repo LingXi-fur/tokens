@@ -43,6 +43,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install 3D world dependencies
+        run: npm ci --prefix ui/world --no-audit --no-fund
       - name: Build public synthetic Dashboard
         run: python3 scripts/build_docs_demo.py
         env:

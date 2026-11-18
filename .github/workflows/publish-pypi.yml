@@ -70,6 +70,9 @@ jobs:
       - name: Install project
         run: python -m pip install -e .
 
+      - name: Install 3D world dependencies
+        run: npm ci --prefix ui/world --no-audit --no-fund
+
       - name: Run release tests
         run: python -m unittest discover -s tests
         env:

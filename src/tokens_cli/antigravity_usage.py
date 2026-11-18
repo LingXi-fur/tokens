@@ -3,6 +3,8 @@
 Only usage metadata (token counts, model name, step timestamp, and opaque IDs)
 is extracted. Conversation payloads and summaries are never queried or retained.
 """
+from __future__ import annotations
+
 from datetime import datetime, timezone
 import os
 import sqlite3

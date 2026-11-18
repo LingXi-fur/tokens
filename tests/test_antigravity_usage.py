@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from tests import _hermetic  # noqa: F401
 import os
 import sqlite3
