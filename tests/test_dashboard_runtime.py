@@ -4368,6 +4368,190 @@ class DashboardRuntimeTests(unittest.TestCase):
             finally:
                 context.close()
 
+    def test_english_sweep_zero_cjk_across_tabs_panels_and_modals(self):
+        """Regression guard: switching a full demo dashboard to English leaves zero CJK UI text."""
+        from datetime import date
+        from tokens_cli import demo
+
+        bundle = demo.build_demo(today=date(2026, 11, 18), sources=list(demo.DEMO_SOURCES))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            html_doc = report_dashboard.build_dashboard_html(
+                bundle["records"],
+                since=bundle["since"],
+                until=bundle["until"],
+                sources=bundle["sources"],
+                generated_at=bundle["generated_at"],
+                session_titles=bundle["session_titles"],
+                demo=True,
+                language="zh",
+            )
+            html_path = Path(tmpdir) / "demo-i18n-sweep.html"
+            html_path.write_text(html_doc, encoding="utf-8")
+            context = self._browser.new_context(
+                viewport={"width": 1280, "height": 900},
+                locale="zh-CN",
+            )
+            page = context.new_page()
+            page_errors = []
+            console_errors = []
+            page.on("pageerror", lambda e: page_errors.append(str(e)))
+            page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
+            try:
+                page.goto(html_path.as_uri(), wait_until="networkidle")
+                # Switch to English via UI toggle button
+                page.click("#lang-btn")
+                page.wait_for_timeout(150)
+
+                # Scroll every lazy section into view so all lazy panels render in English
+                for sel in (
+                    "#section-project", "#section-reuse", "#section-flow",
+                    "#section-modes", "#section-almanac", "#section-cost",
+                    "#section-achievements", "#section-provenance",
+                    "#section-top", "#section-daily-models",
+                ):
+                    loc = page.locator(sel)
+                    if loc.count():
+                        loc.scroll_into_view_if_needed()
+                        page.wait_for_timeout(80)
+
+                # Open all <details> and expand interactive panels
+                page.evaluate("() => { document.querySelectorAll('details').forEach(d => { d.open = true; }); }")
+                page.wait_for_timeout(100)
+                for sel in (
+                    "#cost-pending-toggle", "#interval-btn", "#peak-btn",
+                    "#glm-compare-btn", '[data-dest-view="table"]',
+                    "#view-capsule", "#signal-main",
+                ):
+                    loc = page.locator(sel).first
+                    if loc.count():
+                        loc.dispatch_event("click")
+                        page.wait_for_timeout(60)
+
+                collect_script = """() => {
+                    const cjk = /[\\u3400-\\u9fff]/;
+                    const hits = [];
+                    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+                    let n;
+                    while ((n = walk.nextNode())) {
+                        if (n.nodeType === 3) {
+                            const p = n.parentElement;
+                            if (!p || p.tagName === 'SCRIPT' || p.tagName === 'STYLE' || p.id === 'lang-btn') continue;
+                            if (cjk.test(n.nodeValue)) hits.push(['text', p.closest('[id]')?.id || p.tagName, n.nodeValue.trim().slice(0, 120)]);
+                        } else {
+                            if (n.id === 'lang-btn') continue;
+                            for (const attr of ['aria-label', 'title', 'placeholder']) {
+                                const val = n.getAttribute(attr);
+                                if (val && cjk.test(val)) hits.push([attr, n.id || n.closest('[id]')?.id || n.tagName, val.trim().slice(0, 120)]);
+                            }
+                        }
+                    }
+                    return hits;
+                }"""
+                cjk_hits = list(page.evaluate(collect_script))
+
+                # Walk all 4 Data Trail steps
+                page.keyboard.press("i")
+                page.wait_for_timeout(80)
+                cjk_hits.extend(page.evaluate(collect_script))
+                for sel in (
+                    '[data-trail-action="models"]', '[data-trail-model]',
+                    '[data-trail-action="evidence"]', '[data-trail-branch]',
+                ):
+                    loc = page.locator(sel).first
+                    if loc.count():
+                        loc.dispatch_event("click")
+                        page.wait_for_timeout(80)
+                        cjk_hits.extend(page.evaluate(collect_script))
+                if page.locator("#trail-close").count():
+                    page.locator("#trail-close").dispatch_event("click")
+
+                # Switch granularities and interact with Period table
+                for g in ("day", "week", "month"):
+                    page.locator(f'#tabs button[data-gran="{g}"]').dispatch_event("click")
+                    page.wait_for_timeout(80)
+                    cjk_hits.extend(page.evaluate(collect_script))
+                page.locator("#thead button.th-sort").first.dispatch_event("click")
+                if page.locator("#table-other-toggle").count():
+                    page.locator("#table-other-toggle").dispatch_event("click")
+                if page.locator("#tbody button.row-toggle").count():
+                    page.locator("#tbody button.row-toggle").first.dispatch_event("click")
+                cjk_hits.extend(page.evaluate(collect_script))
+
+                # Open Command Palette
+                page.evaluate("openPalette()")
+                page.wait_for_timeout(60)
+                cjk_hits.extend(page.evaluate(collect_script))
+                page.evaluate("closePalette()")
+
+                # Save a budget so Budget Manager delete-confirmation UI can be checked
+                page.locator("#budget-edit").dispatch_event("click")
+                page.fill("#budget-amount", "100")
+                page.locator("#budget-save").dispatch_event("click")
+                page.wait_for_timeout(80)
+
+                # Open every modal & inner sub-views (help modal opens via '?')
+                modals = [
+                    ("#cost-price-btn", "#cost-x"),
+                    ("#budget-edit", "#budget-x"),
+                    ("#budget-manage", "#budget-manager-x"),
+                    ("#almanac-open", "#almanac-x"),
+                    ("#ach-open", "#ach-x"),
+                    ("key:?", "#help-close"),
+                    ("#passport-btn", "#share-close"),
+                    ("#receipt-btn", "#share-close"),
+                    ("[data-dest-replay]", "#replay-x"),
+                ]
+                for opener, closer in modals:
+                    if opener.startswith("key:"):
+                        page.keyboard.press(opener.split(":", 1)[1])
+                    else:
+                        loc = page.locator(opener).first
+                        self.assertTrue(loc.count() > 0, opener)
+                        loc.dispatch_event("click")
+                    page.wait_for_timeout(100)
+                    if opener == "#cost-price-btn":
+                        inp = page.locator("#cost-editor-list input.cost-rate").first
+                        inp.fill("2.5")
+                        inp.dispatch_event("input")
+                        rbtn = page.locator("#cost-editor-list button[data-cost-restore]:not([hidden])").first
+                        if rbtn.count():
+                            rbtn.dispatch_event("click")
+                        page.select_option("#cost-currency", "CNY")
+                        page.wait_for_timeout(60)
+                    elif opener == "#budget-manage":
+                        if page.locator("[data-budget-delete]").count():
+                            page.locator("[data-budget-delete]").first.dispatch_event("click")
+                            page.wait_for_timeout(60)
+                    elif opener == "#ach-open":
+                        if page.locator("#ach-earned-grid .badge").count():
+                            page.locator("#ach-earned-grid .badge").first.dispatch_event("click")
+                        cats = page.locator("#ach-body .cat-h")
+                        for idx in range(min(3, cats.count())):
+                            cats.nth(idx).dispatch_event("click")
+                        page.wait_for_timeout(80)
+                    cjk_hits.extend(page.evaluate(collect_script))
+                    page.locator(closer).dispatch_event("click")
+                    page.wait_for_timeout(60)
+
+                self.assertEqual([], cjk_hits, f"Remaining CJK items in English UI: {cjk_hits[:10]}")
+
+                # Switch back to Chinese and confirm previously English-leaking items restore to Chinese
+                page.click("#lang-btn")
+                page.wait_for_timeout(150)
+                zh_check = page.evaluate("""() => ({
+                    snap: document.querySelector('.snapshot-details summary')?.textContent || '',
+                    overview: document.querySelector('#section-overview h2')?.textContent || '',
+                    prov: document.querySelector('#prov-sources')?.innerText || '',
+                })""")
+                self.assertEqual("快照说明", zh_check["snap"])
+                self.assertEqual("用量总览", zh_check["overview"])
+                self.assertNotIn("parsed records", zh_check["prov"])
+                self.assertIn("已解析记录", zh_check["prov"])
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
 
 if __name__ == "__main__":
     unittest.main()
