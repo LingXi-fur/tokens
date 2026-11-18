@@ -37,7 +37,7 @@ def compute_window(mode, now, days, weeks, months):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="tokens",
-        description="Local-first token usage analytics for Claude Code, Gemini CLI, and Codex.",
+        description="Local-first token usage analytics for Claude Code, Gemini CLI, Codex, OpenCode, and Antigravity.",
     )
     parser.add_argument("range", nargs="?", default="day", choices=RANGES,
                         help="report range or command (default: day)")
