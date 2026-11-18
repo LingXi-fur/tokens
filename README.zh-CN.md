@@ -5,7 +5,7 @@
 
 **看清 AI 编程 Token 去向，同时不把本地日志上传到任何地方。**
 
-把本机 Claude Code、Gemini CLI 与 Codex 记录变成终端摘要、仅限回环地址的实时 Dashboard，或一个自包含离线 HTML 文件。
+把本机 Claude Code、Gemini CLI、Codex、OpenCode 与 Antigravity 记录变成终端摘要、仅限回环地址的实时 Dashboard，或一个自包含离线 HTML 文件。
 
 [![在线 Demo](https://img.shields.io/badge/demo-在线体验-2f6fd6)](https://lingxi-fur.github.io/tokens/demo/)
 [![CI](https://github.com/LingXi-fur/tokens/actions/workflows/ci.yml/badge.svg)](https://github.com/LingXi-fur/tokens/actions/workflows/ci.yml)
@@ -31,7 +31,7 @@
 
 AI 编程工具在本机留下用量记录，但格式和 Token 口径不同。`tokens` 提供可检查的本地视图：
 
-- **在同一份报告中查看 Claude Code、Gemini CLI 与 Codex**，同时保留各来源的计数语义。
+- **在同一份报告中查看 Claude Code、Gemini CLI、Codex、OpenCode 与 Antigravity**（默认按 `--source auto` 自动发现可读来源），同时保留各来源的计数语义。
 - **找到值得继续查看的变化：**日 / 周 / 月趋势、两个时段的对比（主力模型易主时亮出换人徽章）与用量峰值。还可复制当前视图摘要（有可比窗口时包含环比），粘贴到笔记或消息里。
 - **追溯用量去向：**通过项目 / 模型概览与会话卡，在来源字段允许时查看模型、来源、项目和会话的用量构成。
 - **查看订阅额度窗口：**运行 `tokens quota` 查看 Codex 官方额度快照与 Claude 容量估算及预计撞线时间，全程本地读取、不上传日志。
@@ -51,7 +51,7 @@ cd tokens
 ./run serve --open
 ```
 
-默认只扫描 Claude。如果你使用 Gemini CLI 或 Codex，请给 `serve` 加上 `--source gemini` 或 `--source codex`；重复 `--source` 可以组合来源，否则这些日志不会出现在报告中。
+不传 `--source`（即 `--source auto`）时，程序会检查 `sources.py` 注册表内五个来源（Claude Code、Gemini CLI、Codex、OpenCode、Antigravity）的路径与可读权限，自动启用所有存在且可读的来源（只检查路径，不打开正文）。如需只扫描指定来源，可重复传入 `--source`（例如 `--source gemini`、`--source antigravity`，也可与 `auto` 组合）。
 
 `./run doctor` 检查路径、候选文件数、时区、输出和缓存权限，不解析消息正文，也不打印项目或会话标识。
 
@@ -81,7 +81,7 @@ Claude 没有官方百分比，因此该区块明确标注为估算。对每个�
 ./run demo --open
 ```
 
-Demo 只使用生成的示例数据写入 `out/dashboard-demo.html`，不会读取 Claude Code、Gemini CLI 或 Codex 日志。
+Demo 只使用生成的示例数据写入 `out/dashboard-demo.html`，不会读取本机 Claude Code、Gemini CLI、Codex、OpenCode 或 Antigravity 日志。
 
 需要离线归档时：
 
@@ -103,7 +103,7 @@ tokens doctor
 tokens serve --open
 ```
 
-如果使用 Gemini CLI 或 Codex，请给 `tokens serve --open` 加上 `--source gemini` 或 `--source codex`。
+如需只限定特定工具，可在 `tokens serve --open` 后重复传入 `--source`。
 
 ### 可选：安装本地命令
 
@@ -167,7 +167,7 @@ PYTHONPATH=src python3 -m tokens_cli demo --output /tmp/tokens-030-source-demo -
 
 页头区分已启用来源与本快照实际读到的来源。数据体检列出各来源记录数、Token、记录日期和字段能力；「本快照未读到记录」不等于没有使用，「未启用」不等于本机没有日志。来源数量与日期按报告快照统计，不随前端模型筛选变化，最近记录日也不是同步时间。首次扫描失败不会用 0 冒充用量；后续更新失败会保留上次成功快照并提示。错误诊断仅包含受控阶段与原因码，不公开原始异常或路径。
 
-找出用量最高的日子，对比两个等长时段，并查看哪些**已有记录**中的模型、项目或会话构成了差异。模型筛选区会直接列出归入 `Other` 的具体名称及当前时段 Token；这些名称共用 `Other` 颜色与整组筛选，不是独立模型筛选，脱敏报告不展示缺失的原名。在来源确实提供相应字段时，你可以：
+找出用量最高的日子，对比两个等长时段，并查看哪些**已有记录**中的模型、项目或会话构成了差异。最多 8 个独立模型各占固定分类色（每个活跃来源保底 1 个槽位），而 `Other` 改用中性灰并拆开逐个列出：Model mix 图例、趋势图例、环形图切片、趋势悬停、期间明细表展开（`Other (N)`）、导出与“更多模型”筛选都会直接列出具体模型及其来源与精确 Token；Today HUD 的主力模型永远显示真实模型名，脱敏报告不含被折叠原名。在来源确实提供相应字段时，你可以：
 
 - **发现变化：**查看日 / 周 / 月趋势、峰值时段与 Token 构成。
 - **追溯记录：**按来源和模型筛选，查看项目与会话聚合；非脱敏 Dashboard 还可查看归入 Other 的原始模型名。
@@ -179,9 +179,9 @@ Token 增减只描述用量变化，不代表生产力或代码质量。Cache Re
 
 ### 本地费用估算
 
-**费用账本**使用独立记录的计费分量，并内置二十六个精确模型的官方**参考价**，也可在**设置单价**中填写你自己的价格。默认没有本地配置时，账本优先显示 USD 参考价估算，且在你保存前不会写入浏览器存储。
+**费用账本**使用独立记录的计费分量，内置 2026-11-15 对照各官网核对的官方**参考价**（涵盖 Google Gemini、OpenAI、Anthropic、DeepSeek、Z.ai、Moonshot），也可在**设置单价**中填写你自己的价格。官网未公布的分量留空不推算，内部或已下线的模型名保持未定价。默认没有本地配置时，账本优先显示 USD 参考价估算，且在你保存前不会写入浏览器存储。
 
-- **内置参考价**为 2026-11-06 核对的官方 USD 单价（每百万 Token），覆盖二十七个精确模型名，全部按模型官方价：OpenAI Standard 短上下文档（≤272K）、Anthropic Claude 全系（缓存写取 5 分钟档）、DeepSeek 峰时基准、Z.ai 国际美元价（并非国内智谱同价，GLM 缓存写限时免费记为 0；直写 `zhipu/` 前缀的记录按同后端单独入表）、Moonshot Kimi。页面不会主动向供应商请求这些价格，公开参考价随页面资产嵌入；供应商来源链接只在你主动点击时打开。
+- **内置参考价**为 2026-11-15 对照各厂商定价页核对的官方 USD 单价（每百万 Token）：Google Gemini（`gemini-4-hydrogen`、`gemini-2.5-pro`、`gemini-2.5-flash`、`gemini-3-flash-preview`，思考 token 按输出价，官网未公布的缓存写留空不做推算）、OpenAI Standard 短上下文档（≤272K，含 `gpt-5.3-codex`）、Anthropic Claude 全系（含 `claude-fable-5-1`，缓存写取 5 分钟档）、DeepSeek 峰时基准、Z.ai 国际美元价（并非国内智谱同价，GLM 缓存写限时免费记为 0；直写 `zhipu/` 前缀的记录按同后端单独入表）、Moonshot Kimi。页面不会主动向供应商请求这些价格，公开参考价随页面资产嵌入；供应商来源链接只在你主动点击时打开。
 - **手填单价**按日志来源与原始模型分别保存，归入 Other 的模型也分别定价，并对该条目整体优先于内置参考价。日志来源不是供应商或计费渠道；模型名可能经过路由别名映射，不保证等同实际计费 SKU。明确填写 0 代表免费，空白仍为待定价。清空全部价格并保存会以此全空覆盖防止参考价回填；CNY 永不套用 USD 参考价。Gemini thoughts 单独计价。
 - **设置单价**新增**使用官方参考价 USD**开关。当前币种为 CNY 且已填价格时，开启会先请求确认，并一次性执行：清空你的自定义条目（含备注）并切换到 USD。不假设汇率、不换算已填条目；取消则保留原价格与币种。在此开关出现前保存的旧有效配置没有 reference 标记，会保留原币种与手填值，并保持参考价关闭。
 - **恢复官方参考**在单价编辑器内按单个模型操作。仅当草稿为 USD 且参考层开启、模型未隐藏、精确模型名命中内置参考、且该来源/模型存在已保存覆盖（全空、显式 0、仅备注都算覆盖）时显示。确认只清除该条目的单价与备注，其他模型不变；取消不做任何修改，不保存退出不落盘。恢复后再次输入价格仍会创建普通覆盖。
@@ -203,7 +203,7 @@ Token 增减只描述用量变化，不代表生产力或代码质量。Cache Re
 | OpenCode | `~/.local/share/opencode/opencode.db`（SQLite，遵循 `XDG_DATA_HOME`） | 有 | 有 | 总量为 input + output + reasoning + cache read + cache write；OpenCode 的 input 不含缓存、output 不含 reasoning。只读打开，只查询 token、模型与时间字段，从不读取消息正文。 |
 | Antigravity | `~/.gemini/antigravity/conversations/*.db`（SQLite，可通过 `TOKENS_ANTIGRAVITY_DIR` 覆盖） | 无 | 有 | 总量为 input + output + cache read。只读打开，只取 token、模型与时间字段，从不读取对话正文或摘要库。基于未公开的私有格式，应用升级后可能需要同步更新读取器。 |
 
-默认只扫描 Claude。重复指定 `--source` 可组合来源：
+默认按 `--source auto` 自动启用 `sources.py` 注册表内所有存在且可读的来源；可重复传入 `--source` 限定或组合指定来源（例如 `--source antigravity`）：
 
 Codex 的 `.jsonl.zst` 压缩归档要求采集进程能通过 `PATH` 找到 `zstd`；普通日志不需要此依赖。后台服务与交互终端的环境可能不同，`./run doctor --source codex` 仅反映运行该命令的进程环境，不代表常驻服务。出现 `collection · codex · decompressor_unavailable` 时应检查服务环境，不要跳过压缩归档；修改服务配置后须重新加载其环境才会生效。启用来源不等于已有用量，仍须核对成功快照及来源实际记录。
 
@@ -238,19 +238,22 @@ Codex 的 `.jsonl.zst` 压缩归档要求采集进程能通过 `PATH` 找到 `zs
 ## CLI 要点
 
 ```text
-./run [day|week|month|all|dashboard|demo|serve|doctor] [options]
-tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安装后
+./run [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]
+tokens [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]  # 本地安装后
 ```
 
 | 参数 | 用途 |
 |---|---|
-| `--source claude\|gemini\|codex` | 选择来源，可重复。 |
+| `--source antigravity\|claude\|codex\|gemini\|opencode\|auto` | 选择来源（默认 `auto` 自动启用所有可读来源），可重复组合。 |
 | `--since YYYY-MM-DD` / `--until YYYY-MM-DD` | 限制闭区间日期范围。 |
 | `--timezone AREA/CITY` | 覆盖检测到的系统时区。 |
 | `--lang en\|zh` | 终端及静态 HTML 语言；默认跟随系统 locale（可由 `TOKENS_LANG` 覆盖）。 |
 | `--output DIR` | 指定报告目录，默认 `./out`。 |
 | `--html` | 为终端模式额外生成静态 HTML。 |
+| `--dashboard` | 无论位置参数为何，生成交互式离线 Dashboard。 |
 | `--anonymize` | 在 Dashboard 或实时模式中假名化标识。 |
+| `--models` | 与 `doctor` 联用，展示模型归属报告（含 OpenCode）。 |
+| `--json` | 与 `doctor --models` 或 `quota` 联用，输出机器可读 JSON。 |
 | `--interval SECONDS` | 设置后台日志扫描间隔；最小 1，默认 300。浏览器检查频率独立。 |
 | `--port PORT` | 设置回环端口；默认 8765，0 表示自动选择。 |
 | `--open` | 用默认浏览器打开生成文件或本机 URL。 |
@@ -286,9 +289,9 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 ## 当前边界
 
 - 当前公共安装入口是源码检出；在确认存在可用发布版本前，不宣传软件包注册表安装命令。0.3.0 本机候选不改变这一点：它仅离线本机使用，不声称存在已核实的公开 0.3.0 软件包注册表版本。
-- Claude 是唯一默认来源；Gemini 与 Codex 必须显式选择。
-- Claude JSONL 文件不再仅因超过 64 MiB 被整份跳过。超长物理行（包括超过 4 MiB 的行）使用有界流式 JSON 校验与用量投影；仍有深度、词法 token、保留数据及数值词元等工程限制，不代表内存无限或历史日志绝对完整。
-- 采集不完整时，不把部分报告发布为成功结果。实时扫描保留最近成功快照；首次扫描失败则没有快照。记录缓存 v7 会重建不兼容的旧条目，不删除旧缓存文件。
+- 不传 `--source`（默认 `auto`）时只检查目录/文件存在性与可读权限，自动启用五个已登记来源（Claude Code、Gemini CLI、Codex、OpenCode、Antigravity）中可读的来源；也可显式 `--source` 限定。
+- Claude 和 Codex JSONL 文件不再仅因超过 64 MiB 被整份跳过。超长物理行（包括超过 4 MiB 的行）使用有界流式 JSON 校验与用量投影；仍有深度、词法 token、保留数据及数值词元等工程限制，不代表内存无限或历史日志绝对完整。
+- 采集不完整时，不把部分报告发布为成功结果。实时扫描保留最近成功快照；首次扫描失败则没有快照。记录缓存 v8（`records-v8.json`）会重建不兼容的旧条目，不删除旧缓存文件。
 - Windows 缓存设置会处理 `os.fchmod` 缺失。安全读取的 stat 兼容性仍在合成诊断：新增探针匹配写入关闭后只读打开的生命周期，捕获实际比较快照，不放宽生产校验。诊断输出不等于兼容性修复。Firefox/WebKit 检查也尚未闭合，本地后端测试通过不代表跨平台 CI 已全绿。
 - 来源格式提供的字段不同，部分项目、会话或 Context 视图可能不可用。
 - 终端和静态报告支持 `--lang en|zh`，默认跟随系统 locale；交互式 Dashboard 可在页面内切换语言。
@@ -296,7 +299,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor] [options]  # 本地安�
 
 ## 故障排查
 
-**没有找到日志？** 运行 `./run doctor`。如果未使用 Claude，尝试 `./run day --source gemini` 或 `./run day --source codex`。完全没有本地日志时可运行 `./run demo --open`；已安装本地命令则使用 `tokens demo --open`。
+**没有找到日志？** 运行 `./run doctor` 查看自动发现和跳过的来源；若只需查看单个工具，可试 `./run day --source gemini` 或 `./run day --source antigravity`。完全没有本地日志时可运行 `./run demo --open`；已安装本地命令则使用 `tokens demo --open`。
 
 **Dashboard 数字不更新？** `./run dashboard` 生成离线快照；实时更新请使用 `./run serve --open`。
 
