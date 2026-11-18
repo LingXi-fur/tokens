@@ -5,6 +5,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from zoneinfo import ZoneInfo
 from unittest import mock
 
 from tokens_cli import antigravity_usage
@@ -324,9 +325,12 @@ class AntigravityUsageTests(unittest.TestCase):
             )
 
             try:
+                # A named zone keeps the disk cache enabled: an unnamed local
+                # zone (Windows, some CI runners) intentionally disables reuse.
                 with mock.patch.dict(os.environ, {"TOKENS_ANTIGRAVITY_DIR": ag_dir}), \
                      mock.patch.object(config, "CACHE_DIR", cache_dir), \
-                     mock.patch.object(config, "CACHE_FILE", os.path.join(cache_dir, "records.json")):
+                     mock.patch.object(config, "CACHE_FILE", os.path.join(cache_dir, "records.json")), \
+                     mock.patch.object(config, "TZ", ZoneInfo("UTC")):
                     first = readers.read_all(sources=["antigravity"], use_cache=True)
                     self.assertEqual(len(first), 1)
                     self.assertNotIn("cwd", first[0])

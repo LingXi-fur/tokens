@@ -380,8 +380,17 @@ class ReaderMemoTests(unittest.TestCase):
                 elif change == "ctime":
                     raw = a.read_bytes().replace(b'"input_tokens":7', b'"input_tokens":8')
                     self.assertEqual(before.st_size, len(raw)); a.write_bytes(raw)
-                    os.utime(a, ns=(before.st_atime_ns, before.st_mtime_ns))
-                    self.assertNotEqual(before.st_ctime_ns, a.stat().st_ctime_ns)
+                    if os.name == "nt":
+                        # Windows os.stat exposes creation time, not inode
+                        # change time, so restoring mtime would hide the write.
+                        # The same-size rewrite itself must still invalidate.
+                        self.assertEqual(before.st_ctime_ns, a.stat().st_ctime_ns)
+                        os.utime(a, ns=(before.st_atime_ns,
+                                        before.st_mtime_ns + 1_000_000))
+                        self.assertNotEqual(before.st_mtime_ns, a.stat().st_mtime_ns)
+                    else:
+                        os.utime(a, ns=(before.st_atime_ns, before.st_mtime_ns))
+                        self.assertNotEqual(before.st_ctime_ns, a.stat().st_ctime_ns)
                 else:
                     a.unlink()
                 with self.io_counts() as (reads, _, _):

@@ -1,5 +1,6 @@
 """Synthetic-only 3D adapter and standalone build contracts."""
 from tests import _hermetic  # noqa: F401
+from tests import _node
 import importlib.util
 import json
 from pathlib import Path
@@ -23,7 +24,7 @@ def builder():
 class TestWorldSceneData(unittest.TestCase):
     def run_js(self, body):
         source = "import assert from 'node:assert/strict'; import { buildSceneModel,stableSlot } from " + json.dumps((WORLD / "scene-data.js").as_uri()) + ";\n" + body
-        result = subprocess.run(["node", "--input-type=module", "-e", source], capture_output=True, text=True, timeout=30)
+        result = _node.run_node(source, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr[-3000:])
 
     def test_empty_and_zero_selection(self):

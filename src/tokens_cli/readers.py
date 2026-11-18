@@ -365,6 +365,19 @@ def _stat_version(st):
     return (*_stat_identity(st), st.st_size, st.st_mtime_ns, st.st_ctime_ns)
 
 
+def _stat_version_cross_api(st):
+    """Version fields comparable across lstat/stat and fstat.
+
+    Python 3.13 on Windows reports fstat.st_ctime_ns as change time while
+    stat/lstat keep creation time.  Birth time is the comparable field there;
+    platforms without birth time retain the historical ctime check.
+    """
+    ctime = getattr(st, "st_birthtime_ns", None)
+    if ctime is None:
+        ctime = st.st_ctime_ns
+    return (*_stat_identity(st), st.st_size, st.st_mtime_ns, ctime)
+
+
 def _safe_open_flags():
     # 非阻塞防止检查/打开竞态把普通文件换成 FIFO 后挂起。
     return (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
@@ -400,7 +413,7 @@ class _SafeReader:
                 raise CollectionIncompleteError(self.source, "file_changed")
             if (opened.st_size < before.st_size
                     or (opened.st_size == before.st_size
-                        and _stat_version(opened) != _stat_version(before))):
+                        and _stat_version_cross_api(opened) != _stat_version_cross_api(before))):
                 raise CollectionIncompleteError(self.source, "file_changed")
             self.initial = opened
             self.remaining = opened.st_size
@@ -429,16 +442,21 @@ class _SafeReader:
             named = os.lstat(self.path)
         except OSError:
             raise CollectionIncompleteError(self.source, "file_changed") from None
-        for st in (current, named):
-            if (not stat.S_ISREG(st.st_mode)
-                    or _stat_identity(st) != _stat_identity(self.initial)
-                    or st.st_size < self.initial.st_size
-                    or (st.st_size == self.initial.st_size
-                        and _stat_version(st) != _stat_version(self.initial))):
-                raise CollectionIncompleteError(self.source, "file_changed")
+        if (not stat.S_ISREG(current.st_mode)
+                or _stat_identity(current) != _stat_identity(self.initial)
+                or current.st_size < self.initial.st_size
+                or (current.st_size == self.initial.st_size
+                    and _stat_version(current) != _stat_version(self.initial))):
+            raise CollectionIncompleteError(self.source, "file_changed")
+        if (not stat.S_ISREG(named.st_mode)
+                or _stat_identity(named) != _stat_identity(self.initial)
+                or named.st_size < self.initial.st_size
+                or (named.st_size == self.initial.st_size
+                    and _stat_version_cross_api(named) != _stat_version_cross_api(self.initial))):
+            raise CollectionIncompleteError(self.source, "file_changed")
         # 正常 append 不失败；下轮再读增量，不能缓存为新的完整版本。
         return (_stat_version(current) == _stat_version(self.initial)
-                and _stat_version(named) == _stat_version(self.initial))
+                and _stat_version_cross_api(named) == _stat_version_cross_api(self.initial))
 
 # 标题解析：可读标题上限；无标题日志的有界扫描（先到者为准，避免无限扫描）。
 TITLE_MAX_LEN = 60
@@ -1288,14 +1306,15 @@ def _load_cache():
         fd = os.open(config.CACHE_FILE, _safe_open_flags())
         opened = os.fstat(fd)
         if (not stat.S_ISREG(opened.st_mode) or opened.st_size > MAX_CACHE_BYTES
-                or _stat_version(opened) != _stat_version(before)):
+                or _stat_version_cross_api(opened) != _stat_version_cross_api(before)):
             return {}
         with os.fdopen(fd, "rb") as fh:
             fd = None
             raw = fh.read(MAX_CACHE_BYTES + 1)
             if (len(raw) > MAX_CACHE_BYTES
                     or _stat_version(os.fstat(fh.fileno())) != _stat_version(opened)
-                    or _stat_version(os.lstat(config.CACHE_FILE)) != _stat_version(opened)):
+                    or _stat_version_cross_api(os.lstat(config.CACHE_FILE))
+                    != _stat_version_cross_api(opened)):
                 return {}
         data = json.loads(raw)
         return data if isinstance(data, dict) else {}
@@ -1904,7 +1923,8 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                         if src == "codex":
                             try:
                                 with _SafeReader(path, source=src) as reader:
-                                    warm = (_stat_version(reader.initial) == _stat_version(st) and reader.finish())
+                                    warm = (_stat_version_cross_api(reader.initial)
+                                            == _stat_version_cross_api(st) and reader.finish())
                             except OSError:
                                 raise CollectionIncompleteError(src, "read_failed") from None
                         if src == "claude":
@@ -1912,7 +1932,8 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                             try:
                                 # Warm path still safely opens/fstats/finishes.
                                 with _SafeReader(path) as reader:
-                                    if _stat_version(reader.initial) != _stat_version(st):
+                                    if (_stat_version_cross_api(reader.initial)
+                                            != _stat_version_cross_api(st)):
                                         warm = False
                                     else:
                                         warm = reader.finish()
@@ -1937,11 +1958,13 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                             else:
                                 recs, dedup, opened, stable = _claude_parse_state(path)
                             # pre-stat 到 open 的追加也不能缓存为 pre-stat 版本。
-                            stable = stable and _stat_version(opened) == _stat_version(st)
+                            stable = stable and (_stat_version_cross_api(opened)
+                                                 == _stat_version_cross_api(st))
                         elif src == "codex" and parse_fn is _BUILTIN_CODEX_PARSE:
                             from . import codex_usage
                             recs, dedup, opened, stable = codex_usage.parse_state(path)
-                            stable = stable and _stat_version(opened) == _stat_version(st)
+                            stable = stable and (_stat_version_cross_api(opened)
+                                                 == _stat_version_cross_api(st))
                         else:
                             recs = parse_fn(path)
                             if src == "claude":

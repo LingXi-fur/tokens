@@ -6,6 +6,7 @@ streak statistics. It is self-contained (no DOM, DATA, state, language or clock)
 so these tests run it alone under Node and pin the edge cases directly.
 """
 from tests import _hermetic  # noqa: F401
+from tests import _node
 
 import re
 import shutil
@@ -30,7 +31,7 @@ def run_node(body):
               + "\nconst assert=require('node:assert/strict');\nconst I=InsightCore;\n"
               + "const close=(a,b,msg)=>assert.ok(Math.abs(a-b)<1e-9,(msg||'')+' '+a+' != '+b);\n"
               + body)
-    result = subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True,
+    result = _node.run_node(script, cwd=ROOT, capture_output=True,
                             text=True, encoding="utf-8", check=False)
     if result.returncode:
         raise AssertionError(result.stderr[-4000:])

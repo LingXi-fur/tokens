@@ -1,5 +1,6 @@
 """Pure terrain contracts, run without browser, private data or asset loading."""
 from tests import _hermetic  # noqa: F401
+from tests import _node
 from pathlib import Path
 import subprocess
 import unittest
@@ -11,7 +12,7 @@ class TestWorldTerrain(unittest.TestCase):
     def run_js(self, body):
         terrain = (ROOT / "ui/world/terrain.js").as_uri()
         script = f"import assert from 'node:assert/strict'; import * as t from {terrain!r};\n" + body
-        result = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=30)
+        result = _node.run_node(script, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr[:4000])
 
     def test_mesh_height_and_normals(self):

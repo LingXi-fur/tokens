@@ -174,7 +174,10 @@ class ActionsPageMixin:
                 if message.type == "error"
                 else None,
             )
-            page.goto((path or self._page).as_uri(), wait_until="load")
+            target = path or self._page
+            uri = (target if isinstance(target, str) and "://" in target
+                   else Path(target).resolve().as_uri())
+            page.goto(uri, wait_until="load")
             return context, page, page_errors, console_errors
         except BaseException:
             try:

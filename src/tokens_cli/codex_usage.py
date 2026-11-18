@@ -10,6 +10,7 @@ import os
 import selectors
 import shutil
 import subprocess
+import threading
 import time
 
 from . import _claude_json, config, readers
@@ -18,6 +19,9 @@ MAX_RECORDS = 100_000
 MAX_RETAINED_BYTES = 64 * 1024 * 1024
 MAX_DECOMPRESSED_BYTES = 4 * 1024 * 1024 * 1024
 ARCHIVE_TIMEOUT = 120
+# Windows selectors use select.select(), which only accepts sockets;
+# pipe handles raise WinError 10038.  Use the blocking thread fallback there.
+_HAS_SET_BLOCKING = hasattr(os, "set_blocking") and os.name != "nt"
 CHUNK_BYTES = 64 * 1024
 USAGE_FIELDS = (
     "input_tokens", "output_tokens", "cached_input_tokens",
@@ -89,6 +93,9 @@ def _chunks(reader, compressed):
             [executable, "-q", "-d", "-c"], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
+        if not _HAS_SET_BLOCKING:
+            yield from _blocking_zstd_chunks(reader, process)
+            return
         os.set_blocking(process.stdout.fileno(), False)
         os.set_blocking(process.stdin.fileno(), False)
         total, pending = 0, b""
@@ -133,6 +140,45 @@ def _chunks(reader, compressed):
             process.stdin.close()
             if process.poll() is None:
                 process.kill()
+            process.wait()
+
+
+def _blocking_zstd_chunks(reader, process):
+    """Stream zstd over blocking pipes on Windows.
+
+    Python 3.9 lacks os.set_blocking there, and Windows selectors only wait on
+    sockets, so a writer thread feeds stdin while this thread reads stdout.
+    """
+    errors = []
+
+    def writer():
+        try:
+            while reader.remaining:
+                process.stdin.write(reader.read_chunk())
+                process.stdin.flush()
+            process.stdin.close()
+        except (BrokenPipeError, OSError, ValueError) as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=writer, daemon=True)
+    thread.start()
+    total = 0
+    try:
+        while True:
+            chunk = process.stdout.read(CHUNK_BYTES)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_DECOMPRESSED_BYTES:
+                _fail("decompression_limit")
+            yield chunk
+        status = process.wait(timeout=ARCHIVE_TIMEOUT)
+        if errors or status != 0:
+            _fail("decompression_failed")
+    finally:
+        thread.join(timeout=1)
+        if process.poll() is None:
+            process.kill()
             process.wait()
 
 

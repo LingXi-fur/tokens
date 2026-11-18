@@ -1172,6 +1172,9 @@ _STAT_FIELDS = ("mode", "dev", "ino", "size", "mtime_ns", "ctime_ns", "birthtime
 _STAT_PAIRS = (("entry", "before", "opened"),
                ("finish_current", "opened", "current"),
                ("finish_named", "opened", "named"))
+# lstat/stat and fstat disagree on ctime on Windows 3.13; production compares
+# those pairs with birthtime when available (readers._stat_version_cross_api).
+_CROSS_API_PAIRS = frozenset(("entry", "finish_named"))
 
 
 class _StatOSProbe:
@@ -1285,6 +1288,15 @@ class _StatOSProbe:
     def fdopen(self, *args, **kwargs):
         return self._forward("fdopen", *args, **kwargs)
 
+    @staticmethod
+    def _version_diff(a, b, cross_api):
+        names = ["dev", "ino", "size", "mtime_ns", "ctime_ns"]
+        left, right = list(a["v"][1:6]), list(b["v"][1:6])
+        if cross_api and a["v"][6] is not None and b["v"][6] is not None:
+            left[4], right[4], names[4] = a["v"][6], b["v"][6], "birthtime_ns"
+        return [name for name, first, second in zip(names, left, right)
+                if first != second]
+
     def _pair(self, name, left, right):
         pair = {"name": name, "left": left, "right": right, "condition": "unknown"}
         a, b = self.snapshots[left], self.snapshots[right]
@@ -1297,7 +1309,7 @@ class _StatOSProbe:
             return pair
         av, bv = a["v"], b["v"]
         identity = [field for i, field in enumerate(_STAT_FIELDS[1:3], 1) if av[i] != bv[i]]
-        version = [field for i, field in enumerate(_STAT_FIELDS[1:6], 1) if av[i] != bv[i]]
+        version = self._version_diff(a, b, name in _CROSS_API_PAIRS)
         pair["identity_diff"], pair["version_diff"] = identity, version
         pair["size_branch"] = "shrank" if bv[3] < av[3] else "same" if bv[3] == av[3] else "grew"
         if not stat.S_ISREG(bv[0]) or (name == "entry" and not stat.S_ISREG(av[0])):
@@ -1321,7 +1333,7 @@ class _StatOSProbe:
         if (not self.incomplete and before is not None and opened is not None
                 and all(row["a"][i] and row["t"][i] == "int" and row["v"][i] is not None
                         for row in (before, opened) for i in range(1, 6))):
-            pre["version_equal"] = before["v"][1:6] == opened["v"][1:6]
+            pre["version_equal"] = not self._version_diff(before, opened, True)
         cause = "unknown"
         if reason == "file_changed":
             for pair in pairs:
@@ -1618,6 +1630,15 @@ class SafeReadStatProbeTests(unittest.TestCase):
         self.assertEqual("path", report["events"]["named"]["arg"])
         self.assertTrue(report["events"]["open"]["readonly"])
         original.fdopen.return_value.close.assert_called_once_with()
+
+    def test_cross_api_version_prefers_birthtime_when_ctime_differs(self):
+        before = self.info(st_ctime_ns=400, st_birthtime_ns=400)
+        opened = self.info(st_ctime_ns=401, st_birthtime_ns=400)
+        self.assertEqual(readers._stat_version_cross_api(before),
+                         readers._stat_version_cross_api(opened))
+        changed = self.info(st_ctime_ns=401, st_birthtime_ns=402)
+        self.assertNotEqual(readers._stat_version_cross_api(before),
+                            readers._stat_version_cross_api(changed))
 
     def test_interpretation_matches_real_entry_and_finish_failure_conditions(self):
         for slot in ("opened", "current", "named"):

@@ -1,4 +1,5 @@
 from tests import _hermetic  # noqa: F401
+from tests import _node
 import json
 import re
 import shutil
@@ -52,13 +53,8 @@ def _daily_source(source, end_marker):
 
 
 def _run_node(script):
-    result = subprocess.run(
-        ["node", "-e", script],
-        cwd=ROOT,
-        capture_output=True,
-        encoding="utf-8",
-        check=False,
-    )
+    result = _node.run_node(script, cwd=ROOT, capture_output=True,
+                            encoding="utf-8", check=False)
     if result.returncode != 0:
         raise AssertionError(result.stderr[-4000:])
     return result.stdout
