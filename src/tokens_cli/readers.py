@@ -1306,14 +1306,15 @@ def _load_cache():
         fd = os.open(config.CACHE_FILE, _safe_open_flags())
         opened = os.fstat(fd)
         if (not stat.S_ISREG(opened.st_mode) or opened.st_size > MAX_CACHE_BYTES
-                or _stat_version(opened) != _stat_version(before)):
+                or _stat_version_cross_api(opened) != _stat_version_cross_api(before)):
             return {}
         with os.fdopen(fd, "rb") as fh:
             fd = None
             raw = fh.read(MAX_CACHE_BYTES + 1)
             if (len(raw) > MAX_CACHE_BYTES
                     or _stat_version(os.fstat(fh.fileno())) != _stat_version(opened)
-                    or _stat_version(os.lstat(config.CACHE_FILE)) != _stat_version(opened)):
+                    or _stat_version_cross_api(os.lstat(config.CACHE_FILE))
+                    != _stat_version_cross_api(opened)):
                 return {}
         data = json.loads(raw)
         return data if isinstance(data, dict) else {}
@@ -1922,7 +1923,8 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                         if src == "codex":
                             try:
                                 with _SafeReader(path, source=src) as reader:
-                                    warm = (_stat_version(reader.initial) == _stat_version(st) and reader.finish())
+                                    warm = (_stat_version_cross_api(reader.initial)
+                                            == _stat_version_cross_api(st) and reader.finish())
                             except OSError:
                                 raise CollectionIncompleteError(src, "read_failed") from None
                         if src == "claude":
@@ -1930,7 +1932,8 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                             try:
                                 # Warm path still safely opens/fstats/finishes.
                                 with _SafeReader(path) as reader:
-                                    if _stat_version(reader.initial) != _stat_version(st):
+                                    if (_stat_version_cross_api(reader.initial)
+                                            != _stat_version_cross_api(st)):
                                         warm = False
                                     else:
                                         warm = reader.finish()
@@ -1955,11 +1958,13 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                             else:
                                 recs, dedup, opened, stable = _claude_parse_state(path)
                             # pre-stat 到 open 的追加也不能缓存为 pre-stat 版本。
-                            stable = stable and _stat_version(opened) == _stat_version(st)
+                            stable = stable and (_stat_version_cross_api(opened)
+                                                 == _stat_version_cross_api(st))
                         elif src == "codex" and parse_fn is _BUILTIN_CODEX_PARSE:
                             from . import codex_usage
                             recs, dedup, opened, stable = codex_usage.parse_state(path)
-                            stable = stable and _stat_version(opened) == _stat_version(st)
+                            stable = stable and (_stat_version_cross_api(opened)
+                                                 == _stat_version_cross_api(st))
                         else:
                             recs = parse_fn(path)
                             if src == "claude":

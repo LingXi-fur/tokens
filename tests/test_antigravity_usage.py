@@ -331,6 +331,19 @@ class AntigravityUsageTests(unittest.TestCase):
                     self.assertEqual(len(first), 1)
                     self.assertNotIn("cwd", first[0])
                     self.assertTrue(readers._cached_records_valid(first, "antigravity"))
+                    _loaded = readers._load_cache()
+                    _st = os.stat(db_path)
+                    print("AGDBG", {
+                        "cache": config.CACHE_FILE,
+                        "exists": os.path.exists(config.CACHE_FILE),
+                        "loaded": list(_loaded),
+                        "stored": {k: v.get("key") for k, v in _loaded.items()
+                                   if isinstance(v, dict)},
+                        "now": f"{_st.st_mtime_ns}|{_st.st_size}|wal:"
+                               + readers._opencode_wal_key(db_path),
+                        "router": readers._ccr_signature(),
+                        "tz": config.timezone_name(),
+                    })
 
                     # Second call must hit cache without calling antigravity_usage.parse
                     with mock.patch("tokens_cli.antigravity_usage.parse", side_effect=AssertionError("cache miss")):

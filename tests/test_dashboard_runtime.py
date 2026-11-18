@@ -2480,6 +2480,9 @@ class DashboardRuntimeTests(unittest.TestCase):
         try:
             for theme in ("light", "dark"):
                 page.evaluate("theme => applyTheme(theme)", theme)
+                # .tabs button transitions color/background for 150ms; Firefox
+                # reports the interpolated value unless the theme has settled.
+                page.wait_for_timeout(250)
                 ratio = page.evaluate(
                     """
                     () => {
