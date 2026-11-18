@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
@@ -20,6 +21,10 @@ from tokens_cli import config  # noqa: E402
 
 
 def install():
+    # Dates in fixtures are UTC-based.  Pin the process zone so the suite does
+    # not depend on whether the host exposes a named local zone (Windows and
+    # some macOS runners do not), which also keeps disk/memo reuse enabled.
+    config.TZ = ZoneInfo("UTC")
     if getattr(config, "_TOKENS_TEST_CACHE_DIR", None):
         return
     cache_dir = tempfile.mkdtemp(prefix="tokens-tests-cache-")
