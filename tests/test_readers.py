@@ -159,6 +159,35 @@ class CacheWriterCapabilityTests(unittest.TestCase):
 
 
 class TimezoneCacheTests(unittest.TestCase):
+    def test_cache_roundtrip_preserves_records_exactly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            projects = root / "projects"
+            cache_dir = root / "cache"
+            projects.mkdir()
+            cache_dir.mkdir()
+            path = projects / "session.jsonl"
+            event = {
+                "type": "assistant", "timestamp": "2026-11-10T10:00:00Z",
+                "sessionId": "synthetic", "cwd": "/synthetic",
+                "message": {"id": "msg-1", "model": "claude-opus-5.5",
+                            "usage": {"input_tokens": 7, "output_tokens": 3,
+                                      "cache_read_input_tokens": 2,
+                                      "cache_creation_input_tokens": 1}},
+            }
+            path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            cache_file = cache_dir / "records-v8.json"
+            with mock.patch.object(readers.config, "CLAUDE_PROJECTS", str(projects)), \
+                    mock.patch.object(readers.config, "CACHE_DIR", str(cache_dir)), \
+                    mock.patch.object(readers.config, "CACHE_FILE", str(cache_file)), \
+                    mock.patch.object(readers.config, "CCR_ROUTER_FILE",
+                                      str(root / "missing-router.js")):
+                cold = readers.read_all(sources=["claude"], use_cache=True)
+                warm = readers.read_all(sources=["claude"], use_cache=True)
+        self.assertEqual(cold, warm)
+        self.assertEqual(1, len(cold))
+        self.assertEqual(13, cold[0]["total"])
+
     def test_cache_reparses_for_timezone_and_preserves_hits_within_zone(self):
         from zoneinfo import ZoneInfo
 
