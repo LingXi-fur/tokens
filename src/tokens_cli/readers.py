@@ -1316,13 +1316,29 @@ def _save_cache(cache):
         fchmod = getattr(os, "fchmod", None)
         if callable(fchmod):
             fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fd = None
-            json.dump(cache, fh, ensure_ascii=False, separators=(",", ":"),
-                      allow_nan=False)
-            fh.flush()
-            if os.fstat(fh.fileno()).st_size > MAX_CACHE_BYTES:
+        # Small/typical caches serialize faster as one bounded bytes object;
+        # very large caches keep the streaming encoder to avoid a giant
+        # intermediate copy.  The threshold is a record-count bound, not a
+        # promise about RSS.
+        record_count = sum(len(entry.get("records", ()))
+                           for entry in cache.values()
+                           if isinstance(entry, dict))
+        if record_count <= 100000:
+            raw = json.dumps(cache, ensure_ascii=False, separators=(",", ":"),
+                             allow_nan=False, check_circular=False).encode("utf-8")
+            if len(raw) > MAX_CACHE_BYTES:
                 return False
+            with os.fdopen(fd, "wb") as fh:
+                fd = None
+                fh.write(raw)
+        else:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fd = None
+                json.dump(cache, fh, ensure_ascii=False, separators=(",", ":"),
+                          allow_nan=False, check_circular=False)
+                fh.flush()
+                if os.fstat(fh.fileno()).st_size > MAX_CACHE_BYTES:
+                    return False
         os.replace(tmp, config.CACHE_FILE)
         return True
     except (OSError, ValueError, RecursionError):
