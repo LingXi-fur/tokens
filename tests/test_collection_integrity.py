@@ -352,10 +352,10 @@ class CollectionIntegrityTests(unittest.TestCase):
         self.assertEqual(dict.fromkeys(SOURCES, 0), warm_counts,
                          "safe source open/fstat is allowed; reading source content is not")
 
-    def test_cold_numeric_compatibility_values_are_preserved_on_warm_reads(self):
-        # These are existing normalization behavior, not new billing rules:
-        # bool, finite float and negative tokens survive cold parsing but carry
-        # uncertain billing evidence.  Do not silently coerce or reject them.
+    def test_invalid_numeric_tokens_are_zeroed_and_stay_uncertain_on_warm_reads(self):
+        # bool, finite float and negative components are invalid under the
+        # unified finite/non-negative integer contract.  The whole record is
+        # conservatively zeroed and keeps its uncertain billing evidence.
         for source in SOURCES:
             for field, argument in (("input", "input_value"), ("cache_read", "cache_value")):
                 for value in (True, False, 2.5, -3):
@@ -364,13 +364,13 @@ class CollectionIntegrityTests(unittest.TestCase):
                             self.cache.unlink()
                         self.write_source(source, **{argument: value})
                         cold, _ = self.prime((source,))
-                        self.assertIs(type(value), type(cold[0][field]))
-                        self.assertEqual(value, cold[0][field])
+                        self.assertEqual(0, cold[0][field])
+                        self.assertEqual(0, cold[0]["total"])
                         self.assertTrue(cold[0]["billing"]["uncertain"])
                         with self.source_reads() as counts:
                             warm = self.collect((source,))
                         self.assertEqual(encoded(cold), encoded(warm))
-                        self.assertIs(type(value), type(warm[0][field]))
+                        self.assertEqual(0, warm[0][field])
                         self.assertEqual(0, counts[source])
 
     def test_cold_nullable_gemini_and_codex_values_are_preserved_on_warm_reads(self):

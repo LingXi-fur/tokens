@@ -89,6 +89,31 @@ def _safe_tokens(value):
     return value
 
 
+_TOKEN_RECORD_FIELDS = ("input", "output", "cache_read", "cache_write", "total")
+
+
+def _sanitize_token_record(record, source):
+    """Zero every token field if any component is not a finite safe integer.
+
+    Gemini/Codex keep their historical nullable input/cache_read contract.
+    Invalid components still leave the parser's billing evidence uncertain;
+    they never enter totals as NaN/Infinity/float/bool.
+    """
+    nullable = source in ("gemini", "codex")
+    invalid = False
+    for field in _TOKEN_RECORD_FIELDS:
+        value = record.get(field)
+        if value is None and nullable and field in ("input", "cache_read"):
+            continue
+        if _safe_tokens(value) is None:
+            invalid = True
+            break
+    if invalid:
+        for field in _TOKEN_RECORD_FIELDS:
+            record[field] = 0
+    return record
+
+
 def _field_evidence(container, spec):
     """按 {分量: 源字段名} 读取 presence 与安全整数值（缺失记 None）。"""
     present = {}
@@ -840,6 +865,7 @@ def _claude_event_record(o, *, _memo_proof=None):
         "session": o.get("sessionId"), "cwd": o.get("cwd"),
         "billing": _claude_billing(usage),
     }
+    _sanitize_token_record(record, "claude")
     return record, dkey, ["id", mid] if mid else ["fallback", list(dkey)]
 
 
@@ -1083,7 +1109,7 @@ def gemini_parse(path):
         outp = tk.get("output", 0)
         thoughts = tk.get("thoughts", 0)
         tool = tk.get("tool", 0)
-        out.append({
+        record = {
             "source": "gemini",
             "ts": ts,
             "date": date,
@@ -1095,7 +1121,9 @@ def gemini_parse(path):
             "total": tk.get("total") or (inp + outp + cached + thoughts + tool),
             "session": session,
             "billing": _gemini_billing(tk),
-        })
+        }
+        _sanitize_token_record(record, "gemini")
+        out.append(record)
     return out
 
 
@@ -1174,9 +1202,10 @@ def opencode_parse(path):
         values = [_safe_tokens(tokens.get(key, 0)) for key in
                   ("input", "output", "reasoning", "cache_read", "cache_write")]
         if any(value is None for value in values):
-            continue
-        inp, outp, reasoning, cache_read, cache_write = values
-        out.append({
+            inp = outp = reasoning = cache_read = cache_write = 0
+        else:
+            inp, outp, reasoning, cache_read, cache_write = values
+        record = {
             "source": "opencode", "ts": ts, "date": date,
             "model": (model if isinstance(model, str) and model else "opencode-unknown"),
             "input": inp,
@@ -1186,7 +1215,9 @@ def opencode_parse(path):
             "session": session if isinstance(session, str) else None,
             "cwd": directory if isinstance(directory, str) else None,
             "billing": billing,
-        })
+        }
+        _sanitize_token_record(record, "opencode")
+        out.append(record)
     return out
 
 
@@ -1207,7 +1238,8 @@ def antigravity_files():
 
 def antigravity_parse(path):
     from . import antigravity_usage
-    return antigravity_usage.parse(path)
+    return [_sanitize_token_record(record, "antigravity")
+            for record in antigravity_usage.parse(path)]
 
 
 # ---------- Codex ----------

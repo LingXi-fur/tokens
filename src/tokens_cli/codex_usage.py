@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import time
 
-from . import _claude_json, config
+from . import _claude_json, config, readers
 
 MAX_RECORDS = 100_000
 MAX_RETAINED_BYTES = 64 * 1024 * 1024
@@ -234,22 +234,37 @@ def parse_state(path):
                 date = readers._to_local_date(ts)
                 if not date:
                     _fail("usage_invalid")
-                # New events require integer evidence. Legacy display values stay
-                # compatible; billing independently marks their evidence uncertain.
+                # Modern persisted usage keeps the strict integer contract.
+                # Legacy display values allow non-None evidence through so the
+                # shared sanitizer can zero the whole record and billing can
+                # mark it uncertain; missing required legacy counters still fail.
                 for name, value in usage.items():
                     if is_new:
-                        valid = type(value) is int and 0 <= value <= 9007199254740991
-                    else:
-                        valid = (isinstance(value, (int, float)) and
-                                 (not isinstance(value, float) or math.isfinite(value)))
-                        valid = valid or (value is None and name in (
-                            "input_tokens", "cached_input_tokens"))
-                    if not valid:
+                        if not (type(value) is int and 0 <= value <= 9007199254740991):
+                            _fail("usage_invalid")
+                    elif value is None and name not in ("input_tokens", "cached_input_tokens"):
                         _fail("usage_invalid")
-                inp, outp, cached = (usage.get(k, 0) for k in ("input_tokens", "output_tokens", "cached_input_tokens"))
-                total = usage.get("total_tokens")
-                if total is None or (not is_new and not total):
-                    if inp is None:
+                # Invalid numeric evidence is kept as an uncertain record:
+                # readers._sanitize_token_record zeroes every token field and
+                # billing records the invalid component.  No NaN/Infinity/
+                # float/bool/negative value may enter totals.
+                raw_inp = usage.get("input_tokens", 0)
+                raw_outp = usage.get("output_tokens", 0)
+                raw_cached = usage.get("cached_input_tokens", 0)
+                raw_total = usage.get("total_tokens")
+                inp = None if raw_inp is None else readers._safe_tokens(raw_inp)
+                outp = None if raw_outp is None else readers._safe_tokens(raw_outp)
+                cached = None if raw_cached is None else readers._safe_tokens(raw_cached)
+                total = readers._safe_tokens(raw_total) if raw_total is not None else None
+                invalid = ((inp is None and raw_inp is not None)
+                           or (outp is None and raw_outp is not None)
+                           or (cached is None and raw_cached is not None)
+                           or (raw_total is not None and total is None))
+                if invalid:
+                    inp = outp = cached = 0
+                    total = 0
+                elif total is None or (not is_new and not total):
+                    if inp is None or outp is None:
                         _fail("usage_invalid")
                     total = inp + outp
                 record = {
@@ -259,6 +274,7 @@ def parse_state(path):
                     "total": total,
                     "session": None, "billing": readers._codex_billing(usage),
                 }
+                readers._sanitize_token_record(record, "codex")
                 signature = _signature(usage)
                 if is_new:
                     sid = _text(payload.get("thread_id")) or _text(payload.get("session_id")) or session
