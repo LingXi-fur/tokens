@@ -3,7 +3,7 @@ from tests import _hermetic  # noqa: F401
 from collections import Counter
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
-from datetime import timezone, timedelta, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 import io
 import json
 import os
@@ -773,8 +773,19 @@ class ReaderMemoTests(unittest.TestCase):
                     self.assertNotIn(("claude", str(a)), memo._entries)
                     self.paths["codex"] = []
                     expected = self.collect(use_cache=False)
-                    self.assertEqual(1 + int(mixed), len(expected))
-                    self.assertEqual("9999-12-31", expected[0]["date"])
+                    # CPython 3.12+ probes the neighbouring day when converting
+                    # a naive local time, so 9999-12-31 overflows in every TZ;
+                    # 3.11 and older only overflow when the offset crosses
+                    # year 10000.  Either way the memo must not reuse the
+                    # GMT+12 result, which the assertions above and below check.
+                    try:
+                        datetime.fromisoformat(extreme["timestamp"]).astimezone(readers.config.TZ)
+                        extreme_kept = True
+                    except (OverflowError, ValueError):
+                        extreme_kept = False
+                    self.assertEqual(int(extreme_kept) + int(mixed), len(expected))
+                    if extreme_kept:
+                        self.assertEqual("9999-12-31", expected[0]["date"])
                     self.assertEqual(expected, self.collect(memo))
                     self.cache.unlink()
         finally:
