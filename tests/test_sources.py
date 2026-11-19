@@ -109,7 +109,8 @@ class AutoSourceTests(unittest.TestCase):
                 mock.patch("sys.stdout", stdout):
             result = cli.main(["day"])
         self.assertEqual(1, result)
-        read_all.assert_called_once_with(sources=["codex"], use_cache=True)
+        read_all.assert_called_once_with(sources=["codex"], use_cache=True,
+                                         collection_report={})
         self.assertIn("Auto-detected sources: Codex", stdout.getvalue())
 
     def test_static_html_subtitle_includes_detection(self):

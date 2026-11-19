@@ -3582,7 +3582,18 @@ function renderProvenance(){
     return '<article class=prov-source data-i18n-skip data-source="'+esc(source)+'" data-source-state="'+state+'"><h3>'+esc(source)+' <span class="ps-badge ps-'+state+'">'+badge+'</span></h3><p>'+esc(en?englishText(note):note)+'</p><div class=ps-meta>'+meta+'</div></article>';
   };
   const rows=allSources.map(s=>sourceRow([s,observed[s]||{records:0,total:0}])).join('');
-  document.getElementById('prov-sources').innerHTML=rows+'<small class=ps-scope-note data-i18n-skip>'+(en?'Counts and date ranges describe this snapshot and its report range, not the current frontend model filter; the latest recorded day is not a sync time.':'以上数量与日期描述本快照及其报告范围，不随前端模型筛选变化；最近记录日不是最近同步时间。')+'</small>';
+  const skipped=p.skipped&&typeof p.skipped==='object'?p.skipped:{};
+  const skipRows=Object.keys(skipped).sort().map(source=>{
+    const info=skipped[source]||{},read=Number(info.read_failed)||0,parse=Number(info.parse_error)||0;
+    if(!read&&!parse)return '';
+    const name=(DATA.source_labels||{})[source]||source,parts=[];
+    if(read)parts.push(en?(read===1?'1 file could not be read':fmt(read)+' files could not be read'):(fmt(read)+' 个文件读取失败'));
+    if(parse)parts.push(en?(parse===1?'1 file failed to parse':fmt(parse)+' files failed to parse'):(fmt(parse)+' 个文件解析失败'));
+    const body=en?parts.join(', ')+'; skipped and not counted.':parts.join('、')+'，已跳过，未计入统计。';
+    return '<p data-skip-source="'+esc(source)+'">'+esc(name)+(en?': ':'：')+esc(body)+'</p>';
+  }).join('');
+  const skipBlock=skipRows?'<div class=prov-skips data-i18n-skip><h4>'+(en?'Skipped files':'跳过文件')+'</h4>'+skipRows+'</div>':'';
+  document.getElementById('prov-sources').innerHTML=rows+skipBlock+'<small class=ps-scope-note data-i18n-skip>'+(en?'Counts and date ranges describe this snapshot and its report range, not the current frontend model filter; the latest recorded day is not a sync time.':'以上数量与日期描述本快照及其报告范围，不随前端模型筛选变化；最近记录日不是最近同步时间。')+'</small>';
   document.getElementById('prov-capabilities').innerHTML=capabilityInfo().map(x=>'<button type=button class="prov-cap '+x.status+'" data-i18n-skip data-cap="'+x.key+'" data-target="'+x.target+'" title="'+esc(capabilityReason(x.key))+'">'+(x.status==='ok'?'●':x.status==='partial'?'◐':'○')+' '+x.label+' · '+(x.ratio*100).toFixed(0)+'%</button>').join('');
   const beacon=document.getElementById('freshness-beacon');beacon.classList.toggle('stale',fresh.key==='stale');beacon.classList.toggle('range',fresh.key==='range');document.getElementById('freshness-text').textContent=fresh.label;beacon.title=fresh.detail+(en?' · Click to view data provenance':' · 点击查看数据可信度');}
 function provenanceSummary(){const p=DATA.provenance||{},n=p.records||0,line=(label,value)=>label+'：'+fmt(value||0)+' / '+fmt(n)+'（'+(coverageRatio(value,n)*100).toFixed(1)+'%）';return ['tokens 已解析记录体检',provenanceHealth().label+' · '+freshnessInfo().label,'范围：'+(p.first_day||'—')+' ~ '+(p.last_day||'—'),'来源：'+Object.keys(p.sources||{}).join(' / '),'已解析 Records：'+fmt(n),'Token：'+fmt(p.total||0),line('时间戳',p.valid_ts),line('项目字段',p.with_cwd),line('会话字段',p.with_session),line('标准化组成字段',standardizedComponentCount(p)),'回放保留：'+fmt(p.replay_retained||0)+' / 可归属 '+fmt(p.replay_eligible||0)+'（每会话最多最近 200 轮）','说明：解析器拒绝的原始事件不在分母；不包含 cwd、session 或逐轮 Token 明细。'].join('\n');}

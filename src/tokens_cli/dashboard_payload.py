@@ -26,6 +26,27 @@ MODEL_IDENTITY_CAPACITY = 8
 COMPARISON_MODELS = ("glm-5.3", "glm-5.3-flash")
 OTHER_MODEL = "other"
 SOURCE_LABELS = {source.name: source.label for source in source_registry.SOURCES}
+
+
+def _skipped_summary(collection_report):
+    """Normalize per-source skipped-file counts; paths and content never enter."""
+    result = {}
+    raw = collection_report.get("skipped") if isinstance(collection_report, dict) else None
+    if not isinstance(raw, dict):
+        return result
+    for source, reasons in raw.items():
+        if source not in SOURCE_LABELS or not isinstance(reasons, dict):
+            continue
+        counts = {}
+        for reason in readers._SKIP_REASONS:
+            value = reasons.get(reason)
+            if type(value) is int and value > 0:
+                counts[reason] = value
+        if counts:
+            result[source] = counts
+    return result
+
+
 SNAPSHOT_SCHEMA = 1
 METRIC_SCHEMA = 1
 # 费用账本（cost block）contract：schema 1，分量顺序固定，与 readers 计费证据一致。
@@ -361,7 +382,8 @@ def _snapshot_identity(payload):
 
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False,
-                  aliases=None, generated_at=None, session_titles=None):
+                  aliases=None, generated_at=None, session_titles=None,
+                  collection_report=None):
     records = tuple(records)
     model_registry, model_slots = _model_registry(records)
     overflow_names = {
@@ -745,6 +767,9 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         for sid, heap in replay_heaps.items()
     }
     provenance["replay_retained"] = sum(len(values) for values in session_series.values())
+    # Per-source skipped files are health evidence, not records: totals keep
+    # only what was parsed, while the dashboard can say what was left out.
+    provenance["skipped"] = _skipped_summary(collection_report)
     buckets = []
     for offset in range(5, -1, -1):
         point = generated_at - timedelta(hours=offset)
