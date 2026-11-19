@@ -58,7 +58,7 @@ const liveConfig=(()=>{
   };
 })();
 // 后台页首轮无快照：渲染准备空壳，不显示任何伪造 0 值。
-const livePrepare = liveConfig.enabled && !liveConfig.hasSnapshot;
+let livePrepare = liveConfig.enabled && !liveConfig.hasSnapshot;
 const I18N_EXACT = Object.freeze({
   'Gemini total 以日志报告值为准；通常有 session，但缺少 cwd。':'Gemini totals use the reported log value; session is usually available, but cwd is often missing.',
   'Codex input 通常包含 cached input；当前记录通常缺少 cwd 与 session。':'Codex input usually includes cached input; current records often lack cwd and session.',
@@ -69,7 +69,7 @@ const I18N_EXACT = Object.freeze({
   '点我有惊喜':'Click for a surprise','点我':'Click me','Token 用量':'Token Usage','查看数据可信度':'View data provenance','数据体检 —':'Data Health —','用量状态计算中':'Calculating usage status','状态 —':'Status —','切换主题':'Switch theme','主题：自动':'Theme: Auto','环境动效强度':'Ambient motion intensity','动效 · 自动':'Motion · Auto','动效 · 完整':'Motion · Full','动效 · 克制':'Motion · Low','动效 · 关闭':'Motion · Off','模块开关':'Module settings','显示模块':'Visible Modules','趣味换算':'Fun Conversions','5h 计费块':'5h Usage Blocks','每天趋势':'Daily Trend','作息织锦':'Activity Tapestry','每模型趋势':'Per-model Trend','数据可信度':'Data Provenance','项目透镜':'Project Lens','复用之河':'Reuse River','Token 流光图':'Token Flow Map','Token 年鉴':'Token Almanac','成就徽章':'Achievements','Top 榜':'Top Lists','Dashboard 区域导航':'Dashboard section navigation','总览':'Overview','趋势':'Trend','体检':'Health','年鉴':'Almanac','项目':'Projects','节奏':'Rhythm','复用':'Reuse','流光':'Flow','成就':'Achievements','查看当前视图状态':'View current state','月 · 全部模型 · 全景':'Month · All models · Overview','Current View · 当前视图':'Current View','⧉ 复制视图链接':'⧉ Copy view link','📋 复制文字摘要':'📋 Copy text summary','↺ 恢复全景':'↺ Reset view','Signal Dock 信号坞':'Signal Dock','悬停或聚焦数据以 Peek':'Hover or focus data to Peek','还没有选择信号':'No signal selected','清除固定信号':'Clear pinned signal','模型、周期、项目与会话可以先 Peek；固定 Pin 后，继续比较兼容的本地聚合证据。':'Peek models, periods, projects, and sessions. Pin one to compare compatible local aggregate evidence.','未固定信号':'No pinned signal','悬停或聚焦以查看':'Hover or focus to inspect','固定后再 Peek 一个兼容信号':'Pin, then Peek a compatible signal','选择一个信号':'Select a signal','按住 Alt / Option 临时查看精确值':'Hold Alt / Option to reveal exact values','⌥ 精确层':'⌥ Exact values','沿当前范围开始数据寻迹（I）':'Start a Data Trail for the current scope (I)','⌁ 开始寻迹':'⌁ Start Trail','退出回看（Esc）':'Exit time probe (Esc)','退出时光探针':'Exit time probe','数据寻迹':'Data Trail','沿当前范围检查模型、项目、会话与 Context 证据；不会改变筛选，除非你明确选择。':'Inspect model, project, session, and context evidence in the current scope. Filters change only when you explicitly choose.','← 上一步':'← Back','关闭数据寻迹':'Close Data Trail','关闭':'Close','数据寻迹步骤':'Data Trail steps','总 token':'Total tokens','复制总 Token 精确值':'Copy exact total Token value','复制精确值':'Copy exact value','缓存命中 · Read':'Cache share · Read','调用次数':'Calls','命中模型数':'Models used','主力模型':'Primary model','粒度与筛选':'Granularity & Filters','统计粒度':'Aggregation granularity','按日':'Daily','按周':'Weekly','按月':'Monthly','日':'Day','周':'Week','月':'Month','模型筛选':'Model filters','全选':'Select all','清空':'Clear','撤销':'Undo','每期 token（按模型堆叠）':'Tokens per period (stacked by model)','按住预览上一期轮廓；点击固定对比':'Hold to preview the prior period; click to pin comparison','◫ 按住对比':'◫ Hold to Compare','拖动或用方向键预览 · Enter / Space / 点击提交':'Drag or use arrow keys to preview · Enter / Space / click to commit','数据可信度实验室 · DATA PROVENANCE':'DATA PROVENANCE LAB','解释这份快照能支持哪些分析，以及某些视图为什么可能稀疏':'Explains which analyses this snapshot supports and why some views may be sparse','复制体检摘要':'Copy health summary','Token 年鉴 · 会记得你的 Dashboard':'Token Almanac · Local Dashboard Memory','✦ 打开时间胶囊':'✦ Open Time Capsule','导出年鉴':'Export Almanac','清除本地年鉴':'Clear Local Almanac','赛季星图':'Season Atlas','Token 赛季，使用方向键浏览':'Token seasons; use arrow keys to browse','🏆 Achievement Center · 成就中心':'🏆 Achievement Center','解锁日期以本报告范围为界；阶位表示图鉴门槛，不代表全球用户稀有度':'Unlock dates are bounded by this report. Tiers describe catalog thresholds, not global rarity.','LAST UNLOCK · 最近解锁':'LAST UNLOCK','最近达成':'Recent Unlocks','距离最近的目标':'Nearest Goals','每个阶梯只推荐下一枚':'Only the next goal in each track is recommended','收藏与阶位':'Collection & Tiers','📜 查看完整图鉴与详情 →':'📜 View Full Catalog & Details →','项目透镜 · Project Lens':'Project Lens','追踪一个项目在当前粒度、模型筛选与时光探针下的 Token 轨迹':'Track one project across the current granularity, model filters, and time probe','选择项目':'Select project','项目 Token 趋势':'Project Token trend','项目趋势明细，可横向滚动':'Project trend details; horizontally scrollable','趣味换算 · 你的 token 约等于':'Fun Conversions · Your tokens are roughly','换一组':'Shuffle','🎲 换一组':'🎲 Shuffle','近 6 个小时桶，非计费窗口':'Last 6 Hourly Buckets · Not a Billing Window','每天 · 近 14 天':'Daily · Recent 14 Days','作息织锦 · 14 天 × 24 小时':'Activity Tapestry · 14 Days × 24 Hours','每一个方格，都是一小时留下的算力纹理':'Each cell represents one hour of Token activity','静':'Quiet','沸':'Peak','今日 token 运势':'Today’s Token Fortune','模型占比':'Model Share','Context Reuse River · 上下文复用之河':'Context Reuse River','Input / Output / Cache Read / Cache Write 随时间流动，观察上下文何时开始被记住':'Input / Output / Cache Read / Cache Write over time, showing when context starts being reused','上下文复用构成随时间变化':'Context reuse composition over time','悬停或用方向键检查每一期的 Token 构成。':'Hover or use arrow keys to inspect each period’s Token composition.','Token 流光图 · 项目 → 模型 → 会话':'Token Flow Map · Project → Model → Session','光带宽度对应真实 Token 流量；悬停或聚焦 Peek，点击 Pin 到 Signal Dock':'Band width represents actual Token flow. Hover or focus to Peek; click to Pin in Signal Dock.','保存当前流光图为 SVG':'Save current flow map as SVG','保存 SVG':'Save SVG','项目到模型再到会话的 Token 流光图':'Token flow from projects to models to sessions','悬停或聚焦节点查看真实流向，点击项目或模型可锁定链路。':'Hover or focus nodes to inspect actual flow; click a project or model to lock the path.','保存 SVG':'Save SVG','每模型趋势 · 日':'Per-model Trend · Daily','▶ 播放':'▶ Play','明细':'Details','下载当前明细为 Markdown':'Download current details as Markdown','◇ 导出 MD':'◇ Export MD','下载当前明细为 CSV':'Download current details as CSV','⤓ 导出 CSV':'⤓ Export CSV','Token 明细，可横向滚动':'Token details; horizontally scrollable','Top 项目 / 会话':'Top Projects / Sessions','烧 token 的项目（cwd）':'Projects by tokens (cwd)','烧 token 的会话':'Sessions by tokens','✦ 生成 Token 护照':'✦ Generate Token Passport','▤ 打印 Token 收据':'▤ Print Token Receipt','返回数据宇宙顶部':'Return to the top','返回顶部':'Back to top','Token 分享卡':'Token share card','关闭分享卡':'Close share card','保存为 HTML':'Save as HTML','命令面板':'Command palette','输入命令或搜索…（例如：月、暗、导出）':'Type a command or search… (for example: month, dark, export)','关闭时间胶囊':'Close time capsule','来自过去快照的数据来信':'A Message from Past Snapshots','← 上一页':'← Previous','下一页 →':'Next →','🏆 成就图鉴':'🏆 Achievement Catalog','搜索成就':'Search achievements','搜索 2000+ 成就（名称/描述/分类）…':'Search 2,000+ achievements (name, description, category)…','筛选成就':'Filter achievements','全部':'All','已解锁':'Unlocked','未解锁':'Locked','隐藏':'Hidden','青铜':'Bronze','白银':'Silver','黄金':'Gold','彩钻':'Prismatic','庆祝成就进度':'Celebrate achievement progress','选择一枚成就查看状态、日期、目标与图鉴阶位。':'Select an achievement to inspect status, date, target, and catalog tier.','快捷键与交互说明':'Keyboard Shortcuts & Interaction Guide','关闭快捷键帮助':'Close keyboard shortcuts','切换日 / 周 / 月':'Switch day / week / month','打开命令面板':'Open command palette','切换主题':'Switch theme','导出当前 CSV':'Export current CSV','退出时光探针 / 关闭弹层':'Exit time probe / close overlay','打开本帮助':'Open this guide','流光节点锁定 / 回放':'Pin flow node / replay','浏览年鉴赛季 / 胶囊章节':'Browse Almanac seasons / capsule chapters','打开赛季详情':'Open season details','打开 / 返回数据寻迹':'Open / return to Data Trail','寻迹步骤前后移动':'Move between trail steps','寻迹选项浏览':'Browse trail options','选择线索 / 打开证据':'Select clue / open evidence','寻迹返回上一步':'Go back one trail step','先关闭寻迹，再退出时光探针':'Close Data Trail before exiting the time probe','悬停 / 聚焦 · 点击':'Hover / focus · click','清除 Pin / 精确层':'Clear Pin / exact layer','临时显露精确值与分母':'Temporarily reveal exact values and denominators','按住 ⌥ Alt':'Hold ⌥ Alt','临时查看上一期轮廓':'Temporarily view prior-period outline','按住 C':'Hold C','固定 / 取消上一期对比':'Pin / unpin prior-period comparison','点击“按住对比”':'Click “Hold to Compare”','点击 · 全选 / 清空 / 撤销':'Click · select all / clear / undo','复制总 Token 精确值':'Copy exact total Token value','⧉ 复制按钮':'⧉ Copy button','会话回放':'Session Replay','会话回放轮次':'Session replay turn','无数据':'No data','暂无足够数据':'Not enough data yet','当前范围没有记录':'No records in the current scope','没有选择模型':'No models selected','当前时光探针没有活动':'No activity in the current time probe','当前日志缺少所需字段':'Required fields are missing from current logs','当前范围没有可显示数据':'No displayable data in the current scope','恢复全部模型':'Restore all models','查看数据体检':'View data health','自动':'Auto','亮色':'Light','暗色':'Dark','全景':'Overview','已固定':'Pinned','临时预览':'Preview','全部模型':'All models','时光探针':'Time Probe','时间范围':'Date range','已恢复月度全景':'Monthly overview restored','当前视图链接已复制':'Current view link copied','复制失败，请从地址栏复制':'Copy failed; copy from the address bar','精确层已固定':'Exact values pinned','精确层已取消固定':'Exact values unpinned','幻影对比已固定':'Prior-period comparison pinned','幻影对比已取消':'Prior-period comparison unpinned','正在临时预览上一期轮廓':'Previewing the prior-period outline','已复制':'Copied','复制失败':'Copy failed','调用':'Calls','Markdown 报告已生成':'Markdown report generated','分享卡已保存为 HTML':'Share card saved as HTML','当前范围':'Current scope','模型线索':'Model clue','证据分支':'Evidence branch','深入模块':'Open module','当前全景':'Current overview','无可比较上一期':'No comparable prior period','先选择一个模型线索。':'Select a model clue first.','范围':'Scope','粒度':'Granularity','模型覆盖':'Model coverage','调用记录':'Call records','项目证据':'Project evidence','会话证据':'Session evidence','Context 证据':'Context evidence','当前不可用':'Unavailable','证据边界':'Evidence boundary','需要 Pin 与 Peek 两个信号':'Pin and Peek are both required','混合类型仅并排查看，不计算 Delta':'Mixed types are shown side by side without Delta','同类型本地聚合可比较':'Same-type local aggregates are comparable','模型':'Model','周期':'Period','信号':'Signal','起始':'Start','至今':'Present','当前筛选无观察值':'No observations under current filters','无上一期':'No prior period','无百分比变化':'No percentage change','无上一期绝对变化':'No prior-period absolute change','无上一期百分比变化':'No prior-period percentage change','无模型构成':'No model composition','当前探针范围':'Current probe scope','当前报告范围':'Current report scope','最多最近 200 轮':'Most recent 200 turns maximum','完整保留序列':'Complete retained series','横轴是轮次，不代表耗时':'Horizontal axis is turn number, not elapsed time','未触及 200 轮边界':'Did not reach the 200-turn limit','回放不按模型或时光探针裁剪':'Replay is not clipped by model or time probe','当前信号没有可比较 Token 聚合':'Current signal has no comparable Token aggregate','缺少可比较聚合':'No comparable aggregate','Peek 相对 Pin':'Peek relative to Pin','只看此模型':'Show only this model','打开会话回放':'Open Session Replay','本地上下文':'Local context','当前范围信号':'Current-scope signal','已清除 Pin':'Pin cleared','已退出时光探针':'Time probe exited','已恢复全部模型':'All models restored','跟随系统主题':'Follow system theme','亮色主题':'Light theme','暗色主题':'Dark theme','导出 CSV':'Export CSV','导出 Markdown':'Export Markdown','查看快捷键与交互说明':'View keyboard shortcuts and interaction guide','打开模块开关':'Open module settings','无匹配结果 · 试试 whoami、42、matrix、coffee':'No matches · Try whoami, 42, matrix, or coffee','范围快照':'Scope snapshot','日期未知':'Date unknown','缺少可比较的日期范围':'No comparable date range','刚刚同步':'Just synced','最后数据日与生成日一致':'Last data day matches generation day','近期快照':'Recent snapshot','历史快照':'Historical snapshot','等待数据':'Waiting for data','当前范围没有可体检的已解析记录。':'No parsed records to inspect in the current scope.','项目透镜':'Project Lens','会话回放':'Session Replay','作息分析':'Activity Analysis','复用之河':'Reuse River','流光关系':'Flow Relationships','当前范围缺少所需数据。':'Required data is unavailable in the current scope.','时间戳':'Timestamps','项目字段':'Project fields','会话字段':'Session fields','标准化组成字段':'Normalized composition fields','已解析记录':'Parsed records','回放保留':'Replay retention','当前筛选下无项目':'No projects under current filters','项目 Token':'Project Tokens','当前占比':'Current share','活跃期':'Active periods','峰值期':'Peak period','范围内首次观察':'First observed in scope','主力模型':'Primary model','当前筛选没有可导出的流向':'No exportable flow under current filters','当前流光图已保存为 SVG':'Current flow map saved as SVG','数据不足':'Insufficient data','截至':'Through','最高 Token 日':'Highest-token day','最活跃时刻':'Most active hour','▶ 播放':'▶ Play','⏸ 暂停':'⏸ Pause','至少需要两期数据才能计算状态':'At least two periods are required to calculate status','升温':'Rising','此前均值为 0，本期出现新活动':'Prior average was zero; new activity appeared this period','平稳':'Steady','本期与此前均值均为 0':'Both this period and the prior average are zero','降温':'Falling','数据体检摘要已复制':'Data health summary copied','继续':'Continue','开始':'Start','开始 · 数据寻迹':'Start · Data Trail','继续 · 数据寻迹':'Continue · Data Trail','跳转 · 费用账本':'Go to · Cost Ledger','打开 · 单价设置':'Open · Unit Prices','跳转 · 每日模型':'Go to · Daily Model Usage','跳转 · 工作模式图鉴':'Go to · Work Mode Atlas','打开 · 成就图鉴':'Open · Achievement Catalog','撒花彩蛋':'Celebrate confetti','数据':'Data','请求名到后端名的 Token 流向图':'Token flow diagram from request names to backend models','点击展开/收起 Other 中的具体模型':'Click to expand/collapse models inside Other','未识别的剩余量':'Unidentified remainder','。上一期指同一粒度中紧邻的上一条可用聚合记录；Token 增减不代表更好或更差。':' (prior period means the immediately preceding available aggregate in the same granularity; Token changes are neither better nor worse.)','下一步会选择临时模型线索，不会偷偷修改页面筛选。':'Next, pick a temporary model clue without silently changing page filters.','查看模型线索 →':'Browse model clues →','当前范围没有已选模型数据。':'No selected model data in the current scope.','恢复模型后才能继续寻迹。':'Restore models before continuing the trail.','选择模型只决定这条证据线；点击“只看此模型”才会修改全局筛选。':'Selecting a model only sets this evidence trail; clicking “Show only this model” changes global filters.','模型线索，使用上下方向键浏览':'Model clues; use Up and Down arrow keys to browse','证据分支，使用上下方向键浏览':'Evidence branches; use Up and Down arrow keys to browse','展开证据 →':'Inspect evidence →','的三类证据是同范围、同模型的平行聚合；项目与会话之间不构造配对关系。':"'s three evidence branches are parallel aggregates under the same scope and model; no project-to-session pairing is inferred.",'Enter 查看证据':'Press Enter to inspect','打开项目透镜':'Open Project Lens','打开报告内实际保留的完整会话序列':'Open the retained session turn sequence in this report','项目证据边界':'Project evidence scope','会话证据边界':'Session evidence scope','项目证据遵守当前范围与寻迹模型。':'Project evidence follows the current scope and trail model.','回放不会按寻迹模型或时光探针周期裁剪；每会话最多保留最近 200 轮。':'Replay is not clipped by the trail model or time probe; up to the most recent 200 turns are kept per session.','项目和会话是平行聚合，不是已证明的关联。':'Projects and sessions are parallel aggregates, not a proven pairing.','前往复用之河 →':'Go to Reuse River →','Cache Read 是缓存 Token 读取量，不等于已确认的货币节省。Other 是标准化分量与来源 total 对齐后的剩余量，非零时不会隐藏。':'Cache Read measures tokens read from cache, not confirmed monetary savings. Other is the residual aligning normalized components with source totals, kept visible when nonzero.','原寻迹模型已不在全局筛选中，已返回模型线索。':'The trail model is no longer in the global filter; returned to model clues.','已前往项目透镜。':'Navigated to Project Lens.','正在打开会话回放；回放不按寻迹模型或周期裁剪。':'Opening Session Replay; replay is not clipped by trail model or period.','已前往 Context Reuse River。':'Navigated to Context Reuse River.','已解锁成就':'Unlocked Achievements','加载更多已解锁成就':'Load more unlocked achievements','按分类浏览 · 当前显示':'Browse by category · shown','跳转 · 总览':'Go to · Overview','跳转 · 趋势':'Go to · Trend','跳转 · 数据可信度实验室':'Go to · Data Provenance Lab','跳转 · Token 年鉴':'Go to · Token Almanac','打开 · 数据时间胶囊':'Open · Data Time Capsule','跳转 · 项目透镜':'Go to · Project Lens','跳转 · 节奏':'Go to · Rhythm','跳转 · Context Reuse River':'Go to · Context Reuse River','跳转 · 用量去向':'Go to · Token Flow Map','跳转 · 成就':'Go to · Achievements','跳转 · Top':'Go to · Top','下一个数据时刻':'Next data moment','当前筛选没有可回看的数据时刻':'No data moments under current filters','切换幻影对比':'Toggle prior-period comparison','复制当前视图链接':'Copy current view link','成就未找到':'Achievement not found','不可用':'Unavailable','当前报告没有可划分的活跃赛季。':'No active seasons can be derived from this report.','本地年鉴已导出为 JSON':'Local Almanac exported as JSON','Token 年鉴历史已清除，并以当前快照重新建立基线':'Token Almanac history cleared; current snapshot is now the new baseline','图鉴':'Catalog','阶位':'Tier','来源':'Source','已解锁':'Unlocked','未解锁':'Locked','隐藏成就，达成自动揭晓':'Hidden achievement; revealed when unlocked','已达成':'Unlocked','这是什么：':'What this is:','怎么读：':'How to read:','成就 = 本地日志聚合指标的阶梯门槛（累计、连续、缓存、模型 / 项目 / 会话、作息节奏、数字彩蛋…）。当前报告范围内指标首次 ≥ 门槛即解锁；点击任意徽章可查看指标、阈值与达成日期。':'Achievements are ladder thresholds over metrics aggregated from your local logs (totals, streaks, cache, models / projects / sessions, rhythm, number eggs…). Within the current report range, a metric first crossing a threshold unlocks it; click any badge to inspect its metric, threshold, and unlock date.','青铜 → 白银 → 黄金 → 彩钻只表示门槛在阶梯中的位置；隐藏成就达成后自动揭晓；「本设备新观察」= 与上一次快照对比新增。全部计算仅在本机完成，不参与任何全球排名。':'Bronze → Silver → Gold → Prismatic only marks a threshold\\\'s position in its ladder. Hidden achievements reveal themselves on unlock; "new on this device" means new since the previous snapshot. Everything is computed locally — no global ranking.','把本地日志聚合出的指标（累计、连续、缓存、模型、作息、彩蛋）拆成 3000+ 道阶梯门槛，报告范围内首次越过即解锁；纯本地收藏，阶位不代表全球用户稀有度':'Turns metrics aggregated from your local logs (totals, streaks, cache, models, rhythm, eggs) into 3,000+ ladder thresholds — first crossing within the report range unlocks one. A purely local collection; tiers are not global rarity.','本地快照收藏':'Local snapshot collection','最早':'Earliest','最新':'Latest','当前报告全部数据':'All data in current report','还没有可展示的已解锁成就。':'No unlocked achievements to display yet.','当前聚合快照无法还原精确达成日期。':'The current aggregate snapshot cannot reconstruct exact unlock dates.','当前没有适合推荐的单调目标。':'No suitable monotonic goals to recommend.','已解锁':'Unlocked','最高阶位':'Highest tier','图鉴总数':'Catalog total','尚未达成':'Not unlocked yet','当前显示':'Currently shown','个分类':'categories','总图鉴':'Catalog total','展开分类时按需渲染':'Categories render on demand when expanded','该会话无逐轮数据':'No per-turn data for this session','（最近 200 轮）':'(most recent 200 turns)','轮':'turn','当前轮':'Current turn','累计':'Cumulative','累计占比':'Cumulative share','稳定':'Stable','tk · 紧凑显示':'tk · compact','已选':'Selected','个模型 · 覆盖':'models · coverage','实体分析较完整':'Strong entity coverage','在已解析记录中，时间、项目、会话和标准化 Token 组成字段可用性较高。':'Parsed records have strong coverage for time, project, session, and normalized Token composition.','每个会话最多保留最近 200 轮':'Each session retains at most the most recent 200 turns','Claude total 由 input、output、cache read/write 组成；通常保留 cwd 与 session。':'Claude totals include input, output, cache read, and cache write; cwd and session are usually available.','近 6 个小时桶（按生成时刻往前）':'Recent 6 hourly buckets (counting back from generation time)','日间稳定型':'Daytime Steady','算力主要沿着白昼平稳展开。':'Token activity is spread steadily through daylight hours.','运势':'Fortune','宜':'Do','忌':'Avoid','峰值时段':'Peak hour','算力最常在':'Activity most often peaks at','亮起。':'peaks.','最近 14 天每小时 Token 作息织锦':'Hourly Token activity tapestry for the recent 14 days','每小时 token 分布':'Hourly Token distribution','需要已解析记录包含 cwd 项目路径':'Requires parsed records with cwd project paths','需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中':'Requires parsed records attributable to sessions with per-turn values retained in replay','需要已解析记录含可解析时间戳':'Requires parsed records with parseable timestamps','需要标准化 input/output/cache read/cache write 组成字段可用':'Requires normalized input/output/cache read/cache write composition fields','需要已解析记录包含项目或会话 identity':'Requires parsed records with project or session identity'
 });
 const I18N_CORE_EXACT = Object.freeze({
-  '日期':'Date','周(始)':'Week','月份':'Month','已解析记录':'parsed records','自动':'Auto','静态快照':'Static snapshot','静态离线快照':'Static offline snapshot','本地实时':'Live locally','正在检查':'Checking','刚刚更新':'Just updated','刷新已暂停':'Refresh paused','实时刷新频率':'Live refresh frequency','刷新 · 1 分钟':'Refresh · 1 minute','刷新 · 5 分钟':'Refresh · 5 minutes','刷新 · 15 分钟':'Refresh · 15 minutes','刷新 · 30 分钟':'Refresh · 30 minutes','刷新 · 暂停':'Refresh · Paused','暂时断开':'Temporarily disconnected','同步错误':'Sync error','0 条流光链路':'0 flow links','Token 流光图，可横向滚动':'Token Flow; horizontally scrollable'
+  '日期':'Date','周(始)':'Week','月份':'Month','已解析记录':'parsed records','自动':'Auto','静态快照':'Static snapshot','静态离线快照':'Static offline snapshot','本地实时':'Live locally','正在检查':'Checking','刚刚更新':'Just updated','刷新已暂停':'Refresh paused','实时刷新频率':'Live refresh frequency','刷新 · 1 分钟':'Refresh · 1 minute','刷新 · 5 分钟':'Refresh · 5 minutes','刷新 · 15 分钟':'Refresh · 15 minutes','刷新 · 30 分钟':'Refresh · 30 minutes','刷新 · 暂停':'Refresh · Paused','暂时断开':'Temporarily disconnected','同步错误':'Sync error','0 条流光链路':'0 flow links','Token 流光图，可横向滚动':'Token Flow; horizontally scrollable','合成 Demo':'Synthetic Demo','仅使用生成的示例数据；未读取本机 AI CLI 日志。':'Generated sample data only; no local AI CLI logs were read.'
 });
 const I18N_LABS_EXACT = Object.freeze({
   '初心':'First Spark','静默':'Quiet','迁徙':'Migration','潮涌':'Surge','恒定':'Steady','回声':'Echo',
@@ -79,7 +79,7 @@ const I18N_LABS_EXACT = Object.freeze({
 });
 
 const I18N_REPLACEMENTS = Object.freeze([
-['当前来源：','Current sources: '],['起始','Start'],['至今','Present'],['最后数据距生成日 ','Last data is '],['分母仅包含读取器已经接受并标准化的记录','The denominator includes only records accepted and normalized by readers'],['被解析器拒绝的原始事件不在其中','Raw events rejected by parsers are excluded'],['本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证','This does not guarantee absolute completeness or accuracy of raw logs, privacy, or security'],['已解析记录','parsed records'],['算力主要沿着白昼平稳展开','Token activity is spread steadily through daylight hours'],['点击查看数据可信度','Click to view data provenance'],['至少需要两期数据才能计算状态','At least two periods are required to calculate status'],['新观察项目 ','Newly observed project '],['需要已解析记录包含 cwd 项目路径','Requires parsed records with cwd project paths'],['需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中','Requires parsed records attributable to sessions with per-turn values retained in replay'],['需要已解析记录含可解析时间戳','Requires parsed records with parseable timestamps'],['需要标准化 input/output/cache read/cache write 组成字段可用','Requires normalized input/output/cache read/cache write composition fields'],['需要已解析记录包含项目或会话 identity','Requires parsed records with project or session identity'],[' · 自包含 HTML，离线可用 · 亮/暗随系统 · 按 ',' · Self-contained HTML · Works offline · Light/dark follows system · Press '],[' 唤起命令面板',' to open the command palette'],['随时打开 · 所有操作都在本地完成','to open anytime · Everything stays local'],['期 · 拖动或用方向键预览 · Enter / Space / 点击提交',' periods · Drag or use arrow keys to preview · Enter / Space / click to commit'],[' · Enter / Space / 点击提交',' · Enter / Space / click to commit'],['预览 ','Preview '],['。提交后进入时光探针。','. Commit to enter the time probe.'],['正在预览 ','Previewing '],[' tk · 松开仍为预览，点击或按 Enter 提交',' tk · Release to keep previewing; click or press Enter to commit'],[' · 尚未提交',' · Not committed'],[' · 主力 ',' · Primary '],['% 较上期同期','% vs same point in prior period'],['% 环比','% vs prior'],['预计月末 ','Projected month-end '],['%进度','% elapsed'],['上一期 ','Prior period '],['，峰值',', peak'],['，当前时光探针',', current time probe'],['，按 Enter 回看',', press Enter to inspect'],['▲峰值 ','▲ Peak '],['点击提交回看 ','Click to inspect '],['数据时刻，','Data moment, '],['，按 Enter 回看 ',']; press Enter to inspect '],[' 个模型',' models'],['已选 <b>','Selected <b>'],['</b> 个模型','</b> models'],['覆盖 <b>','Coverage <b>'],['点击切换模型筛选','Click to toggle model filter'],['已选择全部模型','All models selected'],['已清空模型筛选','Model filters cleared'],['已撤销上一次模型筛选','Previous model filter restored'],['主力 ','Primary '],[' · 当前模型筛选构成',' · Current model-filter composition'],['当前回看期 · ','Current probe period · '],['按当前模型筛选重新计算 Top · 悬停 Peek，点击 Pin 后从 Signal Dock 深入','Top lists recomputed for current model filters · Hover to Peek; Pin to explore from Signal Dock'],['最猛烈的一天是 ','Your highest-token day was '],['，单日燃烧 ', ', with '],['相当于日均值的 ','That is '],[' 倍','× the daily average'],['就贡献了全部 Token 的 ',' contributed '],['你的算力生物最喜欢在 ','Your activity peaks around '],['这个小时累计 ','This hour accumulated '],['夜色承载了你 ','Nighttime accounts for '],['% 的 Token','% of Tokens'],[' 是你的主力引擎，独自承载 ',' is your primary engine, handling '],['你使用过 ','You used '],[' 种模型',' models'],['累计 ','Cumulative '],['缓存占比 ','Cache share '],['最近七天的日均 Token 比此前七天 ','The recent seven-day Token average is '],[' 个会话',' sessions'],['纯本地生成 · 没有任何数据离开这台电脑。','Generated locally · No data left this computer.'],[' 枚成就',' achievements'],['生成于 ','Generated at '],[' · 脱敏导出（标识已替换）',' · Pseudonymized export (identifiers replaced)'],['项目路径、会话标识与自然语言标题已替换；精确日期、Token、模型与逐轮序列仍保留。','Project paths, session identifiers, and natural-language titles are replaced; exact dates, Tokens, models, and per-turn series remain.'],['主题：','Theme: '],['（点击切换）','(click to switch)'],['本地生成于 ','Generated locally at '],['，未上传任何数据。', '; no data was uploaded.'],['数据还在沉睡，等第一批 Token 落下后，故事会从这里开始。','No Token data yet. The story starts here after the first records arrive.'],['调整日期范围或来源后重新生成报告。','Regenerate the report after adjusting the date range or sources.'],['恢复模型后可重新计算当前视图。','Restore models to recalculate the current view.'],['退出回看后查看完整范围。','Exit the time probe to view the full scope.'],['尝试调整日期范围、来源或模型筛选。','Try adjusting the date range, sources, or model filters.'],['达到 ','Reached '],['当前范围与时光探针下的完整模型聚合；Pin 不会修改模型筛选。','Complete model aggregate under the current scope and time probe. Pinning does not change model filters.'],[' 条调用记录',' calls'],['分子 ','Numerator '],[' / 分母 ',' / denominator '],[' 个模型分量',' model components'],[' 轮已保留',' retained turns'],['保留边界：最近 200 轮','Retention boundary: most recent 200 turns'],['已 Pin ','Pinned '],['模型线索已选择：','Model clue selected: '],['已展开','Opened '],['证据。',' evidence.'],['统计粒度已切换为 ','Granularity changed to '],['当前占比','Current share'],['活跃期','Active periods'],['峰值期','Peak period'],['范围内首次观察','First observed in scope'],[' 个项目',' projects'],[' 个会话',' sessions'],[' 条真实流向',' actual flows'],[' Token，占比 ',' Tokens, share '],['当前筛选总量 ','current filtered total '],['截至 ','Through '],['，第 ', ', period '],[' 期',''],['最后一期 ','Latest period '],[' Token；此前均值 ',' Tokens; prior average '],['；', '; '],[' · 点击查看趋势',' · Click to view trend'],[' 个活跃日',' active days'],[' 个自然日',' calendar days'],['峰值 ','Peak '],[' · 最近一天无记录',' · No records on the most recent day'],['主力占比 ','Primary share '],['最长连续 ','Longest streak '],[' 天',' days'],['本报告范围内记录于 ','Recorded within this report on '],[' · 比此前高 ',' · Above prior by '],[' 个章节',' chapters'],[' 份紧凑快照',' compact snapshots'],['不保存 cwd、session、标题或逐轮 Token。','No cwd, session identifiers, titles, or per-turn Tokens are stored.'],['当前 <b>','Current <b>'],['</b> / 目标 <b>','</b> / target <b>'],[' · 还差 <b>',' · remaining <b>'],[' 枚已解锁成就',' unlocked achievements'],[' token · 横轴为轮次，不代表真实耗时',' tokens · Horizontal axis is turn number, not elapsed time'],['第 ','Turn '],[' 轮，', ', '],[' Token，累计 ',' Tokens, cumulative '],[' tk</span><span>累计 ',' tk</span><span>Cumulative ']
+['当前来源：','Current sources: '],['起始','Start'],['至今','Present'],['最后数据日与生成日一致','Last data day matches generation day'],['最后数据距生成日 ','Last data is '],['分母仅包含读取器已经接受并标准化的记录','The denominator includes only records accepted and normalized by readers'],['被解析器拒绝的原始事件不在其中','Raw events rejected by parsers are excluded'],['本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证','This does not guarantee absolute completeness or accuracy of raw logs, privacy, or security'],['已解析记录','parsed records'],['算力主要沿着白昼平稳展开','Token activity is spread steadily through daylight hours'],['点击查看数据可信度','Click to view data provenance'],['至少需要两期数据才能计算状态','At least two periods are required to calculate status'],['新观察项目 ','Newly observed project '],['需要已解析记录包含 cwd 项目路径','Requires parsed records with cwd project paths'],['需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中','Requires parsed records attributable to sessions with per-turn values retained in replay'],['需要已解析记录含可解析时间戳','Requires parsed records with parseable timestamps'],['需要标准化 input/output/cache read/cache write 组成字段可用','Requires normalized input/output/cache read/cache write composition fields'],['需要已解析记录包含项目或会话 identity','Requires parsed records with project or session identity'],[' · 自包含 HTML，离线可用 · 亮/暗随系统 · 按 ',' · Self-contained HTML · Works offline · Light/dark follows system · Press '],[' 唤起命令面板',' to open the command palette'],['随时打开 · 所有操作都在本地完成','to open anytime · Everything stays local'],['期 · 拖动或用方向键预览 · Enter / Space / 点击提交',' periods · Drag or use arrow keys to preview · Enter / Space / click to commit'],[' · Enter / Space / 点击提交',' · Enter / Space / click to commit'],['预览 ','Preview '],['。提交后进入时光探针。','. Commit to enter the time probe.'],['正在预览 ','Previewing '],[' tk · 松开仍为预览，点击或按 Enter 提交',' tk · Release to keep previewing; click or press Enter to commit'],[' · 尚未提交',' · Not committed'],[' · 主力 ',' · Primary '],['% 较上期同期','% vs same point in prior period'],['% 环比','% vs prior'],['预计月末 ','Projected month-end '],['%进度','% elapsed'],['上一期 ','Prior period '],['，峰值',', peak'],['，当前时光探针',', current time probe'],['，按 Enter 回看',', press Enter to inspect'],['▲峰值 ','▲ Peak '],['点击提交回看 ','Click to inspect '],['数据时刻，','Data moment, '],['，按 Enter 回看 ',']; press Enter to inspect '],[' 个模型',' models'],['已选 <b>','Selected <b>'],['</b> 个模型','</b> models'],['覆盖 <b>','Coverage <b>'],['点击切换模型筛选','Click to toggle model filter'],['已选择全部模型','All models selected'],['已清空模型筛选','Model filters cleared'],['已撤销上一次模型筛选','Previous model filter restored'],['主力 ','Primary '],[' · 当前模型筛选构成',' · Current model-filter composition'],['当前回看期 · ','Current probe period · '],['按当前模型筛选重新计算 Top · 悬停 Peek，点击 Pin 后从 Signal Dock 深入','Top lists recomputed for current model filters · Hover to Peek; Pin to explore from Signal Dock'],['最猛烈的一天是 ','Your highest-token day was '],['，单日燃烧 ', ', with '],['相当于日均值的 ','That is '],[' 倍','× the daily average'],['就贡献了全部 Token 的 ',' contributed '],['你的算力生物最喜欢在 ','Your activity peaks around '],['这个小时累计 ','This hour accumulated '],['夜色承载了你 ','Nighttime accounts for '],['% 的 Token','% of Tokens'],[' 是你的主力引擎，独自承载 ',' is your primary engine, handling '],['你使用过 ','You used '],[' 种模型',' models'],['累计 ','Cumulative '],['缓存占比 ','Cache share '],['最近七天的日均 Token 比此前七天 ','The recent seven-day Token average is '],[' 个会话',' sessions'],['纯本地生成 · 没有任何数据离开这台电脑。','Generated locally · No data left this computer.'],[' 枚成就',' achievements'],['生成于 ','Generated at '],[' · 脱敏导出（标识已替换）',' · Pseudonymized export (identifiers replaced)'],['项目路径、会话标识与自然语言标题已替换；精确日期、Token、模型与逐轮序列仍保留。','Project paths, session identifiers, and natural-language titles are replaced; exact dates, Tokens, models, and per-turn series remain.'],['主题：','Theme: '],['（点击切换）','(click to switch)'],['本地生成于 ','Generated locally at '],['，未上传任何数据。', '; no data was uploaded.'],['数据还在沉睡，等第一批 Token 落下后，故事会从这里开始。','No Token data yet. The story starts here after the first records arrive.'],['调整日期范围或来源后重新生成报告。','Regenerate the report after adjusting the date range or sources.'],['恢复模型后可重新计算当前视图。','Restore models to recalculate the current view.'],['退出回看后查看完整范围。','Exit the time probe to view the full scope.'],['尝试调整日期范围、来源或模型筛选。','Try adjusting the date range, sources, or model filters.'],['达到 ','Reached '],['当前范围与时光探针下的完整模型聚合；Pin 不会修改模型筛选。','Complete model aggregate under the current scope and time probe. Pinning does not change model filters.'],[' 条调用记录',' calls'],['分子 ','Numerator '],[' / 分母 ',' / denominator '],[' 个模型分量',' model components'],[' 轮已保留',' retained turns'],['保留边界：最近 200 轮','Retention boundary: most recent 200 turns'],['已 Pin ','Pinned '],['模型线索已选择：','Model clue selected: '],['已展开','Opened '],['证据。',' evidence.'],['统计粒度已切换为 ','Granularity changed to '],['当前占比','Current share'],['活跃期','Active periods'],['峰值期','Peak period'],['范围内首次观察','First observed in scope'],[' 个项目',' projects'],[' 个会话',' sessions'],[' 条真实流向',' actual flows'],[' Token，占比 ',' Tokens, share '],['当前筛选总量 ','current filtered total '],['截至 ','Through '],['，第 ', ', period '],[' 期',''],['最后一期 ','Latest period '],[' Token；此前均值 ',' Tokens; prior average '],['；', '; '],[' · 点击查看趋势',' · Click to view trend'],[' 个活跃日',' active days'],[' 个自然日',' calendar days'],['峰值 ','Peak '],[' · 最近一天无记录',' · No records on the most recent day'],['主力占比 ','Primary share '],['最长连续 ','Longest streak '],[' 天',' days'],['本报告范围内记录于 ','Recorded within this report on '],[' · 比此前高 ',' · Above prior by '],[' 个章节',' chapters'],[' 份紧凑快照',' compact snapshots'],['不保存 cwd、session、标题或逐轮 Token。','No cwd, session identifiers, titles, or per-turn Tokens are stored.'],['当前 <b>','Current <b>'],['</b> / 目标 <b>','</b> / target <b>'],[' · 还差 <b>',' · remaining <b>'],[' 枚已解锁成就',' unlocked achievements'],[' token · 横轴为轮次，不代表真实耗时',' tokens · Horizontal axis is turn number, not elapsed time'],['第 ','Turn '],[' 轮，', ', '],[' Token，累计 ',' Tokens, cumulative '],[' tk</span><span>累计 ',' tk</span><span>Cumulative ']
 ]);
 const I18N_PATTERNS = Object.freeze([
   [/^(日期|周\(始\)|月份) · (\d+) 行 · ([\d,.]+) Token$/,(_,gran,rows,tokens)=>`${{'日期':'Date','周(始)':'Week','月份':'Month'}[gran]||gran} · ${rows} rows · ${tokens} Token`],
@@ -114,11 +114,11 @@ const I18N_PATTERNS = Object.freeze([
   [/^来源 (.+)$/,(_,sources)=>`Sources: ${sources}`],
   [/^项目 ([\d.]+)%$/,(_,value)=>`Projects ${value}%`],
   [/^会话 ([\d.]+)%$/,(_,value)=>`Sessions ${value}%`],
-  [/^● 项目透镜 · (.+)%$/,(_,value)=>`● Project Lens · ${value}%`],
-  [/^● 会话回放 · (.+)%$/,(_,value)=>`● Session Replay · ${value}%`],
-  [/^● 作息分析 · (.+)%$/,(_,value)=>`● Activity Analysis · ${value}%`],
-  [/^● 复用之河 · (.+)%$/,(_,value)=>`● Reuse River · ${value}%`],
-  [/^● 去向关系 · (.+)%$/,(_,value)=>`● Destination Relationships · ${value}%`],
+  [/^([●◐○]) 项目透镜 · (.+)%$/,(_,icon,value)=>`${icon} Project Lens · ${value}%`],
+  [/^([●◐○]) 会话回放 · (.+)%$/,(_,icon,value)=>`${icon} Session Replay · ${value}%`],
+  [/^([●◐○]) 作息分析 · (.+)%$/,(_,icon,value)=>`${icon} Activity Analysis · ${value}%`],
+  [/^([●◐○]) 复用之河 · (.+)%$/,(_,icon,value)=>`${icon} Reuse River · ${value}%`],
+  [/^([●◐○]) 去向关系 · (.+)%$/,(_,icon,value)=>`${icon} Destination Relationships · ${value}%`],
   [/^主题：(自动|亮色|暗色)（点击切换）$/,(_,theme)=>`Theme: ${{'自动':'Auto','亮色':'Light','暗色':'Dark'}[theme]} (click to switch)`],
   [/^需要已解析记录包含 cwd 项目路径；当前来源：(.+)。$/,(_,sources)=>`Requires parsed records with cwd project paths; current sources: ${sources}.`],
   [/^需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中；当前来源：(.+)。$/,(_,sources)=>`Requires parsed records attributable to sessions with per-turn values retained in replay; current sources: ${sources}.`],
@@ -185,7 +185,7 @@ const I18N_PATTERNS = Object.freeze([
   [/^(\d+) 个模型 · (\d+) 个项目$/,(_,models,projects)=>`${models} models · ${projects} projects`],
   [/^Cache ([\d.]+)% · (\d+) 活跃小时$/,(_,share,hours)=>`Cache ${share}% · ${hours} active hours`],
   [/^(\d{4}-\d{2}-\d{2})，([^，]+)，(.+)$/,(_,day,label,evidence)=>`${day}, ${I18N_LABS_EXACT[label]||label}, ${englishText(evidence)}`],
-  [/^(\d{4}-\d{2}-\d{2}) 在本报告范围、当前模型筛选的累计中首次达到 ([\d,.]+(?:[KMBT])?) Token。$/,(_,day,value)=>`${day}: First reached ${value} cumulative Tokens in this report range under current model filters.`],
+  [/^(\d{4}-\d{2}-\d{2}) 在本报告范围、当前模型筛选的累计中首次达到 ([\d,.]+(?:[KMBT万亿])?) Token。$/,(_,day,value)=>`${day}: First reached ${value} cumulative Tokens in this report range under current model filters.`],
   [/^精确语义：时间戳 ([\d,]+) \/ ([\d,]+)；项目 ([\d,]+) \/ ([\d,]+)；会话 ([\d,]+) \/ ([\d,]+)；标准化组成 ([\d,]+) \/ ([\d,]+)；回放保留 ([\d,]+) \/ 可归属 ([\d,]+)。$/,(_,ts,n1,cwd,n2,sess,n3,comp,n4,ret,elig)=>`Exact details: timestamps ${ts} / ${n1}; projects ${cwd} / ${n2}; sessions ${sess} / ${n3}; normalized composition ${comp} / ${n4}; replay retained ${ret} / attributable ${elig}.`],
   [/^全报告 · (\d+) 个章节 · 月界或 ≥7 日静默切季$/,(_,count)=>`Full report · ${count} chapters · A month boundary or ≥7 silent days starts a new season`],
   [/^最高 Token 日 · (.+) · (.+)$/,(_,day,value)=>`Highest-token day · ${day} · ${value}`],
@@ -427,23 +427,9 @@ function applyLanguage(language,persist=true){
   renderLiveChrome();
   if(previousLanguage!==dashboardLanguage&&typeof state!=='undefined'){
     if(livePrepare){applyLiveShell(true);}else{
-    if(lazyState.badges?.rendered){renderLazy('badges',true);localizeTree(document.getElementById('section-achievements'));}
-    if(document.getElementById('ach-modal')?.classList.contains('open')){
-      achievementEarnedRendered=0;
-      renderAchievements(document.getElementById('ach-search').value);
-      if(achievementSelected)achievementDetail(achievementSelected);
-      localizeTree(document.getElementById('ach-modal'));
-    }
-    renderRangeUI();renderFilters();renderFilterLedger();renderKPI();renderBar();renderTrendLegend();renderDailyModels();renderBlock();renderRhythm();renderProjectLens();renderViewCapsule();
-    const blockNow=document.getElementById('block-now');
-    if(blockNow)blockNow.textContent=dashboardLanguage==='en'?'Fixed window · six hourly buckets ending at generation time; not filtered by the date range':'固定窗口 · 生成时刻往前 6 个小时桶；不受日期范围筛选';
-    const achScope=document.getElementById('ach-scope');
-    if(achScope)achScope.textContent=dashboardLanguage==='en'?'Full report · history and achievements use the complete report, not the date range':'全报告 · 历史与成就按完整报告统计，不受日期范围筛选';
-    renderDonut();renderAttribution();renderOtherModelSummary();renderProvenance();renderDominantShift();renderDelta();renderInsights();
-    localizeTree(document.getElementById('section-provenance'));
-    localizeTree(document.getElementById('freshness-beacon'));
-    renderBudget();
-    if(dashboardLanguage==='en')localizeTree();
+      renderLanguageViews();
+      if(dashboardLanguage==='en')localizeTree();
+      else localizeKeyedElements(document);
     }
   }
   if(persist)try{localStorage.setItem('tk-lang',dashboardLanguage);}catch(e){}
@@ -458,12 +444,10 @@ function toggleLanguage(){
   i18nRestoring=false;
   render();
   applyLanguage(next);
-  if(next==='zh'&&document.getElementById('ach-modal')?.classList.contains('open')){
-    achievementEarnedRendered=0;
-    renderAchievements(document.getElementById('ach-search').value);
-    if(achievementSelected)achievementDetail(achievementSelected);
+  if(next==='zh'&&typeof state!=='undefined'&&!livePrepare){
+    renderLanguageViews();
+    localizeKeyedElements(document);
   }
-  renderDonut();renderAttribution();
 }
 
 const state = { gran: 'month', models: new Set(DATA.models), otherModels: new Set(), focusPeriod:null, compare:false, range:'all', rangeDate:'', renderedRangeStateKey:null };
@@ -566,7 +550,7 @@ function periodTouchesRange(period,gran=state.gran){return periodScopeDays(perio
 
 function compareActive(){return state.compare||signalState.compareHeld;}
 function exactnessActive(){return signalState.exactHeld||signalState.exactPinned;}
-function syncExactness(){const active=exactnessActive();document.documentElement.classList.toggle('exact-on',active);const button=document.getElementById('exact-btn');button.classList.toggle('on',active);button.setAttribute('aria-pressed',String(signalState.exactPinned));button.textContent=signalState.exactPinned?'⌥ 精确层已固定':signalState.exactHeld?'⌥ 精确层预览':'⌥ 精确层';}
+function syncExactness(){const active=exactnessActive(),en=dashboardLanguage==='en';document.documentElement.classList.toggle('exact-on',active);const button=document.getElementById('exact-btn');button.classList.toggle('on',active);button.setAttribute('aria-pressed',String(signalState.exactPinned));button.textContent=signalState.exactPinned?(en?'⌥ Exact values pinned':'⌥ 精确层已固定'):signalState.exactHeld?(en?'⌥ Exact values preview':'⌥ 精确层预览'):(en?'⌥ Exact values':'⌥ 精确层');}
 function setCompareHeld(on){if(signalState.compareHeld===on)return;signalState.compareHeld=on;renderBar();renderViewCapsule();}
 
 const fmt = n => Number(n||0).toLocaleString('en-US');
@@ -1104,8 +1088,8 @@ function describeBar(el,focus=true){
   const i=Number(el.dataset.index||0);setScrubPreview(i,'keyboard',focus,true);
 }
 function periodForMoment(day,gran){return projectPeriod(day,gran);}
-function momentEventsForRows(rows,events=buildMomentEvents()){const grouped={};events.forEach(event=>{const period=periodForMoment(event.day,state.gran);if(!rows.some(row=>row.period===period))return;(grouped[period]||(grouped[period]=[])).push(event);});return Object.entries(grouped).map(([period,events])=>({period,day:events[events.length-1].day,events,label:events.map(event=>event.label).join(' · '),description:events.map(event=>event.description).join('；')})).sort((a,b)=>a.period.localeCompare(b.period));}
-function describeMoment(el,focus=true){const marker=el.__moment;if(!marker)return;const markers=[...document.querySelectorAll('#bar .moment-marker')],index=markers.indexOf(el);momentCursor=Math.max(0,index);markers.forEach((item,i)=>item.setAttribute('tabindex',i===momentCursor?'0':'-1'));document.getElementById('bar-hint').textContent='◆ 数据时刻 · '+marker.description+' · Enter 回看 '+marker.day;if(focus)el.focus();}
+function momentEventsForRows(rows,events=buildMomentEvents()){const grouped={},sep=typeof dashboardLanguage!=='undefined'&&dashboardLanguage==='en'?'; ':'；';events.forEach(event=>{const period=periodForMoment(event.day,state.gran);if(!rows.some(row=>row.period===period))return;(grouped[period]||(grouped[period]=[])).push(event);});return Object.entries(grouped).map(([period,events])=>({period,day:events[events.length-1].day,events,label:events.map(event=>event.label).join(' · '),description:events.map(event=>event.description).join(sep)})).sort((a,b)=>a.period.localeCompare(b.period));}
+function describeMoment(el,focus=true){const marker=el.__moment;if(!marker)return;const markers=[...document.querySelectorAll('#bar .moment-marker')],index=markers.indexOf(el);momentCursor=Math.max(0,index);markers.forEach((item,i)=>item.setAttribute('tabindex',i===momentCursor?'0':'-1'));document.getElementById('bar-hint').textContent=(typeof dashboardLanguage!=='undefined'&&dashboardLanguage==='en'?'◆ Data moment · '+marker.description+' · Enter to inspect ':'◆ 数据时刻 · '+marker.description+' · Enter 回看 ')+marker.day;if(focus)el.focus();}
 function handleMomentKey(e,markers,index){if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const next=Math.max(0,Math.min(markers.length-1,index+(e.key==='ArrowRight'?1:-1)));describeMoment(markers[next]);return true;}if(e.key==='Home'||e.key==='End'){e.preventDefault();describeMoment(markers[e.key==='Home'?0:markers.length-1]);return true;}if(e.key==='Enter'||e.key===' '){e.preventDefault();focusMomentDay(markers[index].__moment.day);return true;}return false;}
 function barAnnotationLayout(barTop,compareTop){return {peak:Math.max(24,barTop-7),value:Math.max(24,barTop-6),delta:Math.max(9,compareTop-21)};}
 function peakPeriod(){const rows=completeIntervalRows();return rows.reduce((best,row)=>!best||row.total>best.total?row:best,null)?.period||null;}
@@ -1152,7 +1136,8 @@ function renderBar(){
     if(i>0) p.push('<text x="'+(padL-8)+'" y="'+(y+3.5).toFixed(1)+'" text-anchor="end" class="tick">'+vfmt(val)+'</text>');
   }
   p.push('<line class="axis" x1="'+padL+'" y1="'+(padT+plotH).toFixed(1)+'" x2="'+(W-padR)+'" y2="'+(padT+plotH).toFixed(1)+'"/>');
-  if(rows.length===0){ p.push('<text x="'+(W/2)+'" y="'+(H/2)+'" text-anchor="middle" class="tick">无数据</text></svg>'); document.getElementById('bar').innerHTML=p.join(''); return; }
+  const en=dashboardLanguage==='en';
+  if(rows.length===0){ p.push('<text x="'+(W/2)+'" y="'+(H/2)+'" text-anchor="middle" class="tick">'+(en?'No data':'无数据')+'</text></svg>'); document.getElementById('bar').innerHTML=p.join(''); return; }
   const _vals=rows.map(r=>r.total);
   const mean=sumList(_vals)/_vals.length;
   const markedPeak=peakPeriod();
@@ -1162,7 +1147,7 @@ function renderBar(){
     p.push('<rect class="bar-track" x="'+x.toFixed(1)+'" y="'+padT.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+plotH.toFixed(1)+'" rx="4"/>');
     if(compareActive()&&i>0){
       const pv=rows[i-1].total, gh=(pv/vmax)*plotH, gy=padT+plotH-gh;
-      p.push('<rect class="ghostbar" x="'+(x-3).toFixed(1)+'" y="'+gy.toFixed(1)+'" width="'+(bw+6).toFixed(1)+'" height="'+gh.toFixed(1)+'" rx="5"><title>上一期 '+esc(rows[i-1].period)+' · '+fmt(pv)+' tk</title></rect>');
+      p.push('<rect class="ghostbar" x="'+(x-3).toFixed(1)+'" y="'+gy.toFixed(1)+'" width="'+(bw+6).toFixed(1)+'" height="'+gh.toFixed(1)+'" rx="5"><title>'+(en?'Prior period ':'上一期 ')+esc(rows[i-1].period)+' · '+fmt(pv)+' tk</title></rect>');
     }
     let segs=''; let y0=padT+plotH;
     state.models.forEach(m=>{ const v=r.models[m]||0; if(v<=0) return;
@@ -1193,10 +1178,11 @@ function renderBar(){
     const annotation=barAnnotationLayout(barTop,compareActive()&&i>0?padT+plotH-Math.max(r.total,rows[i-1].total)/vmax*plotH:barTop);
     const isPeak = peakI>=0 && rows.length>1 && i===peakI && !state.focusPeriod;
     const isFocus=state.focusPeriod===r.period;
-    const aria=fmtLabel(r.period,state.gran)+'，'+fmt(r.total)+' Token'+(isPeak?'，峰值':'')+(isFocus?'，当前时光探针':'')+'，按 Enter 回看';
+    const aria=en?(fmtLabel(r.period,state.gran)+', '+fmt(r.total)+' Tokens'+(isPeak?', peak':'')+(isFocus?', current time probe':'')+', press Enter to inspect'):(fmtLabel(r.period,state.gran)+'，'+fmt(r.total)+' Token'+(isPeak?'，峰值':'')+(isFocus?'，当前时光探针':'')+'，按 Enter 回看');
     const selection=aPeriods.has(r.period)?' interval-a':bPeriods.has(r.period)?' interval-b':pendingA.includes(r.period)||r.period===intervalState.start?' interval-a':'';
+    const selLabel=selection?(en?(selection===' interval-b'?', B window':', A window'):('，已选 '+(selection===' interval-b'?'B':'A')+' 时段')):'';
     const barStagger=motionDisabled()||document.documentElement.dataset.motion==='low'?0:Math.min(i*28,260);
-    p.push('<g class="barstack'+(isPeak?' peak':'')+(isFocus?' focused':'')+(state.focusPeriod&&!isFocus?' muted':'')+selection+(peakState.period===r.period?' peak-open':'')+'" data-period="'+esc(r.period)+'" data-index="'+i+'"'+dataSignalAttrs('period',r.period,fmtLabel(r.period,state.gran),r.total,'trend',false)+' tabindex="'+(i===Math.min(barCursor,rows.length-1)?'0':'-1')+'" role="button" aria-label="'+esc(aria+(selection?'，已选 '+(selection===' interval-b'?'B':'A')+' 时段':''))+'" style="animation-delay:'+barStagger+'ms"><rect class="bar-focus" x="'+(padL+step*i+2).toFixed(1)+'" y="'+(padT+1).toFixed(1)+'" width="'+Math.max(1,step-4).toFixed(1)+'" height="'+(plotH+padB-2).toFixed(1)+'" rx="6"/>'+segs+'</g>');
+    p.push('<g class="barstack'+(isPeak?' peak':'')+(isFocus?' focused':'')+(state.focusPeriod&&!isFocus?' muted':'')+selection+(peakState.period===r.period?' peak-open':'')+'" data-period="'+esc(r.period)+'" data-index="'+i+'"'+dataSignalAttrs('period',r.period,fmtLabel(r.period,state.gran),r.total,'trend',false)+' tabindex="'+(i===Math.min(barCursor,rows.length-1)?'0':'-1')+'" role="button" aria-label="'+esc(aria+selLabel)+'" style="animation-delay:'+barStagger+'ms"><rect class="bar-focus" x="'+(padL+step*i+2).toFixed(1)+'" y="'+(padT+1).toFixed(1)+'" width="'+Math.max(1,step-4).toFixed(1)+'" height="'+(plotH+padB-2).toFixed(1)+'" rx="6"/>'+segs+'</g>');
     if(isPeak&&!state.focusPeriod){
       p.push('<text class="peak-flag" x="'+(x+bw/2).toFixed(1)+'" y="'+annotation.peak.toFixed(1)+'" text-anchor="middle">'+(dashboardLanguage==='en'?'▲ Peak ':'▲峰值 ')+vfmt(r.total)+'</text>');
     } else if(showVal){
@@ -1213,8 +1199,8 @@ function renderBar(){
     else if(ang===-45){ ly=H-labelPad+30; anchor='end'; tr='transform="rotate(-45 '+lx.toFixed(1)+' '+ly.toFixed(1)+')"'; }
     else { ly=H-8; anchor='start'; tr='transform="rotate(-90 '+lx.toFixed(1)+' '+ly.toFixed(1)+')"'; }
     p.push('<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="'+anchor+'" class="xlabel" '+tr+'>'+esc(fmtLabel(r.period,state.gran))+'</text>');
-    p.push('<rect class="bar-hit" data-period="'+esc(r.period)+'" data-index="'+i+'" x="'+(padL+step*i).toFixed(1)+'" y="'+padT+'" width="'+step.toFixed(1)+'" height="'+(plotH+padB).toFixed(1)+'"><title>点击提交回看 '+esc(r.period)+'</title></rect>');
-    if(moment){const mi=moments.indexOf(moment),hitW=Math.min(step,44),hitX=lx-hitW/2; p.push('<rect class="moment-target" data-moment-day="'+esc(moment.day)+'" x="'+hitX.toFixed(1)+'" y="'+(padT+plotH).toFixed(1)+'" width="'+hitW.toFixed(1)+'" height="20" rx="6"/><g class="moment-marker'+(moment.events.length>1?' merged':'')+'" data-moment-period="'+esc(r.period)+'" data-moment-day="'+esc(moment.day)+'" tabindex="'+(mi===Math.min(momentCursor,moments.length-1)?'0':'-1')+'" role="button" aria-label="数据时刻，'+esc(moment.label)+'，按 Enter 回看 '+esc(moment.day)+'"><line x1="'+lx.toFixed(1)+'" y1="'+(padT+plotH+4).toFixed(1)+'" x2="'+lx.toFixed(1)+'" y2="'+(padT+plotH+12).toFixed(1)+'"/><circle cx="'+lx.toFixed(1)+'" cy="'+(padT+plotH+8).toFixed(1)+'" r="'+(moment.events.length>1?'4':'3')+'"><title>'+esc(moment.description)+'</title></circle></g>');}
+    p.push('<rect class="bar-hit" data-period="'+esc(r.period)+'" data-index="'+i+'" x="'+(padL+step*i).toFixed(1)+'" y="'+padT+'" width="'+step.toFixed(1)+'" height="'+(plotH+padB).toFixed(1)+'"><title>'+(en?'Click to inspect ':'点击提交回看 ')+esc(r.period)+'</title></rect>');
+    if(moment){const mi=moments.indexOf(moment),hitW=Math.min(step,44),hitX=lx-hitW/2; p.push('<rect class="moment-target" data-moment-day="'+esc(moment.day)+'" x="'+hitX.toFixed(1)+'" y="'+(padT+plotH).toFixed(1)+'" width="'+hitW.toFixed(1)+'" height="20" rx="6"/><g class="moment-marker'+(moment.events.length>1?' merged':'')+'" data-i18n-skip data-moment-period="'+esc(r.period)+'" data-moment-day="'+esc(moment.day)+'" tabindex="'+(mi===Math.min(momentCursor,moments.length-1)?'0':'-1')+'" '+(en?'role="button" aria-label="Data moment, '+esc(moment.label)+'; press Enter to inspect '+esc(moment.day)+'"':'role="button" aria-label="数据时刻，'+esc(moment.label)+'，按 Enter 回看 '+esc(moment.day)+'"')+'><line x1="'+lx.toFixed(1)+'" y1="'+(padT+plotH+4).toFixed(1)+'" x2="'+lx.toFixed(1)+'" y2="'+(padT+plotH+12).toFixed(1)+'"/><circle cx="'+lx.toFixed(1)+'" cy="'+(padT+plotH+8).toFixed(1)+'" r="'+(moment.events.length>1?'4':'3')+'"><title>'+esc(moment.description)+'</title></circle></g>');}
   });
   if(rows.length>1 && mean>0){
     const my=padT+plotH-(mean/vmax)*plotH;
@@ -1458,18 +1444,9 @@ function cycleTableSort(key,model=null){
   const names={total:'总 token',calls:'调用',cache:'缓存占比',output:'输出占比'},name=key==='m'?pretty(model):names[key];
   toast(tableSort.key?'已按 '+name+' '+(tableSort.dir==='desc'?'降序':'升序'):'已恢复时间序');
 }
-let tableOtherExpanded=false;
-function renderTable(){
-  const rows=selectedRows(),en=dashboardLanguage==='en';
-  const cols=DATA.models.filter(m=>state.models.has(m));
-  if(tableSort.key==='m'&&!cols.includes(tableSort.model)){tableSort.key=null;tableSort.dir=null;tableSort.model=null;}
-  const shares=reuseShares(),ordered=sortedRows(rows),intervalSelection=intervalResult();
-  const hasOtherCol=cols.includes('other')&&typeof allOtherSubModels==='function';
-  const selectedOtherSubs=hasOtherCol?allOtherSubModels().filter(name=>!state.otherModels||state.otherModels.has(name)):[];
-  const hasOtherSubs=selectedOtherSubs.length>0;
-  /* 重渲染焦点恢复：只在原焦点确在行内时还原，绝不抢页面焦点 */
-  const focusRow=document.activeElement?.closest?.('#tbody tr[data-period]');
-  const focusBefore=focusRow?focusRow.dataset.period:null;
+let tableOtherExpanded=false,preserveTableRows=false;
+function tableHeaderHTML(cols,hasOtherSubs,selectedOtherSubs){
+  const en=dashboardLanguage==='en';
   const th=cols.map(m=>{
     if(m==='other'&&hasOtherSubs){
       const label='Other ('+selectedOtherSubs.length+') '+(tableOtherExpanded?'▾':'▸');
@@ -1481,6 +1458,41 @@ function renderTable(){
     }
     return thSort('m',pretty(m),null,m);
   }).join('');
+  return '<tr><th>'+(en?{day:'Date',week:'Week',month:'Month'}[state.gran]:LABEL[state.gran])+'</th>'+thSort('total',en?'Total tokens':'总 token')+th+thSort('cache','缓存占比','Cache share')+thSort('output','输出占比','Output share')+thSort('calls',en?'Calls':'调用')+'</tr>';
+}
+function localizeTableInPlace(){
+  const en=dashboardLanguage==='en',cols=DATA.models.filter(m=>state.models.has(m));
+  const hasOtherCol=cols.includes('other')&&typeof allOtherSubModels==='function';
+  const selectedOtherSubs=hasOtherCol?allOtherSubModels().filter(name=>!state.otherModels||state.otherModels.has(name)):[];
+  const thead=document.getElementById('thead');
+  if(thead)thead.innerHTML=tableHeaderHTML(cols,hasOtherCol&&selectedOtherSubs.length>0,selectedOtherSubs);
+  const otherToggle=document.getElementById('table-other-toggle');
+  if(otherToggle)otherToggle.addEventListener('click',()=>{tableOtherExpanded=!tableOtherExpanded;renderTable();document.getElementById('table-other-toggle')?.focus();});
+  const dtMap=en?{'缓存占比':'Cache share','输出占比':'Output share','调用':'Calls','未识别的剩余量':'Unidentified remainder'}:{'Cache share':'缓存占比','Output share':'输出占比','Calls':'调用','Unidentified remainder':'未识别的剩余量'};
+  document.querySelectorAll('#tbody .dl-item-detail dt').forEach(dt=>{const mapped=dtMap[dt.textContent];if(mapped)dt.textContent=mapped;});
+  document.querySelectorAll('#tbody tr[data-period]').forEach(tr=>{
+    const toggle=tr.querySelector('button.row-toggle');
+    const label=toggle?.querySelector('span')?.textContent||'';
+    const intervalTag=tr.querySelector('.interval-row-tag');
+    const win=tr.classList.contains('interval-row-a')?'A':tr.classList.contains('interval-row-b')?'B':'';
+    if(intervalTag&&win)intervalTag.setAttribute('aria-label',en?`${win} window`:`${win} 时段`);
+    if(toggle)toggle.setAttribute('aria-label',en?`${label}${win?`, ${win} window`:''}, click to expand details`:`${label}${win?`，${win} 时段`:''}，点击展开详情`);
+  });
+  const emptyHint=document.querySelector('#tbody td.hint');
+  if(emptyHint)emptyHint.textContent=en?'No data':'无数据';
+}
+function renderTable(){
+  if(preserveTableRows){localizeTableInPlace();return;}
+  const rows=selectedRows(),en=dashboardLanguage==='en';
+  const cols=DATA.models.filter(m=>state.models.has(m));
+  if(tableSort.key==='m'&&!cols.includes(tableSort.model)){tableSort.key=null;tableSort.dir=null;tableSort.model=null;}
+  const shares=reuseShares(),ordered=sortedRows(rows),intervalSelection=intervalResult();
+  const hasOtherCol=cols.includes('other')&&typeof allOtherSubModels==='function';
+  const selectedOtherSubs=hasOtherCol?allOtherSubModels().filter(name=>!state.otherModels||state.otherModels.has(name)):[];
+  const hasOtherSubs=selectedOtherSubs.length>0;
+  /* 重渲染焦点恢复：只在原焦点确在行内时还原，绝不抢页面焦点 */
+  const focusRow=document.activeElement?.closest?.('#tbody tr[data-period]');
+  const focusBefore=focusRow?focusRow.dataset.period:null;
   const shareCell=share=>share==null?'<td class=num><span class=dim>·</span></td>':'<td class=num>'+(share*100).toFixed(1)+'%</td>';
   const anchor=ordered.some(r=>r.period===tableFocus.period)?tableFocus.period:null;
   const extraCols=(hasOtherSubs&&tableOtherExpanded?selectedOtherSubs.length:0);
@@ -1524,8 +1536,8 @@ function renderTable(){
     return '<tr data-period="'+esc(r.period)+'" tabindex="'+roving+'"'+(state.focusPeriod===r.period||periodClass?' class="'+(state.focusPeriod===r.period?'row-focused':'')+periodClass+'"':'')+'><td><button type="button" class="row-toggle" aria-expanded="false" aria-controls="row-detail-'+i+'" aria-label="'+label+(periodClass?'，'+(periodClass===' interval-row-a'?'A':'B')+' 时段':'')+'，点击展开详情"><span>'+label+'</span></button><span class="row-label">'+label+'</span>'+intervalTag+'</td><td class=num>'+fmt(r.total)+'</td>'+tds+shareCell(share?share.cache:null)+shareCell(share?share.output:null)+'<td class=num>'+fmt(r.calls)+'</td></tr>'
       +'<tr class="row-detail" id="row-detail-'+i+'" hidden><td colspan="'+(cols.length+extraCols+5)+'">'+detail+'</td></tr>';
   }).join('');
-  document.getElementById('thead').innerHTML='<tr><th>'+(en?{day:'Date',week:'Week',month:'Month'}[state.gran]:LABEL[state.gran])+'</th>'+thSort('total','总 token')+th+thSort('cache','缓存占比','Cache share')+thSort('output','输出占比','Output share')+thSort('calls','调用')+'</tr>';
-  document.getElementById('tbody').innerHTML=body || '<tr><td colspan="' +(cols.length+extraCols+5)+ '" class="hint">无数据</td></tr>';
+  document.getElementById('thead').innerHTML=tableHeaderHTML(cols,hasOtherSubs,selectedOtherSubs);
+  document.getElementById('tbody').innerHTML=body || '<tr><td colspan="' +(cols.length+extraCols+5)+ '" class="hint">'+(en?'No data':'无数据')+'</td></tr>';
   const otherToggle=document.getElementById('table-other-toggle');
   if(otherToggle)otherToggle.addEventListener('click',()=>{tableOtherExpanded=!tableOtherExpanded;renderTable();document.getElementById('table-other-toggle')?.focus();});
   if(focusBefore){
@@ -2270,21 +2282,22 @@ function lbRows(items,sessionRows=false,kind='project'){
   if(!items || !items.length) return contextEmptyHTML(kind);
   const filtered=items.map(it=>{const parts=sortedModels(it[3]).filter(([m])=>state.models.has(m)),total=parts.reduce((a,[,v])=>a+v,0);return {it,parts,total};}).filter(x=>x.total>0);
   if(!filtered.length)return contextEmptyHTML(kind);
-  const max=Math.max(1,...filtered.map(x=>x.total));
+  const max=Math.max(1,...filtered.map(x=>x.total)),en=dashboardLanguage==='en';
   return filtered.map(({it,parts,total},i)=>{
-    const w=total/max*100,name=it[0]||(sessionRows?'未命名会话':(it[2]||'')),full=name,dom=parts[0],comp=parts.map(([m,v])=>'<i style="width:'+(v/total*100).toFixed(1)+'%;background:'+modelColor(m)+'" title="'+esc(pretty(m))+' '+pct(v,total)+'"></i>').join('');
-    const attrs=sessionRows?' role="button" tabindex="0" data-session="'+esc(it[2]||it[0])+'" data-session-label="'+esc(name)+'"'+dataSignalAttrs('session',it[2]||it[0],name,total,'top')+' aria-label="会话 '+esc(name)+'，'+fmt(total)+' Token，点击或按 Enter Pin 到 Signal Dock"':' role="button" tabindex="0"'+dataSignalAttrs('project',it[2]||it[0],name,total,'top')+' aria-label="项目 '+esc(name)+'，'+fmt(total)+' Token，点击或按 Enter Pin 到 Signal Dock"';
+    const w=total/max*100,name=it[0]||(sessionRows?(en?'Untitled session':'未命名会话'):(it[2]||'')),full=name,dom=parts[0],comp=parts.map(([m,v])=>'<i style="width:'+(v/total*100).toFixed(1)+'%;background:'+modelColor(m)+'" title="'+esc(pretty(m))+' '+pct(v,total)+'"></i>').join('');
+    const aria=sessionRows?(en?'Session '+name+', '+fmt(total)+' Tokens; click or press Enter to Pin in Signal Dock':'会话 '+name+'，'+fmt(total)+' Token，点击或按 Enter Pin 到 Signal Dock'):(en?'Project '+name+', '+fmt(total)+' Tokens; click or press Enter to Pin in Signal Dock':'项目 '+name+'，'+fmt(total)+' Token，点击或按 Enter Pin 到 Signal Dock');
+    const attrs=sessionRows?' role="button" tabindex="0" data-i18n-skip data-session="'+esc(it[2]||it[0])+'" data-session-label="'+esc(name)+'"'+dataSignalAttrs('session',it[2]||it[0],name,total,'top')+' aria-label="'+esc(aria)+'"':' role="button" tabindex="0" data-i18n-skip'+dataSignalAttrs('project',it[2]||it[0],name,total,'top')+' aria-label="'+esc(aria)+'"';
     return '<div class=lb-row'+attrs+'><span class=rk>'+String(i+1).padStart(2,'0')+'</span>'
       +'<span class=lb-name title="'+esc(full)+'">'+esc(name)+'</span>'
       +'<span class=lb-bar><i style="width:'+w.toFixed(1)+'%"></i></span>'
-      +'<span class=lb-val>'+human(total)+'</span><span class=lb-comp>'+comp+'</span><span class=lb-dom>'+(dom?'主力 '+esc(pretty(dom[0]))+' · 当前模型筛选构成':'')+'</span></div>';
+      +'<span class=lb-val>'+human(total)+'</span><span class=lb-comp>'+comp+'</span><span class=lb-dom>'+(dom?(en?'Primary ':'主力 ')+esc(pretty(dom[0]))+(en?' · Current model-filter composition':' · 当前模型筛选构成'):'')+'</span></div>';
   }).join('');
 }
 function renderTop(){
-  const detail=focusDetail(), cwds=detail?detail.top_cwds:selectedTopEntities('project'), sessions=detail?detail.top_sessions:selectedTopEntities('session');
+  const detail=focusDetail(), cwds=detail?detail.top_cwds:selectedTopEntities('project'), sessions=detail?detail.top_sessions:selectedTopEntities('session'), en=dashboardLanguage==='en';
   document.getElementById('top-cwd').innerHTML = lbRows(cwds,false,'project');
   document.getElementById('top-sess').innerHTML = lbRows(sessions,true,'session');
-  document.getElementById('top-hint').textContent=(state.focusPeriod?'当前回看期 · ':'')+'按当前模型筛选重新计算 Top · 悬停 Peek，点击 Pin 后从 Signal Dock 深入';
+  document.getElementById('top-hint').textContent=en?((state.focusPeriod?'Current probe period · ':'')+'Top lists recomputed for current model filters · Hover to Peek; Pin to explore from Signal Dock'):((state.focusPeriod?'当前回看期 · ':'')+'按当前模型筛选重新计算 Top · 悬停 Peek，点击 Pin 后从 Signal Dock 深入');
 }
 
 const PROJECT_URL='https://github.com/LingXi-fur/tokens';
@@ -2954,9 +2967,16 @@ function setHudCollapsed(collapsed,persist=true){
 }
 function renderHud(){
   const hud=document.getElementById('hud');if(!hud||!hudPrefs)return;
+  const en=insightEn();
+  hud.setAttribute('aria-label',en?'Today usage HUD':'今日用量浮窗');
+  document.getElementById('hud-title').textContent=en?'Today':'今日';
+  document.getElementById('hud-calls-k').textContent=en?'Calls':'调用';
+  document.getElementById('hud-top-k').textContent=en?'Top model':'主力模型';
+  document.getElementById('hud-grip').setAttribute('aria-label',en?'Move HUD (arrow keys nudge)':'拖动浮窗（方向键微调）');
+  document.getElementById('hud-grip').title=en?'Drag to move':'拖动浮窗';
   const today=generatedDay(),until=DATA.range?.until,rows=insightRowsByDay();
   if(!today||(isoDayValid(until)&&today>until)||!(DATA.day||[]).length){hud.hidden=true;return;}
-  const en=insightEn(),totals=selectedDayModelTotals(today),total=sumList(Object.values(totals));
+  const totals=selectedDayModelTotals(today),total=sumList(Object.values(totals));
   const row=rows[today],calls=insightSelected().reduce((sum,model)=>sum+(Number(row?.model_calls?.[model])||0),0);
   const hudCandidates=[];
   Object.entries(totals).forEach(([model,value])=>{
@@ -2974,12 +2994,7 @@ function renderHud(){
   });
   hudCandidates.sort((a,b)=>b.value-a.value);
   const top=hudCandidates[0]||null;
-  hud.hidden=false;hud.setAttribute('aria-label',en?'Today usage HUD':'今日用量浮窗');
-  document.getElementById('hud-title').textContent=en?'Today':'今日';
-  document.getElementById('hud-calls-k').textContent=en?'Calls':'调用';
-  document.getElementById('hud-top-k').textContent=en?'Top model':'主力模型';
-  document.getElementById('hud-grip').setAttribute('aria-label',en?'Move HUD (arrow keys nudge)':'拖动浮窗（方向键微调）');
-  document.getElementById('hud-grip').title=en?'Drag to move':'拖动浮窗';
+  hud.hidden=false;
   animateNum(document.getElementById('hud-total'),total,600,human);
   document.getElementById('hud-mini').textContent=human(total);
   document.getElementById('hud-calls').textContent=row?fmt(calls):'—';
@@ -3075,6 +3090,32 @@ function renderCoreViews(){renderRangeUI();renderKPI();renderBar();renderPeakPro
 function renderTimeViews(){renderProbe();renderRhythm();renderBlock();}
 function renderModelViews(){markLazyDirty();markStaticLazyDirty();}
 function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderFooter();renderDataTrail();applySignalLens();syncViewURL();}
+function renderLanguageViews(){
+  renderSnapshotMeta();
+  renderCaliberNotes();
+  renderFilters();
+  preserveTableRows=true;
+  try{renderDataViews();}finally{preserveTableRows=false;}
+  syncExactness();
+  renderSignalDock();
+  renderDominantShift();
+  renderDelta();
+  renderBudget();
+  const blockNow=document.getElementById('block-now');
+  if(blockNow)blockNow.textContent=dashboardLanguage==='en'?'Fixed window · six hourly buckets ending at generation time; not filtered by the date range':'固定窗口 · 生成时刻往前 6 个小时桶；不受日期范围筛选';
+  const achScope=document.getElementById('ach-scope');
+  if(achScope)achScope.textContent=dashboardLanguage==='en'?'Full report · history and achievements use the complete report, not the date range':'全报告 · 历史与成就按完整报告统计，不受日期范围筛选';
+  Object.keys(LAZY_RENDERERS).forEach(name=>{
+    if(lazyState[name]?.rendered||lazyState[name]?.visible)renderLazy(name,true);
+  });
+  if(document.getElementById('ach-modal')?.classList.contains('open')){
+    achievementEarnedRendered=0;
+    renderAchievements(document.getElementById('ach-search').value);
+    if(achievementSelected)achievementDetail(achievementSelected);
+  }
+  if(rp.sid)renderReplaySeries();
+  if(_almanac&&document.getElementById('almanac-modal')?.classList.contains('open'))renderCapsuleStory();
+}
 function render(){renderDataViews();}
 
 
@@ -3116,7 +3157,8 @@ function applyTheme(t,persist=true){
   else document.documentElement.removeAttribute('data-theme');
   const c=THEMES.find(x=>x[0]===t)||THEMES[0];
   const b=document.getElementById('theme-btn');
-  b.textContent=c[1]; b.title='主题：'+c[2]+'（点击切换）';
+  const tLabels=dashboardLanguage==='en'?{auto:'Auto',light:'Light',dark:'Dark'}:{auto:'自动',light:'亮色',dark:'暗色'};
+  b.textContent=c[1]; b.title=dashboardLanguage==='en'?'Theme: '+(tLabels[c[0]]||c[2])+' (click to switch)':'主题：'+c[2]+'（点击切换）';
   if(persist)try{localStorage.setItem('tk-theme',t);}catch(e){}
   refreshThemeVisuals();
   if(typeof restoringView!=='undefined')syncViewURL();
@@ -3474,26 +3516,56 @@ function latestModelRelay(rows){let previous=null,previousDay=null,latest=null;[
 function projectFirstSeenInRange(projectId){let first=null;Object.entries(DATA.day_details||{}).filter(([day])=>dayInRange(day)).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([day,detail])=>{const row=(detail.cwds||detail.top_cwds||[]).find(x=>(x[2]||x[0])===projectId);if(!row)return;const total=modelSum(row[3],state.models);if(total>0&&!first)first={day,label:row[0]};});return first;}
 function newestProjectMoment(){const seen={};Object.entries(DATA.day_details||{}).filter(([day])=>dayInRange(day)).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([day,detail])=>(detail.cwds||detail.top_cwds||[]).forEach(row=>{const id=row[2]||row[0],total=modelSum(row[3],state.models);if(total>0&&!seen[id])seen[id]={day,id,label:row[0]};}));return Object.values(seen).sort((a,b)=>b.day.localeCompare(a.day))[0]||null;}
 function focusMomentDay(day){if(!day)return;clearScrub();state.gran='day';state.focusPeriod=day;trailState.step='scope';trailState.reached=0;trailState.model=null;trailState.branch=null;trailState.destination=null;invalidateDerived();renderDataViews();setTimeout(()=>{scrollToSection('section-trend');const marker=[...document.querySelectorAll('#bar .moment-marker')].find(x=>x.dataset.momentDay===day);if(marker){marker.classList.add('moment-active');marker.focus();setTimeout(()=>marker.classList.remove('moment-active'),900);return;}const el=[...document.querySelectorAll('#bar .barstack')].find(x=>x.dataset.period===day);if(el)el.focus();},0);}
-function buildMomentEvents(){const rows=selectedDailyRows(),milestone=latestMilestone(rows),relay=latestModelRelay(rows),project=newestProjectMoment(),events=[];if(milestone)events.push({kind:'milestone',day:milestone.day,label:'达到 '+human(milestone.value),description:milestone.day+' 在本报告范围、当前模型筛选的累计中首次达到 '+human(milestone.value)+' Token。',icon:'◆'});if(project)events.push({kind:'project',day:project.day,label:'新观察项目 '+project.label,description:project.day+' 在本报告范围、当前模型筛选中首次观察到项目 '+project.label+'。',icon:'◇'});if(relay)events.push({kind:'relay',day:relay.day,label:pretty(relay.from)+' → '+pretty(relay.to),description:relay.day+' 与前一自然日连续，且每日唯一主力模型由 '+pretty(relay.from)+' 变为 '+pretty(relay.to)+'。',icon:'↗'});return events.sort((a,b)=>a.day.localeCompare(b.day)||a.kind.localeCompare(b.kind));}
+function buildMomentEvents(){
+  const en=typeof dashboardLanguage!=='undefined'&&dashboardLanguage==='en',rows=selectedDailyRows(),milestone=latestMilestone(rows),relay=latestModelRelay(rows),project=newestProjectMoment(),events=[];
+  if(milestone){const v=human(milestone.value);events.push({kind:'milestone',day:milestone.day,label:(en?'Reached ':'达到 ')+v,description:en?milestone.day+': First reached '+v+' cumulative Tokens in this report range under current model filters.':milestone.day+' 在本报告范围、当前模型筛选的累计中首次达到 '+v+' Token。',icon:'◆'});}
+  if(project)events.push({kind:'project',day:project.day,label:(en?'Newly observed project ':'新观察项目 ')+project.label,description:en?project.day+': Project '+project.label+' was first observed within this report and current model filters.':project.day+' 在本报告范围、当前模型筛选中首次观察到项目 '+project.label+'。',icon:'◇'});
+  if(relay)events.push({kind:'relay',day:relay.day,label:pretty(relay.from)+' → '+pretty(relay.to),description:en?relay.day+' is consecutive with the prior calendar day, and the sole daily primary model changed from '+pretty(relay.from)+' to '+pretty(relay.to)+'.':relay.day+' 与前一自然日连续，且每日唯一主力模型由 '+pretty(relay.from)+' 变为 '+pretty(relay.to)+'。',icon:'↗'});
+  return events.sort((a,b)=>a.day.localeCompare(b.day)||a.kind.localeCompare(b.kind));
+}
 
 const SOURCE_NOTES={claude:'Claude total 由 input、output、cache read/write 组成；通常保留 cwd 与 session。',gemini:'Gemini total 以日志报告值为准；通常有 session，但缺少 cwd。',codex:'Codex input 通常包含 cached input；当前记录通常缺少 cwd 与 session。',opencode:'OpenCode total = input + output + reasoning + cache read/write；input 不含缓存，reasoning 单列；保留 cwd 与 session。'};
 function coverageRatio(value,total){return total?value/total:0;}
 function standardizedComponentCount(p){return p.with_components||0;}
-function freshnessInfo(){const p=DATA.provenance||{},generated=String(DATA.generated||'').slice(0,10),last=p.last_day||'',explicit=DATA.range?.until;if(explicit)return {key:'range',label:'范围快照',detail:'报告固定到 '+explicit};if(!generated||!last)return {key:'stale',label:'日期未知',detail:'缺少可比较的日期范围'};const days=Math.max(0,Math.round((new Date(generated+'T00:00:00')-new Date(last+'T00:00:00'))/86400000));return days===0?{key:'fresh',label:'刚刚同步',detail:'最后数据日与生成日一致'}:days<=3?{key:'recent',label:'近期快照',detail:'最后数据距生成日 '+days+' 天'}:{key:'stale',label:'历史快照',detail:'最后数据距生成日 '+days+' 天'};}
-function provenanceHealth(){const p=DATA.provenance||{},n=p.records||0,ts=coverageRatio(p.valid_ts,n),cwd=coverageRatio(p.with_cwd,n),session=coverageRatio(p.with_session,n),components=coverageRatio(standardizedComponentCount(p),n),fresh=freshnessInfo();if(!n)return {key:'base',label:'等待数据',detail:'当前范围没有可体检的已解析记录。'};if(ts>=.95&&cwd>=.7&&session>=.7&&components>=.9)return {key:'full',label:'实体分析较完整',detail:'在已解析记录中，时间、项目、会话和标准化 Token 组成字段可用性较高。'};if(ts>=.9&&(cwd>=.25||session>=.25))return {key:'trend',label:fresh.key==='stale'?'历史趋势':'趋势数据',detail:'适合趋势与部分实体分析；字段比例只描述已解析记录，不代表原始日志完整率。'};return {key:'base',label:'基础数据',detail:'主要适合总量、模型和来源趋势；字段比例只描述已解析记录。'};}
-function capabilityInfo(){const p=DATA.provenance||{},n=p.records||1,ratio=k=>coverageRatio(p[k]||0,n),replay=coverageRatio(p.replay_retained||0,n),items=[
-  {key:'project',label:'项目透镜',ratio:ratio('with_cwd'),target:'section-project',reason:'需要已解析记录包含 cwd 项目路径'},
-  {key:'session',label:'会话回放',ratio:replay,target:'section-top',reason:'需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中'},
-  {key:'rhythm',label:'作息分析',ratio:ratio('valid_ts'),target:'section-rhythm',reason:'需要已解析记录含可解析时间戳'},
-  {key:'reuse',label:'复用之河',ratio:coverageRatio(standardizedComponentCount(p),n),target:'section-reuse',reason:'需要标准化 input/output/cache read/cache write 组成字段可用'},
-  {key:'flow',label:'去向关系',ratio:Math.max(ratio('with_cwd'),ratio('with_session')),target:'section-flow',reason:'需要已解析记录包含项目或会话 identity'},
-];return items.map(x=>({...x,status:x.ratio>=.85?'ok':x.ratio>0?'partial':'off'}));}
-function capabilityReason(key){const item=capabilityInfo().find(x=>x.key===key);if(!item)return '当前范围缺少所需数据。';const sources=Object.keys((DATA.provenance||{}).sources||{});return item.reason+(sources.length?'；当前来源：'+sources.join(' / '):'')+'。';}
-function renderProvenance(){const p=DATA.provenance||{},n=p.records||0,health=provenanceHealth(),fresh=freshnessInfo(),percent=v=>coverageRatio(v,n)*100;
-  document.getElementById('prov-stamp').innerHTML='<div><span>PARSED RECORD CHECK</span><b>'+health.label+'</b><small>'+fresh.label+'</small></div>';
-  document.getElementById('prov-copy').innerHTML='<b>'+health.detail+'</b><br>'+fresh.detail+'。分母仅包含读取器已经接受并标准化的记录；被解析器拒绝的原始事件不在其中。本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证。<span class=exact-inline> 精确语义：时间戳 '+fmt(p.valid_ts||0)+' / '+fmt(n)+'；项目 '+fmt(p.with_cwd||0)+' / '+fmt(n)+'；会话 '+fmt(p.with_session||0)+' / '+fmt(n)+'；标准化组成 '+fmt(standardizedComponentCount(p))+' / '+fmt(n)+'；回放保留 '+fmt(p.replay_retained||0)+' / 可归属 '+fmt(p.replay_eligible||0)+'。</span>';
-  const meters=[['时间戳',p.valid_ts],['项目字段',p.with_cwd],['会话字段',p.with_session],['标准化组成字段',standardizedComponentCount(p)]];document.getElementById('prov-meters').innerHTML=meters.map(([label,value])=>{const pc=percent(value);return '<div class=prov-meter><div class=pm-head><span>'+label+'</span><b>'+pc.toFixed(1)+'%</b></div><div class=pm-track><i style="width:'+Math.min(100,pc).toFixed(1)+'%"></i></div><small>'+fmt(value||0)+' / '+fmt(n)+' 已解析记录</small></div>';}).join('')+'<div class=prov-meter><div class=pm-head><span>回放保留</span><b>'+fmt(p.replay_retained||0)+' / '+fmt(p.replay_eligible||0)+'</b></div><div class=pm-track><i style="width:'+Math.min(100,coverageRatio(p.replay_retained||0,p.replay_eligible||0)*100).toFixed(1)+'%"></i></div><small>每个会话最多保留最近 200 轮</small></div>';
-  const en=dashboardLanguage==='en';
+function freshnessInfo(){
+  const en=typeof dashboardLanguage!=='undefined'&&dashboardLanguage==='en',p=DATA.provenance||{},generated=String(DATA.generated||'').slice(0,10),last=p.last_day||'',explicit=DATA.range?.until;
+  if(explicit)return {key:'range',label:en?'Scope snapshot':'范围快照',detail:en?'Report fixed through '+explicit:'报告固定到 '+explicit};
+  if(!generated||!last)return {key:'stale',label:en?'Date unknown':'日期未知',detail:en?'No comparable date range':'缺少可比较的日期范围'};
+  const days=Math.max(0,Math.round((new Date(generated+'T00:00:00')-new Date(last+'T00:00:00'))/86400000));
+  if(days===0)return {key:'fresh',label:en?'Just synced':'刚刚同步',detail:en?'Last data day matches generation day':'最后数据日与生成日一致'};
+  if(days<=3)return {key:'recent',label:en?'Recent snapshot':'近期快照',detail:en?'Last data is '+days+' days before generation':'最后数据距生成日 '+days+' 天'};
+  return {key:'stale',label:en?'Historical snapshot':'历史快照',detail:en?'Last data is '+days+' days before generation':'最后数据距生成日 '+days+' 天'};
+}
+function provenanceHealth(){
+  const en=typeof dashboardLanguage!=='undefined'&&dashboardLanguage==='en',p=DATA.provenance||{},n=p.records||0,ts=coverageRatio(p.valid_ts,n),cwd=coverageRatio(p.with_cwd,n),session=coverageRatio(p.with_session,n),components=coverageRatio(standardizedComponentCount(p),n),fresh=freshnessInfo();
+  if(!n)return {key:'base',label:en?'Waiting for data':'等待数据',detail:en?'No parsed records to inspect in the current scope.':'当前范围没有可体检的已解析记录。'};
+  if(ts>=.95&&cwd>=.7&&session>=.7&&components>=.9)return {key:'full',label:en?'Strong entity coverage':'实体分析较完整',detail:en?'Parsed records have strong coverage for time, project, session, and normalized Token composition.':'在已解析记录中，时间、项目、会话和标准化 Token 组成字段可用性较高。'};
+  if(ts>=.9&&(cwd>=.25||session>=.25))return {key:'trend',label:fresh.key==='stale'?(en?'Historical trend':'历史趋势'):(en?'Trend data':'趋势数据'),detail:en?'Suitable for trend and partial entity analysis; field ratios describe parsed records only and do not represent raw log completeness.':'适合趋势与部分实体分析；字段比例只描述已解析记录，不代表原始日志完整率。'};
+  return {key:'base',label:en?'Basic data':'基础数据',detail:en?'Mainly suitable for totals, models, and source trends; field ratios describe parsed records only.':'主要适合总量、模型和来源趋势；字段比例只描述已解析记录。'};
+}
+function capabilityInfo(){
+  const en=typeof dashboardLanguage!=='undefined'&&dashboardLanguage==='en',p=DATA.provenance||{},n=p.records||1,ratio=k=>coverageRatio(p[k]||0,n),replay=coverageRatio(p.replay_retained||0,n),items=[
+    {key:'project',label:en?'Project Lens':'项目透镜',ratio:ratio('with_cwd'),target:'section-project',reason:en?'Requires parsed records with cwd project paths':'需要已解析记录包含 cwd 项目路径'},
+    {key:'session',label:en?'Session Replay':'会话回放',ratio:replay,target:'section-top',reason:en?'Requires parsed records attributable to sessions with per-turn values retained in replay':'需要已解析记录可归属到 session，且逐轮值实际保留在回放序列中'},
+    {key:'rhythm',label:en?'Activity Analysis':'作息分析',ratio:ratio('valid_ts'),target:'section-rhythm',reason:en?'Requires parsed records with parseable timestamps':'需要已解析记录含可解析时间戳'},
+    {key:'reuse',label:en?'Reuse River':'复用之河',ratio:coverageRatio(standardizedComponentCount(p),n),target:'section-reuse',reason:en?'Requires normalized input/output/cache read/cache write composition fields':'需要标准化 input/output/cache read/cache write 组成字段可用'},
+    {key:'flow',label:en?'Destination Relationships':'去向关系',ratio:Math.max(ratio('with_cwd'),ratio('with_session')),target:'section-flow',reason:en?'Requires parsed records with project or session identity':'需要已解析记录包含项目或会话 identity'},
+  ];return items.map(x=>({...x,status:x.ratio>=.85?'ok':x.ratio>0?'partial':'off'}));
+}
+function capabilityReason(key){
+  const en=typeof dashboardLanguage!=='undefined'&&dashboardLanguage==='en',item=capabilityInfo().find(x=>x.key===key);
+  if(!item)return en?'Required data is unavailable in the current scope.':'当前范围缺少所需数据。';
+  const sources=Object.keys((DATA.provenance||{}).sources||{});
+  return item.reason+(sources.length?(en?'; current sources: ':'；当前来源：')+sources.join(' / '):'')+(en?'.':'。');
+}
+function renderProvenance(){
+  const en=dashboardLanguage==='en',p=DATA.provenance||{},n=p.records||0,health=provenanceHealth(),fresh=freshnessInfo(),percent=v=>coverageRatio(v,n)*100;
+  document.getElementById('prov-stamp').innerHTML='<div><span>PARSED RECORD CHECK</span><b>'+esc(health.label)+'</b><small>'+esc(fresh.label)+'</small></div>';
+  const denNote=en?'. The denominator includes only records accepted and normalized by readers; raw events rejected by parsers are excluded. This does not guarantee absolute completeness or accuracy of raw logs, privacy, or security.':'。分母仅包含读取器已经接受并标准化的记录；被解析器拒绝的原始事件不在其中。本结论不代表原始日志绝对完整、准确，也不是隐私或安全保证。';
+  const exactNote=en?' Exact details: timestamps '+fmt(p.valid_ts||0)+' / '+fmt(n)+'; projects '+fmt(p.with_cwd||0)+' / '+fmt(n)+'; sessions '+fmt(p.with_session||0)+' / '+fmt(n)+'; normalized composition '+fmt(standardizedComponentCount(p))+' / '+fmt(n)+'; replay retained '+fmt(p.replay_retained||0)+' / attributable '+fmt(p.replay_eligible||0)+'.':' 精确语义：时间戳 '+fmt(p.valid_ts||0)+' / '+fmt(n)+'；项目 '+fmt(p.with_cwd||0)+' / '+fmt(n)+'；会话 '+fmt(p.with_session||0)+' / '+fmt(n)+'；标准化组成 '+fmt(standardizedComponentCount(p))+' / '+fmt(n)+'；回放保留 '+fmt(p.replay_retained||0)+' / 可归属 '+fmt(p.replay_eligible||0)+'。';
+  document.getElementById('prov-copy').innerHTML='<b>'+esc(health.detail)+'</b><br>'+esc(fresh.detail)+denNote+'<span class=exact-inline>'+exactNote+'</span>';
+  const meters=[[en?'Timestamps':'时间戳',p.valid_ts],[en?'Project fields':'项目字段',p.with_cwd],[en?'Session fields':'会话字段',p.with_session],[en?'Normalized composition fields':'标准化组成字段',standardizedComponentCount(p)]];
+  document.getElementById('prov-meters').innerHTML=meters.map(([label,value])=>{const pc=percent(value);return '<div class=prov-meter><div class=pm-head><span>'+label+'</span><b>'+pc.toFixed(1)+'%</b></div><div class=pm-track><i style="width:'+Math.min(100,pc).toFixed(1)+'%"></i></div><small>'+fmt(value||0)+' / '+fmt(n)+(en?' parsed records':' 已解析记录')+'</small></div>';}).join('')+'<div class=prov-meter><div class=pm-head><span>'+(en?'Replay retention':'回放保留')+'</span><b>'+fmt(p.replay_retained||0)+' / '+fmt(p.replay_eligible||0)+'</b></div><div class=pm-track><i style="width:'+Math.min(100,coverageRatio(p.replay_retained||0,p.replay_eligible||0)*100).toFixed(1)+'%"></i></div><small>'+(en?'Each session retains at most the most recent 200 turns':'每个会话最多保留最近 200 轮')+'</small></div>';
   const allSources=['claude','gemini','codex'];
   const observed=p.sources||{};
   const dayRange=x=>{const f=x.first_day,l=x.last_day;if(!f&&!l)return en?'Date unknown':'日期未知';return (f||'—')+' ~ '+(l||'—');};
@@ -3511,8 +3583,8 @@ function renderProvenance(){const p=DATA.provenance||{},n=p.records||0,health=pr
   };
   const rows=allSources.map(s=>sourceRow([s,observed[s]||{records:0,total:0}])).join('');
   document.getElementById('prov-sources').innerHTML=rows+'<small class=ps-scope-note data-i18n-skip>'+(en?'Counts and date ranges describe this snapshot and its report range, not the current frontend model filter; the latest recorded day is not a sync time.':'以上数量与日期描述本快照及其报告范围，不随前端模型筛选变化；最近记录日不是最近同步时间。')+'</small>';
-  document.getElementById('prov-capabilities').innerHTML=capabilityInfo().map(x=>'<button type=button class="prov-cap '+x.status+'" data-cap="'+x.key+'" data-target="'+x.target+'" title="'+esc(capabilityReason(x.key))+'">'+(x.status==='ok'?'●':x.status==='partial'?'◐':'○')+' '+x.label+' · '+(x.ratio*100).toFixed(0)+'%</button>').join('');
-  const beacon=document.getElementById('freshness-beacon');beacon.classList.toggle('stale',fresh.key==='stale');beacon.classList.toggle('range',fresh.key==='range');document.getElementById('freshness-text').textContent=fresh.label;beacon.title=fresh.detail+' · 点击查看数据可信度';}
+  document.getElementById('prov-capabilities').innerHTML=capabilityInfo().map(x=>'<button type=button class="prov-cap '+x.status+'" data-i18n-skip data-cap="'+x.key+'" data-target="'+x.target+'" title="'+esc(capabilityReason(x.key))+'">'+(x.status==='ok'?'●':x.status==='partial'?'◐':'○')+' '+x.label+' · '+(x.ratio*100).toFixed(0)+'%</button>').join('');
+  const beacon=document.getElementById('freshness-beacon');beacon.classList.toggle('stale',fresh.key==='stale');beacon.classList.toggle('range',fresh.key==='range');document.getElementById('freshness-text').textContent=fresh.label;beacon.title=fresh.detail+(en?' · Click to view data provenance':' · 点击查看数据可信度');}
 function provenanceSummary(){const p=DATA.provenance||{},n=p.records||0,line=(label,value)=>label+'：'+fmt(value||0)+' / '+fmt(n)+'（'+(coverageRatio(value,n)*100).toFixed(1)+'%）';return ['tokens 已解析记录体检',provenanceHealth().label+' · '+freshnessInfo().label,'范围：'+(p.first_day||'—')+' ~ '+(p.last_day||'—'),'来源：'+Object.keys(p.sources||{}).join(' / '),'已解析 Records：'+fmt(n),'Token：'+fmt(p.total||0),line('时间戳',p.valid_ts),line('项目字段',p.with_cwd),line('会话字段',p.with_session),line('标准化组成字段',standardizedComponentCount(p)),'回放保留：'+fmt(p.replay_retained||0)+' / 可归属 '+fmt(p.replay_eligible||0)+'（每会话最多最近 200 轮）','说明：解析器拒绝的原始事件不在分母；不包含 cwd、session 或逐轮 Token 明细。'].join('\n');}
 
 document.addEventListener('click',e=>{const b=e.target.closest('[data-empty-action]');if(b)handleEmptyAction(b.dataset.emptyAction);});
@@ -3532,10 +3604,11 @@ function projectRows(projectId){
   return Object.values(buckets).filter(x=>x.total>0).sort((a,b)=>a.period.localeCompare(b.period));
 }
 function renderProjectLens(){
-  const select=document.getElementById('project-select'),catalog=projectCatalog();
-  if(!catalog.length){selectedProject=null;select.innerHTML='<option>当前筛选下无项目</option>';select.disabled=true;select.removeAttribute('data-signal-type');select.removeAttribute('data-signal-id');select.removeAttribute('data-signal-label');select.removeAttribute('data-signal-value');select.removeAttribute('data-signal-scope');select.removeAttribute('data-signal-pin');document.getElementById('project-kpis').innerHTML='';document.getElementById('project-chart').innerHTML='';document.getElementById('project-panel').innerHTML=contextEmptyHTML('project');document.getElementById('project-thead').innerHTML='';document.getElementById('project-tbody').innerHTML='';return;}
+  const select=document.getElementById('project-select'),catalog=projectCatalog(),en=dashboardLanguage==='en';
+  select.setAttribute('aria-label',en?'Select project':'选择项目');
+  if(!catalog.length){selectedProject=null;select.innerHTML='<option>'+(en?'No projects under current filters':'当前筛选下无项目')+'</option>';select.disabled=true;select.removeAttribute('data-signal-type');select.removeAttribute('data-signal-id');select.removeAttribute('data-signal-label');select.removeAttribute('data-signal-value');select.removeAttribute('data-signal-scope');select.removeAttribute('data-signal-pin');document.getElementById('project-kpis').innerHTML='';document.getElementById('project-chart').innerHTML='';document.getElementById('project-panel').innerHTML=contextEmptyHTML('project');document.getElementById('project-thead').innerHTML='';document.getElementById('project-tbody').innerHTML='';return;}
   select.disabled=false;if(!selectedProject||!catalog.some(x=>x.id===selectedProject))selectedProject=catalog[0].id;
-  select.innerHTML=catalog.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===selectedProject?' selected':'')+'>'+esc(x.label)+' · '+human(x.total)+'</option>').join('');
+  select.innerHTML=catalog.map(x=>'<option data-i18n-skip value="'+esc(x.id)+'"'+(x.id===selectedProject?' selected':'')+'>'+esc(x.label)+' · '+human(x.total)+'</option>').join('');
   const chosen=catalog.find(x=>x.id===selectedProject),rows=projectRows(selectedProject),total=sumBy(rows,'total'),overall=sumBy(selectedRows(),'total'),peak=rows.reduce((a,r)=>!a||r.total>a.total?r:a,null);const dom=topModelOf(modelTotals(rows));
   select.dataset.signalType='project';select.dataset.signalId=selectedProject;select.dataset.signalLabel=chosen?.label||selectedProject;select.dataset.signalValue=String(total);select.dataset.signalScope='project';select.removeAttribute('data-signal-pin');
   const firstSeen=projectFirstSeenInRange(selectedProject);document.getElementById('project-kpis').innerHTML=[['项目 Token',human(total)],['当前占比',pct(total,overall)],['活跃期',rows.length],['峰值期',peak?fmtLabel(peak.period,state.gran):'—'],['范围内首次观察',firstSeen?firstSeen.day:'—'],['主力模型',dom?pretty(dom[0]):'—']].map((x,index)=>'<div><b>'+esc(x[1])+(index===0?' <button class="k-copy project-copy" type=button aria-label="复制项目 Token 精确值">⧉</button>':'')+'</b>'+x[0]+'</div>').join('');
@@ -4420,6 +4493,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){if(rp.time
 (function(){const r=document.getElementById('rocket');window.addEventListener('scroll',()=>r.classList.toggle('on',scrollY>innerHeight*.9),{passive:true});r.addEventListener('click',()=>{if(motionDisabled()){scrollTo({top:0,behavior:'auto'});return;}r.classList.remove('launch');void r.offsetWidth;r.classList.add('launch');setTimeout(()=>{scrollTo({top:0,behavior:scrollBehavior()});r.classList.remove('launch');},360);});})();
 
 function reconcileLiveData(next){
+  liveConfig.hasSnapshot=true;livePrepare=false;
   const oldModels=(DATA.models||[]).slice(),oldModelSet=new Set(oldModels),allPreviouslySelected=state.models.size===oldModelSet.size&&[...oldModelSet].every(model=>state.models.has(model));
   DATA=next;
   /* 快照刷新时保持既有模型目录顺序，只把新出现的模型追加到末尾；避免 UI 与筛选顺序跳动。 */

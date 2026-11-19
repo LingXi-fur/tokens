@@ -4564,6 +4564,182 @@ class DashboardRuntimeTests(unittest.TestCase):
             finally:
                 context.close()
 
+    def test_large_billion_zh_to_en_switch_preserves_user_data_and_roundtrips(self):
+        from datetime import timedelta
+        now = datetime(2026, 11, 18, 14, 0, 0)
+        records = []
+        for i in range(60):
+            day = (now - timedelta(days=59 - i)).strftime("%Y-%m-%d")
+            primary = "claude-sonnet" if i < 59 else "gpt-5"
+            records.append({
+                "source": "claude",
+                "ts": f"{day}T10:00:00+08:00",
+                "date": day,
+                "model": primary,
+                "input": 100_000_000,
+                "output": 50_000_000,
+                "cache_read": 10_000_000,
+                "cache_write": 0,
+                "total": 160_000_000,
+                "session": f"sess-{i % 3}",
+                "cwd": "/tmp/代码/tokens",
+            })
+            records.append({
+                "source": "codex",
+                "ts": f"{day}T13:00:00+08:00",
+                "date": day,
+                "model": "deepseek-chat",
+                "input": 40_000_000,
+                "output": 20_000_000,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": 60_000_000,
+                "session": "",
+                "cwd": "",
+            })
+        with mock.patch(
+            "tokens_cli.dashboard_payload.readers.build_session_index",
+            return_value={},
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.session_title",
+            return_value="测试中文会话标题",
+        ), mock.patch(
+            "tokens_cli.dashboard_payload.readers.load_session_summaries",
+            return_value={},
+        ):
+            payload = report_dashboard.build_payload(
+                records,
+                since="2026-09-20",
+                until="2026-11-18",
+                sources=["claude", "codex"],
+            )
+        payload["generated"] = "2026-11-18T14:00:00"
+        payload["range"]["until"] = None
+        payload["provenance"]["last_day"] = "2026-11-18"
+        payload["provenance"]["replay_retained"] = 6
+        payload["provenance"]["replay_eligible"] = 120
+        html = report_dashboard.render_dashboard(
+            dashboard_wire.encode_payload(payload),
+            language="zh",
+        )
+        allowlist = ["/tmp/代码/tokens", "代码/tokens", "测试中文会话标题"]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            html_path = Path(tmpdir) / "large-lang-switch.html"
+            html_path.write_text(html, encoding="utf-8")
+            context, page, page_errors, console_errors = self.new_page(
+                path=html_path
+            )
+            try:
+                page.wait_for_load_state("networkidle")
+                self.assertIn("亿", page.locator("#k-total").inner_text())
+
+                for sel in (
+                    "#section-cost", "#section-almanac", "#section-achievements",
+                    "#section-project", "#section-modes", "#section-reuse", "#section-flow",
+                ):
+                    loc = page.locator(sel)
+                    if loc.count():
+                        loc.scroll_into_view_if_needed()
+                        page.wait_for_timeout(60)
+                page.evaluate("window.scrollTo(0, 0)")
+
+                page.click("#lang-btn")
+                page.wait_for_function("() => document.documentElement.lang === 'en'")
+                page.wait_for_timeout(120)
+                page.evaluate("document.querySelectorAll('details').forEach(d => { d.open = true; })")
+                page.wait_for_timeout(80)
+
+                report = page.evaluate(
+                    """(allow) => {
+                      const allowSorted = [...allow].sort((a, b) => b.length - a.length);
+                      const cjk = /[\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff]/;
+                      const stripAllow = (value) => {
+                        let text = value;
+                        for (const item of allowSorted) {
+                          if (item && text.includes(item)) text = text.split(item).join('');
+                        }
+                        return text;
+                      };
+                      const hits = [];
+                      let userHits = 0;
+                      const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+                      let node;
+                      while ((node = walk.nextNode())) {
+                        if (node.nodeType === 3) {
+                          const parent = node.parentElement;
+                          if (!parent || parent.closest('script,style,#lang-btn,[hidden]')) continue;
+                          let cur = parent, visible = true;
+                          while (cur) {
+                            const cs = getComputedStyle(cur);
+                            if (cs.display === 'none' || cs.visibility === 'hidden') { visible = false; break; }
+                            cur = cur.parentElement;
+                          }
+                          if (!visible) continue;
+                          const text = (node.nodeValue || '').trim();
+                          if (!text || !cjk.test(text)) continue;
+                          const stripped = stripAllow(text);
+                          if (cjk.test(stripped)) {
+                            hits.push(['text', parent.closest('[id]')?.id || parent.tagName, text.slice(0, 120)]);
+                          } else {
+                            userHits++;
+                          }
+                        } else if (node instanceof Element && !node.closest('script,style,[hidden]') && node.id !== 'lang-btn') {
+                          for (const attr of ['title', 'aria-label', 'placeholder']) {
+                            const val = node.getAttribute(attr);
+                            if (!val || !cjk.test(val)) continue;
+                            const stripped = stripAllow(val);
+                            if (cjk.test(stripped)) {
+                              hits.push([attr, node.id || node.closest('[id]')?.id || node.tagName, val.slice(0, 120)]);
+                            } else {
+                              userHits++;
+                            }
+                          }
+                        }
+                      }
+                      document.querySelectorAll('#bar svg text, #bar svg title').forEach(el => {
+                        const raw = (el.textContent || '').trim();
+                        if (!raw || !cjk.test(raw)) return;
+                        if (cjk.test(stripAllow(raw))) {
+                          hits.push(['svg', el.tagName, raw.slice(0, 120)]);
+                        }
+                      });
+                      return {
+                        hits,
+                        userHits,
+                        kTotal: document.getElementById('k-total')?.textContent || '',
+                        paceText: document.getElementById('pace-race')?.innerText || '',
+                        provCap: document.getElementById('prov-capabilities')?.innerText || '',
+                        provCopy: document.getElementById('prov-copy')?.innerText || '',
+                      };
+                    }""",
+                    allowlist,
+                )
+                self.assertEqual([], report["hits"], f"Unexpected CJK after zh->en switch: {report['hits']}")
+                self.assertGreater(report["userHits"], 0, "Allowlisted user data should stay intact")
+                self.assertIn("B", report["kTotal"])
+                self.assertIn("Last data day matches generation day", report["provCopy"])
+                self.assertIn("Session Replay", report["provCap"])
+                self.assertNotIn("会话回放", report["provCap"])
+                self.assertIn("TODAY VS YESTERDAY", report["paceText"].upper())
+
+                page.click("#lang-btn")
+                page.wait_for_function("() => document.documentElement.lang === 'zh-CN'")
+                page.wait_for_timeout(120)
+                zh = page.evaluate("""() => ({
+                  kTotal: document.getElementById('k-total')?.textContent || '',
+                  scope: document.getElementById('section-scope')?.innerText || '',
+                  pace: document.getElementById('pace-race')?.innerText || '',
+                  provCopy: document.getElementById('prov-copy')?.innerText || '',
+                })""")
+                self.assertIn("亿", zh["kTotal"])
+                self.assertIn("统计范围", zh["scope"])
+                self.assertIn("今日 vs 昨日", zh["pace"].lower())
+                self.assertIn("最后数据日与生成日一致", zh["provCopy"])
+                self.assertEqual([], page_errors)
+                self.assertEqual([], console_errors)
+            finally:
+                context.close()
+
 
 if __name__ == "__main__":
     unittest.main()
