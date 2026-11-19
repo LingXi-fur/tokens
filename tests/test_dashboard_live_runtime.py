@@ -1973,5 +1973,28 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         )
         self.assertEqual([], errors)
         self.assertEqual([], console)
+
+    def test_live_prepare_transition_allows_clicking_lang_btn_to_english(self):
+        state, page, errors, console = self._open(
+            self._prepare_html,
+            _prepare(),
+        )
+        self._wait_kind(page, "prepare")
+        state.push(_ready(self._snap2_wire, self._snap2_id, etag='"ready-lang"', revision=2))
+        self._force_check(page)
+        self._wait_rows(page)
+        page.wait_for_function("() => document.body.dataset.live === 'ready'")
+
+        self.assertIn("全部报告", page.locator("#section-scope").inner_text())
+        page.click("#lang-btn")
+        page.wait_for_function("() => document.documentElement.lang === 'en'")
+        self.assertEqual("ready", page.evaluate("document.body.dataset.live"))
+        scope_text = page.locator("#section-scope").inner_text()
+        self.assertIn("All report", scope_text)
+        self.assertIn("Last 7 days", scope_text)
+        self.assertNotIn("全部报告", scope_text)
+        self.assertNotIn("近 7", scope_text)
+        self.assertEqual([], errors)
+        self.assertEqual([], console)
 if __name__ == "__main__":
     unittest.main()
