@@ -16,7 +16,7 @@ from . import config, dashboard_payload, dashboard_wire
 from .opener import open_path
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False,
-                  generated_at=None, session_titles=None):
+                  generated_at=None, session_titles=None, collection_report=None):
     return dashboard_payload.build_payload(
         records,
         since=since,
@@ -25,6 +25,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         anonymize=anonymize,
         generated_at=generated_at,
         session_titles=session_titles,
+        collection_report=collection_report,
     )
 
 
@@ -86,7 +87,7 @@ def render_dashboard(wire, live=None, demo=False, language="zh", head_meta=""):
 def build_dashboard_html(records, since=None, until=None, sources=None,
                          anonymize=False, generated_at=None,
                          session_titles=None, demo=False, language="zh",
-                         head_meta=""):
+                         head_meta="", collection_report=None):
     payload = build_payload(
         records,
         since=since,
@@ -95,6 +96,7 @@ def build_dashboard_html(records, since=None, until=None, sources=None,
         anonymize=anonymize,
         generated_at=generated_at,
         session_titles=session_titles,
+        collection_report=collection_report,
     )
     wire = dashboard_wire.encode_payload(payload)
     return render_dashboard(
@@ -124,7 +126,7 @@ def _write_html(html_doc, filename):
 
 def write_dashboard(records, since=None, until=None, sources=None, anonymize=False,
                     filename=None, generated_at=None, session_titles=None,
-                    demo=False, language="zh"):
+                    demo=False, language="zh", collection_report=None):
     html_doc = build_dashboard_html(
         records,
         since=since,
@@ -135,6 +137,7 @@ def write_dashboard(records, since=None, until=None, sources=None, anonymize=Fal
         session_titles=session_titles,
         demo=demo,
         language=language,
+        collection_report=collection_report,
     )
     filename = filename or (
         "dashboard-anonymized.html" if anonymize else "dashboard.html"

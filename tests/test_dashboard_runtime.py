@@ -559,6 +559,35 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_provenance_reports_skipped_files_in_both_languages(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("""() => {
+              DATA.provenance.skipped={
+                antigravity:{parse_error:1},
+                opencode:{read_failed:2,parse_error:1},
+              };
+              renderProvenance();
+            }""")
+            text = page.locator("#prov-sources").inner_text()
+            self.assertIn("Antigravity", text)
+            self.assertIn("1 个文件解析失败", text)
+            self.assertIn("OpenCode", text)
+            self.assertIn("2 个文件读取失败", text)
+            self.assertIn("跳过文件", text)
+            page.evaluate("applyLanguage('en',false)")
+            text = page.locator("#prov-sources").inner_text()
+            self.assertIn("1 file failed to parse", text)
+            self.assertIn("2 files could not be read", text)
+            self.assertIn("Skipped files", text)
+            page.evaluate("DATA.provenance.skipped={};renderProvenance()")
+            self.assertNotIn("Skipped files", page.locator("#prov-sources").inner_text())
+            self.assertNotIn("跳过文件", page.locator("#prov-sources").inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
     def test_command_palette_treats_model_names_as_text(self):
         context, page, page_errors, console_errors = self.new_page(
             path=self._malicious_path

@@ -99,6 +99,7 @@ class CliTests(unittest.TestCase):
             until="2026-07-31",
             sources=["claude", "gemini"],
             anonymize=True,
+            collection_report={},
         )
 
     @mock.patch("tokens_cli.cli.readers.read_all", return_value=[{"date": "2026-07-01"}])

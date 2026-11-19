@@ -45,8 +45,11 @@ _PROVENANCE = frozenset((
     "records", "total", "valid_ts", "with_cwd", "with_session", "replay_eligible",
     "replay_retained", "with_input", "with_output", "with_cache_read",
     "with_cache_write", "with_components", "first_day", "last_day", "sources",
+    "skipped",
 ))
-_SOURCE_COUNTS = _PROVENANCE - {"sources", "replay_eligible", "replay_retained"}
+_SOURCE_COUNTS = _PROVENANCE - {
+    "sources", "replay_eligible", "replay_retained", "skipped",
+}
 _ACHIEVEMENT_STATS = frozenset((
     "input", "output", "cache_write", "session_totals", "cwd_totals",
     "source_totals", "model_stats", "first_day", "last_day",
@@ -356,10 +359,17 @@ def _entity_rows(rows):
 
 def _aggregate_shapes(payload, sources):
     """Allowlist the builder's nested structures; no auxiliary raw mappings."""
-    _shape(payload["provenance"], _PROVENANCE)
     provenance = payload["provenance"]
+    # Older snapshots predate skipped-file health evidence; both shapes load.
+    _require(type(provenance) is dict
+             and set(provenance) in (_PROVENANCE, _PROVENANCE - {"skipped"}))
+    skipped = provenance.get("skipped", {})
+    _require(type(skipped) is dict and set(skipped) <= set(sources))
+    for counts in skipped.values():
+        _require(type(counts) is dict and set(counts) <= set(readers._SKIP_REASONS))
+        _require(all(_nonnegative(count) and count > 0 for count in counts.values()))
     for key, value in provenance.items():
-        if key not in {"first_day", "last_day", "sources"}:
+        if key not in {"first_day", "last_day", "sources", "skipped"}:
             _numeric_tree(value)
     for value in provenance["sources"].values():
         _shape(value, _SOURCE_COUNTS)

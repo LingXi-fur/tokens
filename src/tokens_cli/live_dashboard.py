@@ -291,8 +291,10 @@ class LiveDashboard:
                     return False
                 stage = "collection"
                 progress.transition(stage)
+                collection_report = {}
                 records = readers.read_all(sources=self.sources, use_cache=self.use_cache,
-                                           observer=progress.observe)
+                                           observer=progress.observe,
+                                           collection_report=collection_report)
                 stage = "payload"
                 progress.transition(stage)
                 payload = dashboard_payload.build_payload(
@@ -302,6 +304,7 @@ class LiveDashboard:
                     sources=self.sources,
                     anonymize=self.anonymize,
                     aliases=self._aliases,
+                    collection_report=collection_report,
                 )
                 stage = "encoding"
                 progress.transition(stage)

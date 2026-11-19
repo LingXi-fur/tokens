@@ -1081,3 +1081,4 @@ body::before{content:"";position:fixed;inset:-18vmax;z-index:-1;pointer-events:n
   body::before{display:none}
 }
 @media(forced-colors:active){body::before,.kpi.is-primary::before,.kpi.is-primary::after,.card h2::before{display:none}}
+.prov-skips{grid-column:1/-1;padding:10px 12px;border:1px solid rgba(245,158,11,.35);border-radius:10px;background:rgba(245,158,11,.07);color:var(--muted);font-size:11px;line-height:1.6}.prov-skips h4{margin:0 0 4px;font-size:11px;color:var(--ink);letter-spacing:.04em}.prov-skips p{margin:2px 0}

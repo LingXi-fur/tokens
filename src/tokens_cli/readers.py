@@ -1823,7 +1823,20 @@ class _MemoRound:
             self.memo.discard(key)
 
 
-def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
+_SKIP_REASONS = ("read_failed", "parse_error")
+
+
+def _note_skip(collection_report, source, reason):
+    """Record a skipped file count only; never the path or file content."""
+    if collection_report is None:
+        return
+    skipped = collection_report.setdefault("skipped", {})
+    counts = skipped.setdefault(source, {})
+    counts[reason] = counts.get(reason, 0) + 1
+
+
+def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
+             collection_report=None):
     """所有来源成功才返回/存缓存；Claude 不完整异常不可降级为空成功。"""
     def notify(event, source):
         if observer is not None:
@@ -1831,6 +1844,10 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                 observer(event, source)
             except Exception:
                 pass  # 旁路观测失败不能改变采集结果或完整性。
+
+    if collection_report is not None:
+        collection_report.clear()
+        collection_report["skipped"] = {}
 
     sources = sources or list(SOURCES)
     cache = _load_cache() if use_cache else {}
@@ -1878,11 +1895,13 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                 except OSError:
                     if src in ("claude", "codex"):
                         raise CollectionIncompleteError(src, "stat_failed") from None
+                    _note_skip(collection_report, src, "read_failed")
                     notify("skipped", src)
                     continue
                 if not _safe_to_parse(path, st, source=src):
                     if src in ("claude", "codex"):
                         raise CollectionIncompleteError(src, "unsafe_file")
+                    _note_skip(collection_report, src, "read_failed")
                     notify("skipped", src)
                     continue
                 key = f"{st.st_mtime_ns}|{st.st_size}"
@@ -1947,6 +1966,7 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                         disk_warm = cache_kind == "disk"
                         break
                 memo_proof = None
+                parse_failed = False
                 if not warm:
                     stable, dedup = True, None
                     try:
@@ -1975,14 +1995,19 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None):
                     except OSError:
                         if src in ("claude", "codex"):
                             raise CollectionIncompleteError(src, "read_failed") from None
+                        _note_skip(collection_report, src, "read_failed")
                         recs = []
                         skipped = True
+                        parse_failed = True
                     except Exception:
                         if src in ("claude", "codex"):
                             raise CollectionIncompleteError(src, "read_failed") from None
+                        _note_skip(collection_report, src, "parse_error")
                         recs = []
                         skipped = True
-                    if stable:
+                        parse_failed = True
+                    # A failed parse is not an empty file: retry it next read.
+                    if stable and not parse_failed:
                         entry = {"key": key, "records": recs}
                         if src in ("claude", "codex"):
                             entry.update(identity=list(_stat_identity(st)),

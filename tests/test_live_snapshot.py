@@ -273,6 +273,23 @@ class SnapshotStoreTests(unittest.TestCase):
 
     @unittest.skipUnless(live_snapshot._supported(),
                          'requires POSIX snapshot-store capabilities')
+    def test_skipped_file_health_round_trips_and_stays_bounded(self):
+        payload = copy.deepcopy(self.payload)
+        payload["provenance"]["skipped"] = {"claude": {"parse_error": 1}}
+        wire = identify(payload)
+        self.assertTrue(self.store.save(wire, CHECKED_AT))
+        self.assertEqual(wire, self.store.load()["wire"])
+        for skipped in (
+            {"claude": {"parse_error": 0}},
+            {"claude": {"path": 1}},
+            {"other": {"parse_error": 1}},
+            {"claude": {"parse_error": True}},
+        ):
+            payload["provenance"]["skipped"] = skipped
+            self.assertFalse(self.store.save(identify(payload), CHECKED_AT))
+
+    @unittest.skipUnless(live_snapshot._supported(),
+                         'requires POSIX snapshot-store capabilities')
     def test_cache_limit_depth_and_node_budget_are_enforced(self):
         old = self.save()
         with mock.patch.object(live_snapshot, "MAX_BYTES", len(old) - 1):

@@ -284,8 +284,11 @@ def main(argv=None):
     if not selected_sources:
         _no_records_message(selected_sources)
         return 1
+    collection_report = {}
     try:
-        records = readers.read_all(sources=selected_sources, use_cache=not args.no_cache)
+        records = readers.read_all(sources=selected_sources,
+                                   use_cache=not args.no_cache,
+                                   collection_report=collection_report)
     except readers.CollectionIncompleteError:
         print(
             "Local log collection is incomplete; no report was written. "
@@ -294,8 +297,12 @@ def main(argv=None):
         )
         return 1
     if not records:
-        _no_records_message(selected_sources)
-        return 1
+        # A skipped file is not "no logs": keep the dashboard so data health
+        # can explain what was omitted. Other modes still point to doctor.
+        if not ((args.dashboard or mode == "dashboard")
+                and collection_report.get("skipped")):
+            _no_records_message(selected_sources)
+            return 1
 
     if args.dashboard or mode == "dashboard":
         path = report_dashboard.write_dashboard(
@@ -304,6 +311,7 @@ def main(argv=None):
             until=args.until,
             sources=selected_sources,
             anonymize=args.anonymize,
+            collection_report=collection_report,
         )
         print(f"Dashboard: {path}")
         if args.open:
