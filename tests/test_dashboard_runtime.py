@@ -2479,10 +2479,20 @@ class DashboardRuntimeTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             for theme in ("light", "dark"):
-                page.evaluate("theme => applyTheme(theme)", theme)
-                # .tabs button transitions color/background for 150ms; Firefox
-                # reports the interpolated value unless the theme has settled.
-                page.wait_for_timeout(250)
+                page.evaluate(
+                    """async theme => {
+                      applyTheme(theme);
+                      await new Promise(resolve => requestAnimationFrame(resolve));
+                      const targets = ['.mode-scope', '.tabs button.on', '.logo']
+                        .map(sel => document.querySelector(sel))
+                        .filter(Boolean);
+                      const running = targets.flatMap(el =>
+                        el.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity)
+                      );
+                      await Promise.allSettled(running.map(a => a.finished));
+                    }""",
+                    theme,
+                )
                 ratio = page.evaluate(
                     """
                     () => {
