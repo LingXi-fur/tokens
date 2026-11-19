@@ -2597,10 +2597,10 @@ function markLazyDirty(){['project','reuse','flow','modes','cost'].forEach(name=
 function markStaticLazyDirty(){['almanac','badges'].forEach(name=>{if(!lazyState[name]?.rendered)lazyState[name]=Object.assign({},lazyState[name],{dirty:true});});}
 function initLazyRendering(){
   document.querySelectorAll('[data-lazy]').forEach(card=>{const name=card.dataset.lazy;lazyState[name]={visible:false,dirty:true,rendered:false};ensureLazyPlaceholder(card);card.classList.add('lazy-pending');});
-  lazyState.badges.visible=true;renderLazy('badges',true);
+  ['badges','cost'].forEach(name=>{if(lazyState[name]){lazyState[name].visible=true;renderLazy(name,true);}});
   if(!('IntersectionObserver'in window)){Object.keys(LAZY_RENDERERS).forEach(name=>{lazyState[name].visible=true;if(!lazyState[name].rendered)renderLazy(name,true);});return;}
   const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{const name=entry.target.dataset.lazy;lazyState[name]=Object.assign({},lazyState[name],{visible:entry.isIntersecting});if(entry.isIntersecting&&(lazyState[name].dirty||!lazyState[name].rendered))renderLazy(name,true);}),{rootMargin:'500px 0px'});
-  document.querySelectorAll('[data-lazy]:not([data-lazy="badges"])').forEach(card=>observer.observe(card));
+  document.querySelectorAll('[data-lazy]:not([data-lazy="badges"]):not([data-lazy="cost"])').forEach(card=>observer.observe(card));
 }
 /* ---- 首屏洞察：今日赛跑 / 模型份额流 / 活跃日历 ----
    数学全部在 InsightCore；这里只负责取数（DATA/state）、双语文案与 SVG 绘制。
@@ -3742,7 +3742,16 @@ function secretCommand(q){
   };if(secrets[q]){closePalette();setTimeout(secrets[q],80);return true;}return false;
 }
 
-function scrollToSection(id){const el=document.getElementById(id);if(!el)return;const lazy=el.dataset.lazy;if(lazy){lazyState[lazy]=Object.assign({},lazyState[lazy],{visible:true});renderLazy(lazy,true);}if(id==='section-top')document.getElementById('top-details').open=true;el.scrollIntoView({behavior:scrollBehavior(),block:'start'});}
+function scrollToSection(id){
+  const el=document.getElementById(id);if(!el)return;
+  for(const card of document.querySelectorAll('[data-lazy]')){
+    if(card!==el&&!(card.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING))continue;
+    const name=card.dataset.lazy;
+    if(name){lazyState[name]=Object.assign({},lazyState[name],{visible:true});if(lazyState[name].dirty||!lazyState[name].rendered)renderLazy(name,true);}
+  }
+  if(id==='section-top')document.getElementById('top-details').open=true;
+  el.scrollIntoView({behavior:scrollBehavior(),block:'start'});
+}
 function initSectionDock(){
   const dock=document.getElementById('section-dock');dock.addEventListener('click',e=>{const b=e.target.closest('button[data-target]');if(b)scrollToSection(b.dataset.target);});
   const mark=id=>dock.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.target===id));

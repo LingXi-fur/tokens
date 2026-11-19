@@ -2480,7 +2480,20 @@ class DashboardRuntimeTests(unittest.TestCase):
         context, page, page_errors, console_errors = self.new_page()
         try:
             for theme in ("light", "dark"):
-                page.evaluate("theme => applyTheme(theme)", theme)
+                page.evaluate(
+                    """async theme => {
+                      applyTheme(theme);
+                      await new Promise(resolve => requestAnimationFrame(resolve));
+                      const targets = ['.mode-scope', '.tabs button.on', '.logo']
+                        .map(sel => document.querySelector(sel))
+                        .filter(Boolean);
+                      const running = targets.flatMap(el =>
+                        el.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity)
+                      );
+                      await Promise.allSettled(running.map(a => a.finished));
+                    }""",
+                    theme,
+                )
                 ratio = page.evaluate(
                     """
                     () => {
