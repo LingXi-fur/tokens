@@ -6,10 +6,12 @@ import sys
 from datetime import date, datetime, timedelta
 
 from . import (__version__, aggregate, config, demo, doctor, lang as lang_module, live_dashboard,
-               quota, readers, report_dashboard, report_html, report_term, sources as source_registry)
+               outcomes, quota, readers, report_dashboard, report_html, report_term,
+               sources as source_registry)
 from .opener import open_url
 
-RANGES = ["day", "week", "month", "all", "dashboard", "demo", "serve", "doctor", "quota"]
+RANGES = ["day", "week", "month", "all", "dashboard", "demo", "serve", "doctor", "quota",
+            "outcomes"]
 
 
 def compute_window(mode, now, days, weeks, months):
@@ -62,7 +64,7 @@ def build_parser():
     parser.add_argument("--models", action="store_true",
                         help="with doctor, show how Claude request names map to models")
     parser.add_argument("--json", action="store_true",
-                        help="with doctor --models or quota, print machine-readable JSON")
+                        help="with doctor --models, quota, or outcomes, print machine-readable JSON")
     parser.add_argument("--interval", type=_positive_float, default=300.0,
                         help="live Dashboard check interval in seconds (default: 300)")
     parser.add_argument("--port", type=_port, default=8765,
@@ -124,8 +126,8 @@ def _configure(args, parser):
     if args.models and args.range != "doctor":
         parser.error("--models requires doctor mode")
     if args.json and not ((args.range == "doctor" and args.models)
-                          or args.range == "quota"):
-        parser.error("--json requires doctor --models or quota")
+                          or args.range in ("quota", "outcomes")):
+        parser.error("--json requires doctor --models, quota, or outcomes")
 
 
 def _open_generated(path):
@@ -255,6 +257,34 @@ def main(argv=None):
             print("\nLive Dashboard stopped.")
         finally:
             server.server_close()
+        return 0
+
+    if args.range == "outcomes":
+        if not selected_sources:
+            _no_records_message(selected_sources)
+            return 1
+        try:
+            records = readers.read_all(sources=selected_sources,
+                                       use_cache=not args.no_cache)
+        except readers.CollectionIncompleteError:
+            print(
+                "Local log collection is incomplete; no outcomes report was produced. "
+                "Check log readability and collection limits, then retry.",
+                file=sys.stderr,
+            )
+            return 1
+        if not records:
+            _no_records_message(selected_sources)
+            return 1
+        records_key = (outcomes.records_fingerprint(args.since, args.until)
+                       if not args.no_cache else None)
+        report = outcomes.build_outcomes(records, since=args.since,
+                                         until=args.until,
+                                         records_key=records_key)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            outcomes.print_report(report, lang=args.lang)
         return 0
 
     if args.range == "demo":
