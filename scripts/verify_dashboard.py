@@ -36,6 +36,7 @@ LOGIC_TESTS = (
     "tests.test_live_progress", "tests.test_reader_progress", "tests.test_live_snapshot",
     "tests.test_reader_memo", "tests.test_parse_skip_visibility",
     "tests.test_parser_corrupt_signal",
+    "tests.test_outcomes",
     "tests.test_release_contracts", "tests.test_report_term_sorting",
     "tests.test_maintenance_runner", "tests.test_dashboard_page_lifecycle",
 )
