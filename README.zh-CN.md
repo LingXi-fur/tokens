@@ -146,7 +146,7 @@ cd /绝对路径/获批候选源码
 PYTHONPATH=src python3 -m tokens_cli demo --output /tmp/tokens-030-source-demo --open
 ```
 
-这一显式源码运行路径与核对清单中的 wheel 验证是分开的：wheel 验证会清空 `PYTHONPATH` 并确认 import 来自安装的 venv。月度预算规格（本机检出的 `docs/monthly-budget-design.md`）本轮仅是设计，不新增预算功能，也不创建浏览器预算存储。
+这一显式源码运行路径与核对清单中的 wheel 验证是分开的：wheel 验证会清空 `PYTHONPATH` 并确认 import 来自安装的 venv。月度预算规格（本机检出的 `docs/monthly-budget-design.md`）对应费用账本内的本地月度预算功能（仅在你保存预算时写入当前浏览器的 `tk-budget-v1`）。
 
 ## 选择输出方式
 
@@ -191,7 +191,7 @@ Token 增减只描述用量变化，不代表生产力或代码质量。Cache Re
 - 一次使用一种货币（CNY 或 USD）；换币须清空并重填单价，不假设汇率。
 - 价格配置仍仅保存在当前浏览器原有的 `tk-cost-v1` 本地存储中，不调用供应商、不需要 API 密钥，也不新增存储键；读取器与用量统计不变。私人手填价不嵌入报告。实时页面与离线文件的存储作用域可能不同；存储失败时仅当前页面有效。
 
-缺少计费数据的旧离线快照需要重新生成。当前记录缓存文件为 `records-v8.json`，其内部 schema 版本（当前 20）覆盖 Codex 事件身份、修正后的输出口径、已接受的零用量和有界上下文估算更新、混合格式并集计数契约、作为新账本基线处理的累计重算、重复累计锚点的无条件首见证据保留（跨模型边界也如此，换模型 resume 后的同锚点消费归入首见模型），以及 Claude 记录在路由解析后的后端名旁保留原始请求模型名这一信息性字段（不改变计数、去重或费用归账口径）；旧缓存文件保留。
+缺少计费数据的旧离线快照需要重新生成。当前记录缓存文件为 `records-v8.json`，其内部 schema 版本（当前 21）覆盖 Codex 事件身份、修正后的输出口径、已接受的零用量和有界上下文估算更新、混合格式并集计数契约、作为新账本基线处理的累计重算、重复累计锚点的无条件首见证据保留（跨模型边界也如此，换模型 resume 后的同锚点消费归入首见模型）、Claude 记录在路由解析后的后端名旁保留原始请求模型名这一信息性字段（不改变计数、去重或费用归账口径），以及直连 Anthropic 请求保留原始模型归属而不被当前 CCR 路由规则追溯改写；旧缓存文件保留。
 
 ## 支持的数据源
 
@@ -230,6 +230,7 @@ Codex 的 `.jsonl.zst` 压缩归档要求采集进程能通过 `PATH` 找到 `zs
   --source gemini \
   --source codex \
   --source opencode \
+  --source antigravity \
   --open
 ```
 
@@ -246,6 +247,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]  # 本�
 |---|---|
 | `--source antigravity\|claude\|codex\|gemini\|opencode\|auto` | 选择来源（默认 `auto` 自动启用所有可读来源），可重复组合。 |
 | `--since YYYY-MM-DD` / `--until YYYY-MM-DD` | 限制闭区间日期范围。 |
+| `--days N` / `--weeks N` / `--months N` | 限制 `day`、`week` 或 `month` 终端模式显示的期数。 |
 | `--timezone AREA/CITY` | 覆盖检测到的系统时区。 |
 | `--lang en\|zh` | 终端及静态 HTML 语言；默认跟随系统 locale（可由 `TOKENS_LANG` 覆盖）。 |
 | `--output DIR` | 指定报告目录，默认 `./out`。 |
@@ -258,6 +260,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]  # 本�
 | `--port PORT` | 设置回环端口；默认 8765，0 表示自动选择。 |
 | `--open` | 用默认浏览器打开生成文件或本机 URL。 |
 | `--no-cache` | 重新读取所有选中的日志文件。 |
+| `--version` | 显示程序版本号并退出。 |
 
 完整说明见[中文 CLI 文档](https://lingxi-fur.github.io/tokens/zh/cli.html)。
 
@@ -291,8 +294,8 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]  # 本�
 - 当前公共安装入口是源码检出；在确认存在可用发布版本前，不宣传软件包注册表安装命令。0.3.0 本机候选不改变这一点：它仅离线本机使用，不声称存在已核实的公开 0.3.0 软件包注册表版本。
 - 不传 `--source`（默认 `auto`）时只检查目录/文件存在性与可读权限，自动启用五个已登记来源（Claude Code、Gemini CLI、Codex、OpenCode、Antigravity）中可读的来源；也可显式 `--source` 限定。
 - Claude 和 Codex JSONL 文件不再仅因超过 64 MiB 被整份跳过。超长物理行（包括超过 4 MiB 的行）使用有界流式 JSON 校验与用量投影；仍有深度、词法 token、保留数据及数值词元等工程限制，不代表内存无限或历史日志绝对完整。
-- 采集不完整时，不把部分报告发布为成功结果。实时扫描保留最近成功快照；首次扫描失败则没有快照。记录缓存 v8（`records-v8.json`）会重建不兼容的旧条目，不删除旧缓存文件。
-- Windows 缓存设置会处理 `os.fchmod` 缺失。安全读取的 stat 兼容性仍在合成诊断：新增探针匹配写入关闭后只读打开的生命周期，捕获实际比较快照，不放宽生产校验。诊断输出不等于兼容性修复。Firefox/WebKit 检查也尚未闭合，本地后端测试通过不代表跨平台 CI 已全绿。
+- Claude 和 Codex 采集不完整时，不把部分报告发布为成功结果；实时扫描保留最近成功快照，首次扫描失败则没有快照。Gemini、OpenCode 或 Antigravity 的单个文件读取或解析失败时，数据健康区会按来源显示跳过的文件数和原因，并在下次扫描时重试而不缓存失败结果。记录缓存 v8（`records-v8.json`）会重建不兼容的旧条目，不删除旧缓存文件。
+- Windows 缓存设置会处理 `os.fchmod` 缺失，跨 API 安全读取在平台支持时比较创建时间（birth time），macOS 与 Linux 保持完整 `ctime` 校验；Windows 上 Codex 的 `.zst` 归档通过写线程流式解压。跨平台 CI（Windows、macOS、Linux）与跨浏览器运行时测试（Chromium、Firefox、WebKit）均通过。
 - 来源格式提供的字段不同，部分项目、会话或 Context 视图可能不可用。
 - 终端和静态报告支持 `--lang en|zh`，默认跟随系统 locale；交互式 Dashboard 可在页面内切换语言。
 - 离线 Dashboard 是生成时快照。需要持续更新时使用 `./run serve --open`。
