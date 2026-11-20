@@ -67,7 +67,9 @@ from . import sources as _source_registry
 #   v21 = 带 Anthropic 原生证据（requestId 为 req_*、message.id 为 msg_ + 24 位
 #         base62）的 Claude 记录不再经当前 CCR 规则改写：直连 Opus 不再被追溯
 #         记为路由后端；原生 ID 归一为点号版本（claude-opus-5-5 → claude-opus-5.5）
-CACHE_VERSION = 21
+#   v22 = Gemini/OpenCode/Antigravity 的缓存条目记录 partial（局部损坏消息数），
+#         整文件损坏不再写空缓存；升级后首次读取会重算健康计数
+CACHE_VERSION = 22
 
 # ---------- Billing evidence (schema 1) ----------
 # 独立计费证据：只读源头分量、字段是否实际存在及口径异常原因，绝不改写既有
@@ -341,6 +343,43 @@ class CollectionIncompleteError(Exception):
                               and type(mismatch_kind) is str
                               and mismatch_kind in self.MISMATCH_KINDS else None)
         super().__init__(f"Collection incomplete ({source}: {reason})")
+
+
+class CorruptSourceFile(Exception):
+    """Whole source file is structurally unusable, not a transient read error.
+
+    Parsers raise this for a file that cannot be decoded at all or has a foreign
+    schema.  read_all reports it as a parse_error skip and never caches an empty
+    result.  The message never includes a path or file content.
+    """
+
+    def __init__(self, source):
+        self.source = source if isinstance(source, str) else "unknown"
+        super().__init__("corrupt source file")
+
+
+# SQLite reports transient WAL/lock/availability failures as sqlite3.Error too.
+# Only structural damage or a foreign schema is a corrupt file; everything else
+# stays a retryable read failure.
+_SQLITE_TRANSIENT_MARKERS = (
+    "locked", "busy", "disk i/o error", "unable to open database file",
+    "cannot open", "readonly", "read-only", "out of memory",
+)
+_SQLITE_CORRUPT_MARKERS = (
+    "file is not a database", "not a database", "file is encrypted",
+    "no such table", "no such column", "malformed database schema",
+    "database disk image is malformed",
+)
+
+
+def _raise_sqlite_failure(exc, source):
+    """Classify a SQLite failure without exposing its message."""
+    text = str(exc).lower()
+    if any(marker in text for marker in _SQLITE_TRANSIENT_MARKERS):
+        raise OSError("source temporarily unavailable") from None
+    if any(marker in text for marker in _SQLITE_CORRUPT_MARKERS):
+        raise CorruptSourceFile(source) from None
+    raise OSError("source read failed") from None
 
 
 def _encoded_retained_bytes(value):
@@ -1104,45 +1143,72 @@ def gemini_files():
     return glob.glob(os.path.join(config.GEMINI_TMP, "*", "chats", "session-*.json"))
 
 
-def gemini_parse(path):
-    out = []
+def gemini_parse_state(path):
+    """Return (records, partial) for one Gemini JSON file.
+
+    A file that is not JSON or has the wrong top-level shape is corrupt; one
+    malformed message only increments ``partial`` and keeps its siblings.
+    """
+    out, partial = [], 0
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             data = json.load(fh)
-    except (json.JSONDecodeError, OSError):
-        return out
+    except OSError:
+        raise
+    except (json.JSONDecodeError, RecursionError):
+        raise CorruptSourceFile("gemini") from None
     if not isinstance(data, dict):
-        return out
+        raise CorruptSourceFile("gemini")
+    messages = data.get("messages")
+    if messages is None:
+        messages = []
+    if not isinstance(messages, list):
+        raise CorruptSourceFile("gemini")
     session = data.get("sessionId")
-    for m in data.get("messages") or []:
-        if not isinstance(m, dict) or m.get("type") != "gemini":
+    for m in messages:
+        if not isinstance(m, dict):
+            partial += 1
             continue
-        tk = m.get("tokens") or {}
-        ts = m.get("timestamp")
-        date = _to_local_date(ts)
-        if not date:
+        if m.get("type") != "gemini":
             continue
-        inp = tk.get("input", 0)
-        cached = tk.get("cached", 0)
-        outp = tk.get("output", 0)
-        thoughts = tk.get("thoughts", 0)
-        tool = tk.get("tool", 0)
-        record = {
-            "source": "gemini",
-            "ts": ts,
-            "date": date,
-            "model": m.get("model") or "gemini-unknown",
-            "input": inp,           # input 不含 cached
-            "output": outp + thoughts,
-            "cache_read": cached,
-            "cache_write": 0,
-            "total": tk.get("total") or (inp + outp + cached + thoughts + tool),
-            "session": session,
-            "billing": _gemini_billing(tk),
-        }
-        _sanitize_token_record(record, "gemini")
+        try:
+            tk = m.get("tokens") or {}
+            if not isinstance(tk, dict):
+                partial += 1
+                continue
+            ts = m.get("timestamp")
+            date = _to_local_date(ts)
+            if not date:
+                partial += 1
+                continue
+            inp = tk.get("input", 0)
+            cached = tk.get("cached", 0)
+            outp = tk.get("output", 0)
+            thoughts = tk.get("thoughts", 0)
+            tool = tk.get("tool", 0)
+            record = {
+                "source": "gemini",
+                "ts": ts,
+                "date": date,
+                "model": m.get("model") or "gemini-unknown",
+                "input": inp,           # input 不含 cached
+                "output": outp + thoughts,
+                "cache_read": cached,
+                "cache_write": 0,
+                "total": tk.get("total") or (inp + outp + cached + thoughts + tool),
+                "session": session,
+                "billing": _gemini_billing(tk),
+            }
+            _sanitize_token_record(record, "gemini")
+        except (AttributeError, OverflowError, TypeError, ValueError):
+            partial += 1
+            continue
         out.append(record)
-    return out
+    return out, partial
+
+
+def gemini_parse(path):
+    return gemini_parse_state(path)[0]
 
 
 # ---------- OpenCode ----------
@@ -1192,51 +1258,73 @@ def _opencode_tokens(raw):
     return flat
 
 
-def opencode_parse(path):
-    out = []
+_OPENCODE_BAD_JSON_QUERY = """
+SELECT COUNT(*) FROM session_message
+WHERE type = 'assistant' AND NOT json_valid(data)
+"""
+
+
+def opencode_parse_state(path):
+    """Return (records, partial) for the OpenCode SQLite database.
+
+    A non-SQLite file or a foreign schema is corrupt; locks and WAL/busy errors
+    stay retryable read failures.  Assistant rows with invalid JSON or unusable
+    timestamps are counted as partial instead of silently disappearing.
+    """
+    out, partial = [], 0
     try:
         con = _opencode_connect(path)
-    except sqlite3.Error:
-        return out
+    except sqlite3.Error as exc:
+        _raise_sqlite_failure(exc, "opencode")
     try:
         rows = con.execute(_OPENCODE_QUERY).fetchall()
-    except sqlite3.Error:
-        return out
+        bad_json = con.execute(_OPENCODE_BAD_JSON_QUERY).fetchone()
+    except sqlite3.Error as exc:
+        _raise_sqlite_failure(exc, "opencode")
     finally:
         con.close()
+    if bad_json and type(bad_json[0]) is int and bad_json[0] > 0:
+        partial += bad_json[0]
     for _message_id, session, directory, raw_tokens, model, _provider, created in rows:
         tokens = _opencode_tokens(raw_tokens)
         if tokens is None or type(created) is not int or created <= 0:
+            partial += 1
             continue
         try:
             ts = datetime.fromtimestamp(created / 1000, tz=timezone.utc).strftime(
                 "%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-        except (OverflowError, OSError, ValueError):
+            date = _to_local_date(ts)
+            if not date:
+                partial += 1
+                continue
+            billing = _opencode_billing(tokens)
+            values = [_safe_tokens(tokens.get(key, 0)) for key in
+                      ("input", "output", "reasoning", "cache_read", "cache_write")]
+            if any(value is None for value in values):
+                inp = outp = reasoning = cache_read = cache_write = 0
+            else:
+                inp, outp, reasoning, cache_read, cache_write = values
+            record = {
+                "source": "opencode", "ts": ts, "date": date,
+                "model": (model if isinstance(model, str) and model else "opencode-unknown"),
+                "input": inp,
+                "output": outp + reasoning,  # 与 Gemini 一致：生成侧合计，thoughts 另在 billing 单列
+                "cache_read": cache_read, "cache_write": cache_write,
+                "total": inp + outp + reasoning + cache_read + cache_write,
+                "session": session if isinstance(session, str) else None,
+                "cwd": directory if isinstance(directory, str) else None,
+                "billing": billing,
+            }
+            _sanitize_token_record(record, "opencode")
+        except (AttributeError, OverflowError, OSError, TypeError, ValueError):
+            partial += 1
             continue
-        date = _to_local_date(ts)
-        if not date:
-            continue
-        billing = _opencode_billing(tokens)
-        values = [_safe_tokens(tokens.get(key, 0)) for key in
-                  ("input", "output", "reasoning", "cache_read", "cache_write")]
-        if any(value is None for value in values):
-            inp = outp = reasoning = cache_read = cache_write = 0
-        else:
-            inp, outp, reasoning, cache_read, cache_write = values
-        record = {
-            "source": "opencode", "ts": ts, "date": date,
-            "model": (model if isinstance(model, str) and model else "opencode-unknown"),
-            "input": inp,
-            "output": outp + reasoning,  # 与 Gemini 一致：生成侧合计，thoughts 另在 billing 单列
-            "cache_read": cache_read, "cache_write": cache_write,
-            "total": inp + outp + reasoning + cache_read + cache_write,
-            "session": session if isinstance(session, str) else None,
-            "cwd": directory if isinstance(directory, str) else None,
-            "billing": billing,
-        }
-        _sanitize_token_record(record, "opencode")
         out.append(record)
-    return out
+    return out, partial
+
+
+def opencode_parse(path):
+    return opencode_parse_state(path)[0]
 
 
 def _opencode_wal_key(path):
@@ -1254,10 +1342,15 @@ def antigravity_files():
     return antigravity_usage.discover()
 
 
-def antigravity_parse(path):
+def antigravity_parse_state(path):
     from . import antigravity_usage
-    return [_sanitize_token_record(record, "antigravity")
-            for record in antigravity_usage.parse(path)]
+    records, partial = antigravity_usage.parse_state(path)
+    return ([_sanitize_token_record(record, "antigravity") for record in records],
+            partial)
+
+
+def antigravity_parse(path):
+    return antigravity_parse_state(path)[0]
 
 
 # ---------- Codex ----------
@@ -1823,7 +1916,7 @@ class _MemoRound:
             self.memo.discard(key)
 
 
-_SKIP_REASONS = ("read_failed", "parse_error")
+_SKIP_REASONS = ("read_failed", "parse_error", "partial_records")
 
 
 def _note_skip(collection_report, source, reason):
@@ -1833,6 +1926,15 @@ def _note_skip(collection_report, source, reason):
     skipped = collection_report.setdefault("skipped", {})
     counts = skipped.setdefault(source, {})
     counts[reason] = counts.get(reason, 0) + 1
+
+
+def _note_partial(collection_report, source, count):
+    """Accumulate per-source partially damaged record counts (no paths)."""
+    if collection_report is None or type(count) is not int or count <= 0:
+        return
+    _note_skip(collection_report, source, "partial_records")
+    skipped = collection_report["skipped"]
+    skipped[source]["partial_records"] += count - 1
 
 
 def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
@@ -1890,6 +1992,7 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                 active_memo_key = (src, path)
                 notify("discovered", src)
                 skipped = False
+                partial = 0
                 try:
                     st = os.stat(path)
                 except OSError:
@@ -1939,6 +2042,9 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                     if warm:
                         recs = cached["records"]
                         dedup = cached.get("dedup")
+                        partial = cached.get("partial", 0)
+                        if type(partial) is not int or partial < 0:
+                            partial = 0
                         if src == "codex":
                             try:
                                 with _SafeReader(path, source=src) as reader:
@@ -1985,6 +2091,12 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                             recs, dedup, opened, stable = codex_usage.parse_state(path)
                             stable = stable and (_stat_version_cross_api(opened)
                                                  == _stat_version_cross_api(st))
+                        elif src == "gemini" and parse_fn is gemini_parse:
+                            recs, partial = gemini_parse_state(path)
+                        elif src == "opencode" and parse_fn is opencode_parse:
+                            recs, partial = opencode_parse_state(path)
+                        elif src == "antigravity" and parse_fn is antigravity_parse:
+                            recs, partial = antigravity_parse_state(path)
                         else:
                             recs = parse_fn(path)
                             if src == "claude":
@@ -1997,6 +2109,16 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                             raise CollectionIncompleteError(src, "read_failed") from None
                         _note_skip(collection_report, src, "read_failed")
                         recs = []
+                        partial = 0
+                        skipped = True
+                        parse_failed = True
+                    except CorruptSourceFile:
+                        if src in ("claude", "codex"):
+                            raise CollectionIncompleteError(src, "read_failed") from None
+                        # The whole file is unusable: parse_error skip, no cache.
+                        _note_skip(collection_report, src, "parse_error")
+                        recs = []
+                        partial = 0
                         skipped = True
                         parse_failed = True
                     except Exception:
@@ -2004,11 +2126,14 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                             raise CollectionIncompleteError(src, "read_failed") from None
                         _note_skip(collection_report, src, "parse_error")
                         recs = []
+                        partial = 0
                         skipped = True
                         parse_failed = True
                     # A failed parse is not an empty file: retry it next read.
                     if stable and not parse_failed:
                         entry = {"key": key, "records": recs}
+                        if partial:
+                            entry["partial"] = partial
                         if src in ("claude", "codex"):
                             entry.update(identity=list(_stat_identity(st)),
                                          version=list(_stat_version(st)), dedup=dedup)
@@ -2041,6 +2166,7 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                     # containers escape into the local disk-cache transaction.
                     cache[ckey] = cached
                     changed = True
+                _note_partial(collection_report, src, partial)
                 notify("skipped" if skipped else
                        "processed_cached" if warm else "processed_parsed", src)
                 active_memo_key = None

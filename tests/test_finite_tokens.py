@@ -103,8 +103,8 @@ class FiniteTokenTests(unittest.TestCase):
         for value in INVALID:
             with self.subTest(value=value):
                 record = dict(raw, input=value, total=value)
-                with mock.patch("tokens_cli.antigravity_usage.parse",
-                                return_value=[record]):
+                with mock.patch("tokens_cli.antigravity_usage.parse_state",
+                                return_value=([record], 0)):
                     (parsed,) = readers.antigravity_parse("synthetic.db")
                 self.assertTrue(_finite(parsed))
 

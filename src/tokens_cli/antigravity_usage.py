@@ -83,7 +83,10 @@ def _connect_ro(path: str) -> sqlite3.Connection:
     try:
         return sqlite3.connect(uri, uri=True, timeout=2)
     except sqlite3.Error:
-        return sqlite3.connect(uri + "&immutable=1", uri=True, timeout=2)
+        try:
+            return sqlite3.connect(uri + "&immutable=1", uri=True, timeout=2)
+        except sqlite3.Error as exc:
+            readers._raise_sqlite_failure(exc, "antigravity")
 
 
 def _decode_utf8(raw: bytes) -> str | None:
@@ -94,9 +97,14 @@ def _decode_utf8(raw: bytes) -> str | None:
     return text if text else None
 
 
-def _extract_step_timestamps(con: sqlite3.Connection) -> dict[int, int]:
-    """Read only (idx, metadata) from steps and map idx -> Unix seconds (metadata.1.1)."""
+def _extract_step_timestamps(con: sqlite3.Connection) -> tuple[dict[int, int], int]:
+    """Read only (idx, metadata) from steps and map idx -> Unix seconds (metadata.1.1).
+
+    Returns (step_ts, partial): a metadata blob that fails to decode as protobuf
+    is counted as a partially damaged record instead of disappearing silently.
+    """
     step_ts: dict[int, int] = {}
+    partial = 0
     for idx, meta in con.execute("SELECT idx, metadata FROM steps"):
         if type(idx) is not int or not isinstance(meta, (bytes, bytearray)):
             continue
@@ -109,8 +117,8 @@ def _extract_step_timestamps(con: sqlite3.Connection) -> dict[int, int]:
                             step_ts[idx] = val2
                             break
         except _BadProtobuf:
-            continue
-    return step_ts
+            partial += 1
+    return step_ts, partial
 
 
 def _parse_usage(raw_usage: bytes) -> tuple[int, int, int] | None:
@@ -218,37 +226,45 @@ def discover() -> list[str]:
     return paths
 
 
-def parse(path: str) -> list[dict]:
-    """Parse usage records from a single Antigravity conversation SQLite database."""
+def parse_state(path: str) -> tuple[list[dict], int]:
+    """Parse one conversation DB.
+
+    Returns (records, partial).  A database that is not SQLite or lacks the
+    expected schema raises CorruptSourceFile (the whole file is unusable);
+    locks and WAL/availability errors stay retryable OSError read failures.
+    Individual rows that fail to decode as protobuf count as ``partial``.
+    """
     global MISSING_TIME_COUNT
 
     if os.path.basename(path) == "conversation_summaries.db":
-        return []
+        return [], 0
 
     out: list[dict] = []
+    partial = 0
     seen_requests: set[str] = set()
 
-    try:
-        con = _connect_ro(path)
-    except sqlite3.Error:
-        return out
+    con = _connect_ro(path)
 
     try:
-        step_ts = _extract_step_timestamps(con)
+        step_ts, bad_steps = _extract_step_timestamps(con)
         rows = con.execute("SELECT data FROM gen_metadata").fetchall()
-    except sqlite3.Error:
-        return out
+    except sqlite3.Error as exc:
+        readers._raise_sqlite_failure(exc, "antigravity")
     finally:
         con.close()
+    partial += bad_steps
 
     for (raw_data,) in rows:
         if not isinstance(raw_data, (bytes, bytearray)):
+            partial += 1
             continue
         try:
             parsed = _parse_gen_row(bytes(raw_data))
         except _BadProtobuf:
+            partial += 1
             continue
         if parsed is None:
+            partial += 1
             continue
 
         inp, outp, cache_read = parsed["usage"]
@@ -298,5 +314,10 @@ def parse(path: str) -> list[dict]:
             "session": parsed["cascade_id"],
             "billing": billing,
         })
+    return out, partial
+
+
+def parse(path: str) -> list[dict]:
+    return parse_state(path)[0]
 
     return out
