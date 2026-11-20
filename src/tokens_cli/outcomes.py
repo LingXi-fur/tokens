@@ -36,6 +36,7 @@ BLAME_CACHE_MAX_ENTRIES = 20000
 BLAME_CACHE_MAX_BYTES = 8 * 1024 * 1024
 # Cold budget: at most this many commits get blamed per build; the rest are
 # reported as blame_skipped and flip status to partial.
+NO_CWD_LABEL = "(no working directory)"
 BLAME_COMMIT_BUDGET = 400
 # subprocess-bound work; a small pool is plenty and stays friendly to laptops.
 _BLAME_WORKERS = min(8, (os.cpu_count() or 2))
@@ -153,8 +154,25 @@ def _git(args, cwd, timeout=GIT_TIMEOUT_SECONDS):
     return completed.stdout.decode("utf-8", errors="replace")
 
 
+def _worktree_repository(gitdir):
+    """Repository root for a worktree gitdir path, or None.
+
+    A worktree's .git file points at ``<repo>/.git/worktrees/<name>``;
+    stripping that trailing segment gives the shared git directory, so every
+    worktree of one repository resolves to the same root and its commits are
+    counted exactly once for all sessions inside that repository.
+    """
+    normalized = os.path.normpath(gitdir)
+    parts = normalized.split(os.sep)
+    if len(parts) >= 2 and parts[-2] == "worktrees":
+        common = os.sep.join(parts[:-2])
+        if os.path.isdir(os.path.join(common, "refs")):
+            return os.path.dirname(common)
+    return None
+
+
 def _repo_root(cwd):
-    """Repository root above cwd, resolving worktree .git files; None if bare."""
+    """Repository root above cwd; worktrees merge into their main root."""
     if cwd in _REPO_CACHE:
         return _REPO_CACHE[cwd]
     root = None
@@ -166,10 +184,11 @@ def _repo_root(cwd):
                 with open(marker, "r", encoding="utf-8", errors="replace") as handle:
                     line = handle.readline().strip()
                 if line.startswith("gitdir:"):
-                    target = os.path.abspath(
+                    gitdir = os.path.abspath(
                         os.path.join(probe, line.split(":", 1)[1].strip()))
-                    if os.path.isdir(os.path.join(target, "refs")):
-                        root = probe
+                    root = _worktree_repository(gitdir)
+                    if root is None and os.path.isdir(os.path.join(gitdir, "refs")):
+                        root = probe  # a standalone .git pointer, not a worktree
             except OSError:
                 root = None
             break
@@ -180,6 +199,10 @@ def _repo_root(cwd):
         if parent == probe:
             break
         probe = parent
+    # Normalize through realpath so the main checkout and its worktrees (git
+    # stores resolved paths in their .git pointers) land on one identical key.
+    if root is not None:
+        root = os.path.realpath(root)
     _REPO_CACHE[cwd] = root
     return root
 
@@ -800,8 +823,16 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
     def _project_label(window):
         cwd = window.get("cwd")
         if not cwd:
-            return "no_cwd"
-        return aliases.get("project", cwd) if aliases is not None else cwd
+            return NO_CWD_LABEL
+        if aliases is not None:
+            return aliases.get("project", cwd)
+        repo = window.get("repo")
+        if repo:
+            # Sessions inside a worktree roll up to their repository; the
+            # worktree itself is an implementation detail of one project and
+            # never becomes its own project row.
+            return repo
+        return cwd
 
     for sid, window in sessions.items():
         label = _project_label(window)
@@ -993,6 +1024,7 @@ _STATUS_TEXT = {
         "yes": "是",
         "no": "否",
         "no_repo": "非 git 目录",
+        "no_cwd_label": "(无工作目录)",
         "pending": "另有 {count} 行新增不满 7 天，留存待定",
         "empty": "该范围内没有可统计的会话。",
     },
@@ -1023,6 +1055,7 @@ _STATUS_TEXT = {
         "yes": "yes",
         "no": "no",
         "no_repo": "not a git repo",
+        "no_cwd_label": "(no working directory)",
         "pending": "{count} added lines are under 7 days old; survival pending",
         "empty": "No measurable sessions in this range.",
     },
@@ -1078,7 +1111,11 @@ def print_report(report, lang="zh"):
           f"{text['project_surviving']:>10} {text['project_cost']:>12} "
           f"{text['project_tax']:>10}")
     for row in report["projects"][:15]:
-        name = _clip_path(row["project"], 38)
+        name = row["project"]
+        if name == NO_CWD_LABEL:
+            name = text["no_cwd_label"]
+        else:
+            name = _clip_path(name, 38)
         print(f"{name:38} {(text['yes'] if row['repo'] else text['no']):>4} "
               f"{row['commits']:>8} {row['surviving']:>10,} "
               f"{_fmt_money(row['cost']):>12} {_fmt_money(row['rework_tax']):>10}")
