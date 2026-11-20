@@ -8,7 +8,7 @@ import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from . import aggregate, config, outcomes, readers, sources as source_registry
+from . import aggregate, config, readers, sources as source_registry
 
 
 LIGHT_PALETTE = [
@@ -884,23 +884,6 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "week": _pack_periods(week_periods),
         "month": _pack_periods(month_periods),
         "cost": cost,
-        # 投入产出（只读 git）：金额用看板费用账本同一份官方参考价；
-        # 结构由 live_snapshot 白名单校验，#32 的"今日简报"读这里。
-        # 与其余块同样先按报告范围过滤，范围外记录不参与窗口与会话统计。
-        "outcomes": outcomes.build_outcomes(
-            tuple(record for record in records
-                  if (not since or record["date"] >= since)
-                  and (not until or record["date"] <= until)),
-            since=since,
-            until=until,
-            anonymize=anonymize,
-            aliases=aliases,
-            now=generated_at,
-            # 与费用账本同一套模型归并（含 overflow 折叠），匿名报告不得
-            # 通过 outcomes 泄漏已折叠的原始模型名。
-            model_of=lambda record: _canonical_model(record, model_registry),
-            records_key=outcomes.records_fingerprint(since, until),
-        ),
     }
     # 恒形状：day 行总带 request_models（缺省 {}），week/month 不带。
     day_requests_packed = {
