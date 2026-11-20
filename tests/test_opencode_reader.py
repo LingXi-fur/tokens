@@ -121,13 +121,18 @@ class OpenCodeReaderTests(unittest.TestCase):
         with mock.patch.object(readers.config, "TZ", ZoneInfo("UTC")):
             self.assertEqual("2026-11-10", readers.opencode_parse(self.db)[0]["date"])
 
-    def test_missing_or_foreign_database_yields_nothing(self):
-        self.assertEqual([], readers.opencode_parse(os.path.join(self.tmp.name, "absent.db")))
+    def test_absent_database_is_a_retryable_read_failure(self):
+        with self.assertRaises(OSError):
+            readers.opencode_parse(os.path.join(self.tmp.name, "absent.db"))
+
+    def test_foreign_or_non_sqlite_database_is_corrupt(self):
         Path(self.db).write_text("not sqlite", encoding="utf-8")
-        self.assertEqual([], readers.opencode_parse(self.db))
+        with self.assertRaises(readers.CorruptSourceFile):
+            readers.opencode_parse(self.db)
         os.remove(self.db)
         sqlite3.connect(self.db).close()  # valid sqlite, no OpenCode tables
-        self.assertEqual([], readers.opencode_parse(self.db))
+        with self.assertRaises(readers.CorruptSourceFile):
+            readers.opencode_parse(self.db)
 
     def test_reader_never_writes_to_the_database(self):
         build_db(self.db, [("assistant", assistant(TOKENS))]).close()

@@ -96,15 +96,7 @@ class ParseSkipVisibilityTests(unittest.TestCase):
         root = self.root / "gemini"
         path = root / "p1" / "chats" / "session-1.json"
         path.parent.mkdir(parents=True)
-        bad = json.dumps({
-            "sessionId": "synthetic-session",
-            "messages": [{
-                "type": "gemini",
-                "timestamp": "2026-11-01T00:00:00Z",
-                "model": "synthetic-model",
-                "tokens": [1],
-            }],
-        }).encode()
+        bad = b'{"sessionId": "synthetic-session", "messages": [{"type": "gemini"'
         good = json.dumps({
             "sessionId": "synthetic-session",
             "messages": [{
@@ -172,15 +164,7 @@ class ParseSkipVisibilityTests(unittest.TestCase):
                 "tokens": {"input": 3, "output": 4, "cached": 0, "total": 7},
             }],
         }), encoding="utf-8")
-        bad.write_text(json.dumps({
-            "sessionId": "synthetic-session",
-            "messages": [{
-                "type": "gemini",
-                "timestamp": "2026-11-01T00:00:00Z",
-                "model": "synthetic-model",
-                "tokens": [1],
-            }],
-        }), encoding="utf-8")
+        bad.write_bytes(b'{"sessionId": "synthetic-session", "messages": [{"type": "gemini"')
         with mock.patch.object(config, "GEMINI_TMP", str(root)):
             report = {}
             records = readers.read_all(sources=["gemini"], use_cache=True,
@@ -239,15 +223,7 @@ class ParseSkipVisibilityTests(unittest.TestCase):
         root = self.root / "gemini"
         path = root / "p1" / "chats" / "session-1.json"
         path.parent.mkdir(parents=True)
-        path.write_text(json.dumps({
-            "sessionId": "synthetic-session",
-            "messages": [{
-                "type": "gemini",
-                "timestamp": "2026-11-01T00:00:00Z",
-                "model": "synthetic-model",
-                "tokens": [1],
-            }],
-        }), encoding="utf-8")
+        path.write_bytes(b'{"sessionId": "synthetic-session", "messages": [{"type": "gemini"')
         out = self.root / "out"
         with mock.patch.object(config, "GEMINI_TMP", str(root)), \
                 mock.patch.object(config, "OUT_DIR", str(out)), \

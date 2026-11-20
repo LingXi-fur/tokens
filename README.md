@@ -144,7 +144,7 @@ cd /ABSOLUTE/PATH/TO/APPROVED/CANDIDATE/SOURCE
 PYTHONPATH=src python3 -m tokens_cli demo --output /tmp/tokens-030-source-demo --open
 ```
 
-That explicit source-run path is separate from the checklist's wheel verification, which clears `PYTHONPATH` and checks that imports originate in the installed venv. The monthly-budget specification (`docs/monthly-budget-design.md` in this local checkout) is design-only in this round; it does not add a budget feature or create browser budget storage.
+That explicit source-run path is separate from the checklist's wheel verification, which clears `PYTHONPATH` and checks that imports originate in the installed venv. The monthly-budget specification (`docs/monthly-budget-design.md` in this local checkout) documents the local monthly-budget tracking in the Cost Ledger (stored in the browser under `tk-budget-v1` only when you save a budget).
 
 ## Choose an output
 
@@ -185,7 +185,7 @@ The **Cost ledger** estimates model costs from independently recorded billing co
 - One currency is used at a time (CNY or USD). Changing currency requires clearing and re-entering rates; no exchange rate is assumed.
 - Price settings stay in this browser under the existing `tk-cost-v1` local-storage key, with no provider calls or API keys and no new storage key; readers and usage statistics are unchanged. Manually entered private prices are not embedded in the report. Browser storage for a live page and an offline file may be separate; if storage fails, settings remain available for the current page only.
 
-Older offline snapshots without billing data must be regenerated to use the ledger. The current record cache file is `records-v8.json`; its internal schema version (currently 20) covers Codex event identities, corrected output accounting, accepted zero-usage and bounded context-estimate updates, the mixed-format union accounting contract, cumulative recomputation treated as a new ledger baseline, unconditional first-sight evidence for repeated cumulative anchors (including across model changes, so consumption after a model-switch resume is attributed to the first-seen model), and Claude records keeping the original request model name alongside the router-resolved backend name as an informational field that never changes counting, dedup, or cost attribution. Older cache files are retained.
+Older offline snapshots without billing data must be regenerated to use the ledger. The current record cache file is `records-v8.json`; its internal schema version (currently 22) covers Codex event identities, corrected output accounting, accepted zero-usage and bounded context-estimate updates, the mixed-format union accounting contract, cumulative recomputation treated as a new ledger baseline, unconditional first-sight evidence for repeated cumulative anchors (including across model changes, so consumption after a model-switch resume is attributed to the first-seen model), Claude records keeping the original request model name alongside the router-resolved backend name as an informational field that never changes counting, dedup, or cost attribution, and direct Anthropic requests keeping their logged model identity instead of being retroactively rewritten by current CCR router rules. Older cache files are retained.
 
 ## Supported sources
 
@@ -224,6 +224,7 @@ Collection stops without publishing partial totals; any last successful snapshot
   --source gemini \
   --source codex \
   --source opencode \
+  --source antigravity \
   --open
 ```
 
@@ -244,6 +245,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]  # after
 |---|---|
 | `--source antigravity\|claude\|codex\|gemini\|opencode\|auto` | Select a source (default `auto` enables every readable source); repeat to combine sources. |
 | `--since YYYY-MM-DD` / `--until YYYY-MM-DD` | Limit the inclusive report range. |
+| `--days N` / `--weeks N` / `--months N` | Number of periods shown in `day`, `week`, or `month` terminal mode. |
 | `--timezone AREA/CITY` | Override the detected system timezone. |
 | `--lang en\|zh` | Terminal and static HTML language; default follows system locale (`TOKENS_LANG` overrides it). |
 | `--output DIR` | Choose the report directory; default is `./out`. |
@@ -256,6 +258,7 @@ tokens [day|week|month|all|dashboard|demo|serve|doctor|quota] [options]  # after
 | `--port PORT` | Set loopback port; default 8765, or 0 for an available port. |
 | `--open` | Open generated file or local URL in the default browser. |
 | `--no-cache` | Re-read all selected log files. |
+| `--version` | Show the program version number and exit. |
 
 See the [complete CLI reference](https://lingxi-fur.github.io/tokens/cli.html).
 
@@ -289,8 +292,8 @@ Read the full [data and privacy guide](https://lingxi-fur.github.io/tokens/data-
 - Public setup currently starts from a source checkout; registry install commands are intentionally not advertised until a verified release exists. The 0.3.0 local candidate does not change this: it is offline and local-only, and no verified public 0.3.0 package-index release is claimed.
 - Without `--source` (`auto`), every readable registered source across Claude Code, Gemini CLI, Codex, OpenCode, and Antigravity is enabled by path/permission checks without opening logs; explicit `--source` filters restrict discovery to the named sources.
 - Claude and Codex JSONL files are no longer skipped merely for exceeding 64 MiB. Long physical lines, including those over 4 MiB, use bounded streaming JSON validation and usage projection. Depth, token, retained-data, and numeric limits still apply; this is not an unlimited-memory or completeness guarantee.
-- An incomplete collection does not publish a partial report as a successful result. Live scans keep the last successful snapshot, or show no snapshot if none exists. Record cache v8 rebuilds incompatible older entries without deleting old cache files.
-- Windows cache setup handles missing `os.fchmod`. Safe-read stat compatibility is still under synthetic diagnosis: a closed-writer/read-only-open probe captures the actual comparison snapshots without relaxing production checks. Diagnostic output is not a compatibility fix. Firefox/WebKit checks also remain unresolved; passing local backend tests is not evidence that the full cross-platform CI is green.
+- An incomplete Claude or Codex collection does not publish a partial report as a successful result; live scans keep the last successful snapshot, or show no snapshot if none exists. When a Gemini, OpenCode, or Antigravity file cannot be read or parsed, Data Health shows the skipped file count and reason per source and retries the file on the next run instead of caching the failure. Record cache v8 rebuilds incompatible older entries without deleting old cache files.
+- Windows cache setup handles missing `os.fchmod`, cross-API safe-read checks compare creation timestamps (birth time) where supported while macOS and Linux keep full `ctime` checks, and Codex `.zst` archives stream through a writer thread on Windows. Cross-platform CI (Windows, macOS, Linux) and browser runtime suites (Chromium, Firefox, WebKit) pass.
 - Source formats expose different fields, so some project, session, or context views can be unavailable.
 - Terminal and static reports support English and Chinese via `--lang en|zh`, defaulting to your system locale; the interactive dashboard has its own in-page language switch.
 - An offline dashboard is a generation-time snapshot. Use `./run serve --open` for ongoing updates.

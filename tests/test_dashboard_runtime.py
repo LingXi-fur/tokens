@@ -580,6 +580,19 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertIn("1 file failed to parse", text)
             self.assertIn("2 files could not be read", text)
             self.assertIn("Skipped files", text)
+            page.evaluate("""() => {
+              DATA.provenance.skipped={gemini:{partial_records:3}};
+              renderProvenance();
+            }""")
+            text = page.locator("#prov-sources").inner_text()
+            self.assertIn("Gemini", text)
+            self.assertIn("3 records could not be parsed and were ignored", text)
+            self.assertIn("Unparsed records", text)
+            page.evaluate("applyLanguage('zh',false)")
+            text = page.locator("#prov-sources").inner_text()
+            self.assertIn("Gemini", text)
+            self.assertIn("3 条记录无法解析，已忽略", text)
+            self.assertIn("无法解析的记录", text)
             page.evaluate("DATA.provenance.skipped={};renderProvenance()")
             self.assertNotIn("Skipped files", page.locator("#prov-sources").inner_text())
             self.assertNotIn("跳过文件", page.locator("#prov-sources").inner_text())
@@ -4643,6 +4656,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                 sources=["claude", "codex"],
             )
         payload["generated"] = "2026-11-18T14:00:00"
+        payload["calendar_day"] = "2026-11-18"
         payload["range"]["until"] = None
         payload["provenance"]["last_day"] = "2026-11-18"
         payload["provenance"]["replay_retained"] = 6
