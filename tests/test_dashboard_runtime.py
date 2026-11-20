@@ -4656,6 +4656,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                 sources=["claude", "codex"],
             )
         payload["generated"] = "2026-11-18T14:00:00"
+        payload["calendar_day"] = "2026-11-18"
         payload["range"]["until"] = None
         payload["provenance"]["last_day"] = "2026-11-18"
         payload["provenance"]["replay_retained"] = 6
