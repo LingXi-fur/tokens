@@ -13,6 +13,7 @@ any git failure degrades to a status instead of failing the report.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import fnmatch
@@ -36,6 +37,8 @@ BLAME_CACHE_MAX_BYTES = 8 * 1024 * 1024
 # Cold budget: at most this many commits get blamed per build; the rest are
 # reported as blame_skipped and flip status to partial.
 BLAME_COMMIT_BUDGET = 400
+# subprocess-bound work; a small pool is plenty and stays friendly to laptops.
+_BLAME_WORKERS = min(8, (os.cpu_count() or 2))
 # Range fallback when the report range is unbounded (keeps git log bounded).
 
 # Default generated/vendored path exclusions; append via
@@ -212,9 +215,12 @@ def _collect_commits(repo, since_epoch, until_epoch, email, name, extras, reason
     The newest commit in the output is the repository HEAD; callers reuse it
     instead of paying for an extra rev-parse per repository.
     """
+    # Bare epoch numbers are not a git date format; ISO-8601 with the
+    # reporting-timezone offset is what git actually parses.
     text = _git(
-        ["log", "--no-merges", "--numstat", f"--since={int(since_epoch)}",
-         f"--until={int(until_epoch)}", f"--format={_LOG_FORMAT}", "HEAD"],
+        ["log", "--no-merges", "--numstat",
+         f"--since={_iso(since_epoch)}", f"--until={_iso(until_epoch)}",
+         f"--format={_LOG_FORMAT}", "HEAD"],
         cwd=repo,
     )
     excludes = DEFAULT_EXCLUDES + _extra_excludes()
@@ -585,7 +591,8 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
     # The window is derived from the data itself unless the caller pins a
     # range: two builds over the same records must produce the same block
     # (and the same snapshot identity) even on different days.
-    range_days = _resolve_range(records, since, until)
+    range_days = _resolve_range(records, since, until, generated)
+    records = _in_range_records(records, range_days[0], range_days[1])
     since_epoch = _day_start(range_days[0]) if range_days[0] else 0.0
     until_epoch = _day_end(range_days[1]) if range_days[1] else 0.0
 
@@ -595,7 +602,8 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
         "status": "ok",
         "reasons": {},
         "totals": _empty_totals(),
-        "days": [], "projects": [], "models": [], "no_commit_sessions": [],
+        "days": [], "projects": [], "models": [],
+        "no_commit_sessions": [], "no_repo_sessions": [],
     }
     cache = _load_outcomes_cache(reasons)
     sessions = None
@@ -729,39 +737,46 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
             for path in commit["paths"]:
                 wanted.setdefault(path, []).append(commit["sha"])
 
-        for path, shas in wanted.items():
-            counts = dict.fromkeys(shas, 0)
-            incomplete = False
+        # Blame runs one subprocess per file; files are independent, so a
+        # small thread pool keeps a cold start inside its budget without
+        # changing any result.
+        def _blame_one(path):
             try:
-                text = _git(
+                return path, _git(
                     ["blame", "--line-porcelain", head, "--", path],
                     cwd=repo, timeout=BLAME_TIMEOUT_SECONDS,
                 )
             except (OSError, RuntimeError, subprocess.TimeoutExpired):
-                incomplete = True
-            if not incomplete:
-                for line in text.split("\n"):
-                    if line.startswith("\t"):
+                return path, None
+
+        with ThreadPoolExecutor(max_workers=_BLAME_WORKERS) as pool:
+            for path, text in pool.map(_blame_one, wanted):
+                shas = wanted[path]
+                counts = dict.fromkeys(shas, 0)
+                incomplete = text is None
+                if not incomplete:
+                    for line in text.split("\n"):
+                        if line.startswith("\t"):
+                            continue
+                        origin = line.split(" ", 1)[0].lstrip("^")
+                        if origin in counts:
+                            counts[origin] += 1
+                for sha in shas:
+                    commit = by_sha[sha]
+                    if incomplete:
+                        # One unreadable file makes the commit's survival
+                        # only partially known; keep it unknown, not guessed.
+                        reasons["blame_timeout"] += 1
+                        commit["blame_incomplete"] = True
+                        commit["surviving"] = None
                         continue
-                    origin = line.split(" ", 1)[0].lstrip("^")
-                    if origin in counts:
-                        counts[origin] += 1
-            for sha in shas:
-                commit = by_sha[sha]
-                if incomplete:
-                    # One unreadable file makes the commit's survival only
-                    # partially known; keep it unknown instead of guessing.
-                    reasons["blame_timeout"] += 1
-                    commit["blame_incomplete"] = True
-                    commit["surviving"] = None
-                    continue
-                if commit.get("blame_incomplete"):
-                    continue
-                if commit.get("surviving") is None:
-                    commit["surviving"] = 0
-                commit["surviving"] += counts[sha]
-            if head_known:
-                blame_heads[identity] = head
+                    if commit.get("blame_incomplete"):
+                        continue
+                    if commit.get("surviving") is None:
+                        commit["surviving"] = 0
+                    commit["surviving"] += counts[sha]
+        if head_known and wanted:
+            blame_heads[identity] = head
         # Persist one count per commit: commits with an unreadable file stay
         # unknown instead of persisting a partial number.
         measured = {sha for shas in wanted.values() for sha in shas}
@@ -805,14 +820,21 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
 
         session_commits = attributed.get(sid, [])
         if not session_commits:
-            block["no_commit_sessions"].append({
+            entry = {
                 "session": aliases.get("session", sid) if aliases is not None else sid,
                 "project": label,
-                "repo": bool(window.get("repo")),
                 "cost": _money(window["cost"]),
                 "tokens": window["tokens"],
                 "duration_min": max(0, int((window["last"] - window["start"]) // 60)),
-            })
+            }
+            if window.get("repo") is None:
+                # Sessions outside any git repository are their own category:
+                # they can never have matched commits, so calling them
+                # "sessions without commits" would be misleading.
+                block["no_repo_sessions"].append(entry)
+            else:
+                entry["repo"] = True
+                block["no_commit_sessions"].append(entry)
         added = deleted = files = surviving = settled_added = 0
         session_settled = False
         for commit in session_commits:
@@ -871,6 +893,7 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
         totals["files"] += commit["files"]
 
     totals["sessions_without_commits"] = len(block["no_commit_sessions"])
+    totals["no_repo_sessions"] = len(block["no_repo_sessions"])
     totals["settled_cost"] = _money(settled_cost)
     totals["cost"] = _money(totals["cost"])
     totals["rework_tax"] = _money(totals["rework_tax"])
@@ -892,6 +915,7 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
     for model_row in block["models"]:
         model_row["cost"] = _money(model_row["cost"])
     block["no_commit_sessions"].sort(key=lambda row: (-row["cost"], row["session"]))
+    block["no_repo_sessions"].sort(key=lambda row: (-row["cost"], row["session"]))
     _finish(block, reasons, sessions, anonymize, aliases)
     return _decimals_to_floats(block)
 
@@ -915,6 +939,7 @@ def _empty_totals():
     return {
         "sessions": 0, "tokens": 0, "cost": Decimal(0),
         "commits": 0, "no_session_commits": 0, "sessions_without_commits": 0,
+        "no_repo_sessions": 0,
         "added": 0, "deleted": 0, "files": 0, "surviving": 0,
         "settled_cost": Decimal(0), "rework_tax": Decimal(0),
         "retained_per_dollar": 0.0, "retained_per_dollar_settled": 0.0,
@@ -951,6 +976,7 @@ _STATUS_TEXT = {
         "commits": "提交",
         "manual": "无会话提交",
         "no_commit_sessions": "无提交会话",
+        "no_repo_sessions": "不在 git 仓库的会话",
         "lines": "新增/删除行",
         "surviving": "留存行",
         "rework_tax": "返工税",
@@ -959,10 +985,13 @@ _STATUS_TEXT = {
         "per_commit": "每提交成本",
         "unpriced": "（部分记录无官方参考价，金额为可估部分）",
         "project": "项目",
+        "project_repo": "仓库",
         "project_commits": "提交",
         "project_surviving": "留存",
         "project_cost": "花费",
         "project_tax": "返工税",
+        "yes": "是",
+        "no": "否",
         "no_repo": "非 git 目录",
         "pending": "另有 {count} 行新增不满 7 天，留存待定",
         "empty": "该范围内没有可统计的会话。",
@@ -977,6 +1006,7 @@ _STATUS_TEXT = {
         "commits": "Commits",
         "manual": "Commits outside any session",
         "no_commit_sessions": "Sessions without commits",
+        "no_repo_sessions": "Sessions outside any git repo",
         "lines": "Added/deleted lines",
         "surviving": "Surviving lines",
         "rework_tax": "Rework tax",
@@ -985,10 +1015,13 @@ _STATUS_TEXT = {
         "per_commit": "Cost per commit",
         "unpriced": "(some records lack an official reference price; amounts cover the priced part)",
         "project": "Project",
+        "project_repo": "Repo",
         "project_commits": "Commits",
         "project_surviving": "Surviving",
         "project_cost": "Spend",
         "project_tax": "Rework",
+        "yes": "yes",
+        "no": "no",
         "no_repo": "not a git repo",
         "pending": "{count} added lines are under 7 days old; survival pending",
         "empty": "No measurable sessions in this range.",
@@ -998,6 +1031,14 @@ _STATUS_TEXT = {
 
 def _fmt_money(value):
     return f"${value:,.2f}"
+
+
+def _clip_path(path, width):
+    """Middle-clip long paths: keep both ends so the project stays recognizable."""
+    if len(path) <= width:
+        return path
+    half = max(4, (width - 1) // 2)
+    return f"{path[:half]}…{path[-(width - half - 1):]}"
 
 
 def print_report(report, lang="zh"):
@@ -1019,6 +1060,9 @@ def print_report(report, lang="zh"):
           f"  ·  {text['commits']}: {totals['commits']}"
           f"  ·  {text['manual']}: {totals['no_session_commits']}"
           f"  ·  {text['no_commit_sessions']}: {totals['sessions_without_commits']}")
+    if totals["no_repo_sessions"]:
+        print(f"{text['no_repo_sessions']}: {totals['no_repo_sessions']}"
+              f"  ·  {text['spend']}: {_fmt_money(sum(row['cost'] for row in report['no_repo_sessions']))}")
     print(f"{text['lines']}: {totals['added']:,} / {totals['deleted']:,}"
           f"  ·  {text['surviving']}: {totals['surviving']:,}")
     print(f"{text['rework_tax']}: {_fmt_money(totals['rework_tax'])}"
@@ -1029,16 +1073,14 @@ def print_report(report, lang="zh"):
     if pending:
         print(text["pending"].format(count=f"{pending:,}"))
     print()
-    print(f"{text['project']:40} {text['project_commits']:>8} "
+    print(f"{text['project']:38} {text['project_repo']:>4} "
+          f"{text['project_commits']:>8} "
           f"{text['project_surviving']:>10} {text['project_cost']:>12} "
           f"{text['project_tax']:>10}")
     for row in report["projects"][:15]:
-        name = row["project"]
-        if len(name) > 37:
-            name = "..." + name[-34:]
-        if not row["repo"]:
-            name += f" ({text['no_repo']})"
-        print(f"{name:40} {row['commits']:>8} {row['surviving']:>10,} "
+        name = _clip_path(row["project"], 38)
+        print(f"{name:38} {(text['yes'] if row['repo'] else text['no']):>4} "
+              f"{row['commits']:>8} {row['surviving']:>10,} "
               f"{_fmt_money(row['cost']):>12} {_fmt_money(row['rework_tax']):>10}")
 
 
@@ -1067,16 +1109,27 @@ def _day_of(epoch):
     return datetime.fromtimestamp(epoch, tz=config.TZ).date().isoformat()
 
 
-def _resolve_range(records, since, until):
+def _resolve_range(records, since, until, now):
     """Explicit range wins; otherwise the records' own day span bounds git.
 
-    Deriving the window from the data keeps the block (and the snapshot
-    identity) independent of the generation day, and still bounded.
+    A lone --since extends to today in the reporting timezone, so the title,
+    the spend, and the commit window all describe the same span.  Without any
+    explicit bound the records' own day span is used: deriving the window from
+    the data keeps the block (and the snapshot identity) independent of the
+    generation day, and still bounded.
     """
     if since and until:
         return since, until
     if since:
-        return since, since
+        return since, until or now.date().isoformat()
+    if until:
+        first = None
+        for record in records:
+            day = record.get("date") if isinstance(record, dict) else None
+            if isinstance(day, str) and len(day) == 10:
+                if first is None or day < first:
+                    first = day
+        return first or now.date().isoformat(), until
     days = []
     for record in records:
         day = record.get("date") if isinstance(record, dict) else None
@@ -1085,6 +1138,23 @@ def _resolve_range(records, since, until):
     if days:
         return min(days), max(days)
     return None, None
+
+
+def _in_range_records(records, since, until):
+    """The title, the spend, and the commits must describe one same range."""
+    if not since and not until:
+        return records
+    return [
+        record for record in records
+        if (not since or record.get("date") >= since)
+        and (not until or record.get("date") <= until)
+    ]
+
+
+def _iso(epoch):
+    """Git-readable ISO-8601 timestamp in the reporting timezone."""
+    stamp = datetime.fromtimestamp(epoch, tz=config.TZ)
+    return stamp.strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
 def _day_start(day):

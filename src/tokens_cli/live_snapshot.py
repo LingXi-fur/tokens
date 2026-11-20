@@ -457,13 +457,13 @@ def _aggregate_shapes(payload, sources):
 _OUTCOMES_SCHEMA = outcomes.OUTCOMES_SCHEMA
 _OUTCOMES_TOP = frozenset((
     "schema", "range", "status", "reasons", "totals", "days", "projects",
-    "models", "no_commit_sessions",
+    "models", "no_commit_sessions", "no_repo_sessions",
 ))
 _OUTCOMES_TOTALS = frozenset((
     "sessions", "tokens", "cost", "commits", "no_session_commits",
-    "sessions_without_commits", "added", "deleted", "files", "surviving",
-    "settled_cost", "rework_tax", "retained_per_dollar",
-    "retained_per_dollar_settled", "cost_per_commit",
+    "sessions_without_commits", "no_repo_sessions", "added", "deleted",
+    "files", "surviving", "settled_cost", "rework_tax",
+    "retained_per_dollar", "retained_per_dollar_settled", "cost_per_commit",
 ))
 _OUTCOMES_DAY = frozenset((
     "day", "commits", "added", "deleted", "surviving", "no_session",
@@ -479,6 +479,7 @@ _OUTCOMES_MODEL = frozenset((
 _OUTCOMES_NO_COMMIT = frozenset((
     "session", "project", "repo", "cost", "tokens", "duration_min",
 ))
+_OUTCOMES_NO_REPO = frozenset(_OUTCOMES_NO_COMMIT - {"repo"})
 
 
 def _outcomes_shape(outcomes):
@@ -530,6 +531,13 @@ def _outcomes_shape(outcomes):
         _require(type(row["repo"]) is bool)
         for key, value in row.items():
             if key not in ("session", "project", "repo"):
+                _require(type(value) in (int, float) and value >= 0)
+    for row in outcomes["no_repo_sessions"]:
+        _require(type(row) is dict and set(row) == _OUTCOMES_NO_REPO)
+        _require(all(type(row[key]) is str and 0 < len(row[key]) <= 4096
+                    for key in ("session", "project")))
+        for key, value in row.items():
+            if key not in ("session", "project"):
                 _require(type(value) in (int, float) and value >= 0)
 
 

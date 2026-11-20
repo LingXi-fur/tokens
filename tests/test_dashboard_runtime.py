@@ -4,6 +4,7 @@ import io
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from unittest import mock
 
@@ -4636,11 +4637,16 @@ class DashboardRuntimeTests(unittest.TestCase):
             "tokens_cli.dashboard_payload.readers.load_session_summaries",
             return_value={},
         ):
+            # Pin the generation day to the fixture's last data day: the
+            # "today vs yesterday" briefing and the freshness label describe
+            # 2026-11-18, not whichever day the test happens to run on.
             payload = report_dashboard.build_payload(
                 records,
                 since="2026-09-20",
                 until="2026-11-18",
                 sources=["claude", "codex"],
+                generated_at=datetime(2026, 11, 18, 14, 0, 0,
+                                        tzinfo=ZoneInfo("Asia/Shanghai")),
             )
         payload["generated"] = "2026-11-18T14:00:00"
         payload["range"]["until"] = None

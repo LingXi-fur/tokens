@@ -165,6 +165,46 @@ class OutcomesTests(unittest.TestCase):
         self.assertAlmostEqual(block["totals"]["cost"], 0.36, places=2)
         self.assertAlmostEqual(block["totals"]["rework_tax"], 0.24, places=2)
 
+    def test_since_only_range_extends_to_today(self):
+        repo = _init_repo(self.root / "proj")
+        cwd = str(repo)
+        # One commit on the --since day, one commit "today" (NOW's day).
+        _commit(repo, {"old.py": "old = 1\n"},
+                date_epoch=NOW.timestamp() - 7 * DAY)
+        _commit(repo, {"new.py": "new = 1\n"},
+                date_epoch=NOW.timestamp() - 3600)
+        records = [
+            _record("2026-11-13T10:00:00Z", "ses-1", cwd),
+            _record(f"{NOW.date().isoformat()}T09:00:00Z", "ses-1", cwd),
+        ]
+        block = self.build(records, since="2026-11-13")
+        # The window covers the since day through today (NOW's day), and the
+        # real git log actually resolves that ISO range.
+        self.assertEqual({"since": "2026-11-13",
+                          "until": NOW.date().isoformat()}, block["range"])
+        self.assertEqual(2, block["totals"]["commits"])
+        self.assertEqual(2, block["totals"]["added"])
+        # Both sessions' spend and both commits describe one same range.
+        self.assertEqual(4000, block["totals"]["tokens"])
+
+    def test_git_log_iso_boundaries_include_the_since_day(self):
+        repo = _init_repo(self.root / "proj")
+        cwd = str(repo)
+        # The in.py commit sits on 2026-11-10 at 09:00 UTC, i.e. inside the
+        # --since day boundary; out.py sits a day earlier and must stay
+        # outside.  A bare epoch (git cannot parse it) would miss both.
+        # Commit the older one first: git log --since prunes history as it
+        # walks, so an out-of-window commit at HEAD would stop the walk.
+        _commit(repo, {"out.py": "out = 1\n"},
+                date_epoch=datetime(2026, 11, 9, 9, tzinfo=timezone.utc).timestamp())
+        _commit(repo, {"in.py": "in = 1\n"},
+                date_epoch=datetime(2026, 11, 10, 9, tzinfo=timezone.utc).timestamp())
+        records = [_record("2026-11-10T10:00:00Z", "ses-1", cwd)]
+        block = self.build(records, since="2026-11-10", until="2026-11-11")
+        self.assertEqual(1, block["totals"]["commits"])
+        self.assertEqual(1, block["totals"]["added"])
+        self.assertNotIn("out.py", json.dumps(block))
+
     def test_recent_commits_are_pending_not_reworked(self):
         repo = _init_repo(self.root / "proj")
         _commit(repo, {"app.py": "fresh = 1\n"},
@@ -215,6 +255,13 @@ class OutcomesTests(unittest.TestCase):
         self.assertEqual("ok", block["status"])
         self.assertFalse(block["projects"][0]["repo"])
         self.assertEqual(0, block["totals"]["commits"])
+        # A session outside any git repo is its own category, never a
+        # "session without commits" (those can never match a commit anyway).
+        self.assertEqual([], block["no_commit_sessions"])
+        self.assertEqual(1, block["totals"]["no_repo_sessions"])
+        self.assertEqual(0, block["totals"]["sessions_without_commits"])
+        self.assertEqual("ses-1", block["no_repo_sessions"][0]["session"])
+        self.assertNotIn("repo", block["no_repo_sessions"][0])
 
     def test_foreign_author_commits_are_ignored(self):
         repo = _init_repo(self.root / "proj")
