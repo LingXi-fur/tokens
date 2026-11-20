@@ -161,6 +161,10 @@ Reports are written to `./out` by default. Use `--output DIR` to choose another 
 
 ## What can you learn?
 
+The page is organized as **Statistics scope → Usage overview → Trend and exact details → Daily model usage → Cost**. Pick the date range and models first, then read the current statistics; the report-generation-day fallback rule and the coverage boundary expand under the header's "Snapshot details" disclosure.
+
+The header distinguishes the configured local sources from the sources this snapshot actually read. Data Health lists each source's record count, tokens, record dates, and field capabilities; "No records in this snapshot" does not mean no usage, and "Not enabled" does not mean no local logs. Source counts and dates follow the report snapshot, not the front-end model filters, and the latest record day is not a sync time. A first failed scan never substitutes zero for usage; a later failed update keeps the last successful snapshot and says so. Error diagnostics contain only controlled stages and reason codes, never raw exceptions or paths.
+
 Find your busiest days, compare two equal-length periods, and see which **recorded** models, projects, or sessions contributed to the difference. Up to eight top models keep distinct palette colors (at least one slot guaranteed per active source), while `Other` uses neutral gray and itemizes every folded model individually across legends, donut slices, tooltips, period-table expansion (`Other (N)`), exports, and a "More models" filter; Today HUD's top model always resolves to a real model name, and anonymized reports omit folded names. When source records provide the fields, you can:
 
 - **Spot changes:** explore daily, weekly, and monthly trends, peak periods, and token composition.
