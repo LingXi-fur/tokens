@@ -176,7 +176,47 @@ CASES = [
          model("gpt-6.2-sol", "gpt62", "codex"),
      ]),
      ["2026-11-18"], ["dsv41", "dsv4pro", "gpt62"], USD),
+    ("official-pricing-2026-11-19-glm-gemini",
+     cost_block([
+         ["2026-11-19", 0, [1000000, 1000000, 1000000, 0, 500000], 3500000, 1, False],
+         ["2026-11-19", 1, [1000000, 1000000, 1000000, 1000000, 0], 4000000, 1, False],
+         ["2026-11-19", 2, [2000000, 1000000, 0, 0, 0], 3000000, 1, False],
+         ["2026-11-19", 3, [1000000, 1000000, 1000000, 0, 0], 3000000, 1, False],
+         ["2026-11-19", 4, [1000000, 1000000, 1000000, 0, 0], 3000000, 1, False],
+         ["2026-11-19", 5, [1000000, 1000000, 1000000, 0, 500000], 3500000, 1, False],
+     ], [
+         model("glm-5.3", "glm53oc", "opencode"),
+         model("glm-5.3-flashx", "glmfx", "claude"),
+         model("glm-5", "glm5", "opencode"),
+         model("zhipu/glm-5.1", "zglm51", "claude"),
+         model("gemini-4-neon", "neon", "antigravity"),
+         model("gemini-3-flash-preview", "g3flash", "gemini"),
+     ]),
+     ["2026-11-19"], ["glm53oc", "glmfx", "glm5", "zglm51", "neon", "g3flash"], USD),
 ]
+
+# 2026-11-19 对照官网核对的 GLM / Gemini 条目（USD／百万 token；顺序同 COST_PARTS）。
+GLM_GEMINI_2026_11_19 = {
+    "glm-5.3": ["1.40", "4.40", "0.26", "0", "4.40"],
+    "glm-5.3-flash": ["0.15", "0.50", "0.03", "0", "0.50"],
+    "glm-5.3-flashx": ["0.37", "1.25", "0.075", "0", "1.25"],
+    "glm-5.2": ["1.40", "4.40", "0.26", "0", "4.40"],
+    "glm-5.1": ["1.40", "4.40", "0.26", "0", "4.40"],
+    "glm-5": ["1", "3.20", "0.20", "0", "3.20"],
+    "zhipu/glm-5.3": ["1.40", "4.40", "0.26", "0", "4.40"],
+    "zhipu/glm-5.3-flash": ["0.15", "0.50", "0.03", "0", "0.50"],
+    "zhipu/glm-5.3-flashx": ["0.37", "1.25", "0.075", "0", "1.25"],
+    "zhipu/glm-5.2": ["1.40", "4.40", "0.26", "0", "4.40"],
+    "zhipu/glm-5.1": ["1.40", "4.40", "0.26", "0", "4.40"],
+    "zhipu/glm-5": ["1", "3.20", "0.20", "0", "3.20"],
+    "gemini-4-neon": ["3", "15", "0.15", "", "15"],
+    "gemini-4-hydrogen": ["1.50", "7.50", "0.075", "", "7.50"],
+    "gemini-2.5-pro": ["1.25", "10", "0.125", "", "10"],
+    "gemini-2.5-flash": ["0.30", "2.50", "0.03", "", "2.50"],
+    "gemini-3-flash-preview": ["0.50", "3", "0.05", "", "3"],
+}
+# 官网未列出的精确名：保持待定价，不得出现在参考表里。
+UNLISTED_GEMINI = ["gemini-3-pro-preview", "gemini-3.8-flash-n", "gemini-4-argon-trial"]
 
 VIEW_KEYS = ["supported", "currency", "referenceCount", "totalIncomplete", "entries",
              "subtotal", "anyPriced", "fullEstimate", "pricedCount", "pendingCount",
@@ -251,6 +291,7 @@ out.helpers.defaultConfig=JSON.stringify(Core.defaultConfig());
 out.helpers.referenceDate=Core.reference.date;
 out.helpers.referenceVendors=Object.keys(Core.reference.vendors).join(',');
 out.helpers.parts=JSON.stringify(Core.parts);
+out.helpers.referenceTable=JSON.stringify(Core.reference);
 out.helpers.version=Core.VERSION;
 process.stdout.write(JSON.stringify(out));
 '''
@@ -337,7 +378,7 @@ class CostCoreContractTests(unittest.TestCase):
     def test_parts_and_reference_are_frozen_values(self):
         self.assertEqual(["input", "output", "cache_read", "cache_write", "thoughts"],
                          json.loads(self.result["helpers"]["parts"]))
-        self.assertEqual("2026-11-15", self.result["helpers"]["referenceDate"])
+        self.assertEqual("2026-11-19", self.result["helpers"]["referenceDate"])
         self.assertEqual("anthropic,openai,google,deepseek,zai,moonshot", self.result["helpers"]["referenceVendors"])
 
     def test_default_config(self):
@@ -508,7 +549,7 @@ class CostCoreContractTests(unittest.TestCase):
         # gemini-2.5-pro: 1.25 + 10 + 0.125 + 0.5*10 = $16.375
         self.assertEqual("BigInt:16375000000000", by_id["gpro"]["costScaled"])
         self.assertEqual("google", by_id["gpro"]["reference"]["vendor"])
-        self.assertEqual("2026-11-15", by_id["gpro"]["reference"]["date"])
+        self.assertEqual("2026-11-19", by_id["gpro"]["reference"]["date"])
         # gemini-4-hydrogen: 1.50 + 7.50 + 0.075 + 0.5*7.50 = $12.825（官网未单列缓存写）
         self.assertEqual("BigInt:12825000000000", by_id["ghyd"]["costScaled"])
         self.assertEqual("google", by_id["ghyd"]["reference"]["vendor"])
@@ -548,6 +589,60 @@ class CostCoreContractTests(unittest.TestCase):
         self.assertEqual("BigInt:14600000000000", by_id["gpt62"]["costScaled"])
         self.assertEqual("openai", by_id["gpt62"]["reference"]["vendor"])
         self.assertEqual("2026-11-18", by_id["gpt62"]["reference"]["date"])
+
+    def test_glm_gemini_reference_entries_match_official_2026_11_19(self):
+        table = json.loads(self.result["helpers"]["referenceTable"])
+        self.assertEqual("https://docs.z.ai/guides/overview/pricing", table["vendors"]["zai"]["url"])
+        self.assertEqual("https://ai.google.dev/gemini-api/docs/pricing", table["vendors"]["google"]["url"])
+        self.assertEqual("2026-11-19", table["vendors"]["zai"]["date"])
+        self.assertEqual("2026-11-19", table["vendors"]["google"]["date"])
+        for name, rates in GLM_GEMINI_2026_11_19.items():
+            entry = table["prices"][name]
+            self.assertEqual(rates, entry["rates"], name)
+            self.assertEqual("2026-11-19", entry["date"], name)
+            # 格式：5 个分量，每个都是 '' 或合法十进制价（与 costParseRate 同口径）
+            self.assertEqual(5, len(entry["rates"]), name)
+            for rate in entry["rates"]:
+                self.assertRegex(rate, r"^(|\d{1,12}(\.\d{1,6})?)$", name)
+            if "glm" in name:
+                self.assertEqual("zai", entry["vendor"], name)
+                self.assertIn("Z.ai 国际美元价，非国内智谱同价", entry["tier"], name)
+                self.assertIn("缓存存储限时免费", entry["tier"], name)
+                self.assertEqual("0", entry["rates"][3], name)  # 缓存写入限时免费记 0
+            else:
+                self.assertEqual("google", entry["vendor"], name)
+                self.assertEqual("", entry["rates"][3], name)  # 官网只列按小时存储价，不折算
+                self.assertEqual(entry["rates"][1], entry["rates"][4], name)  # 输出价含思考 token
+                self.assertIn("Standard", entry["tier"], name)
+        for name in UNLISTED_GEMINI:
+            self.assertNotIn(name, table["prices"], name)
+        # 所有 GLM / Gemini 条目都必须已在上表中逐一核对过，避免漏核
+        audited = {k for k in table["prices"] if k.startswith(("glm", "zhipu/", "gemini"))}
+        self.assertEqual(set(GLM_GEMINI_2026_11_19), audited)
+
+    def test_official_pricing_2026_11_19_glm_gemini(self):
+        view = self.result["views"]["official-pricing-2026-11-19-glm-gemini"]
+        self.assertEqual(6, view["pricedCount"])
+        self.assertEqual(0, view["pendingCount"])
+        self.assertTrue(view["fullEstimate"])
+        by_id = {e["model"]["identity"]: e for e in view["entries"]}
+        # glm-5.3（OpenCode，含思考）：1.40 + 4.40 + 0.26 + 0.5*4.40 = $8.26
+        self.assertEqual("BigInt:8260000000000", by_id["glm53oc"]["costScaled"])
+        self.assertEqual("zai", by_id["glm53oc"]["reference"]["vendor"])
+        # glm-5.3-flashx：0.37 + 1.25 + 0.075 + 1*0（缓存存储限时免费）= $1.695
+        self.assertEqual("BigInt:1695000000000", by_id["glmfx"]["costScaled"])
+        # glm-5：2*1 + 3.20 = $5.20
+        self.assertEqual("BigInt:5200000000000", by_id["glm5"]["costScaled"])
+        # zhipu/glm-5.1：1.40 + 4.40 + 0.26 = $6.06
+        self.assertEqual("BigInt:6060000000000", by_id["zglm51"]["costScaled"])
+        # gemini-4-neon：3 + 15 + 0.15 = $18.15
+        self.assertEqual("BigInt:18150000000000", by_id["neon"]["costScaled"])
+        self.assertEqual("google", by_id["neon"]["reference"]["vendor"])
+        self.assertEqual("2026-11-19", by_id["neon"]["reference"]["date"])
+        # gemini-3-flash-preview：0.50 + 3 + 0.05 + 0.5*3 = $5.05
+        self.assertEqual("BigInt:5050000000000", by_id["g3flash"]["costScaled"])
+        # 合计：8.26 + 1.695 + 5.20 + 6.06 + 18.15 + 5.05 = $44.415
+        self.assertEqual("BigInt:44415000000000", view["subtotal"])
 
 
 if __name__ == "__main__":

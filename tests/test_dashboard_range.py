@@ -221,6 +221,9 @@ let dashboardLanguage='zh';
 let state={{gran:'day',models:new Set(['glm-5.3','glm-5.3-flash','other']),focusPeriod:null,range:'all',rangeDate:''}};
 const COST_COMPONENTS=DATA.cost.components;
 const costPrices=CostCore.defaultConfig();
+// 2026-11-19 起 GLM 参考价给出了思考分量（按输出价），这里用一条“思考未定价”的手填覆盖
+// 继续守住“有用量的分量未定价 → partial”合同；输入价与官方一致，10-10 的 $1.40 不变。
+costPrices.prices[JSON.stringify(['a','glm-5.3'])]={{rates:['1.40','4.40','0.26','0',''],note:''}};
 function esc(value){{return String(value);}}
 function fmt(value){{return Number(value).toLocaleString('en-US');}}
 {range_source}
@@ -235,7 +238,7 @@ assert(summary.status==='priced'&&summary.scaled===0n,'trusted zero usage should
 summary=dailyCostFor('2026-10-12','glm-5.3-flash');
 assert(summary.status==='unknown','uncertain row must not become zero');
 summary=dailyCostFor('2026-10-13','glm-5.3');
-assert(summary.status==='partial','unpriced active cache_write must be partial');
+assert(summary.status==='partial','unpriced active thoughts must be partial');
 summary=dailyCostFor('2026-10-14','other');
 assert(summary.status==='hidden','hidden Other must not be guessed');
 summary=dailyCostFor('2026-10-15','glm-5.3');

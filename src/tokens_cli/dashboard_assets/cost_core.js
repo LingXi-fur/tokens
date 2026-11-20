@@ -17,13 +17,13 @@ const COST_VERSION=1,COST_MAX_ENTRIES=4000;
    tier/limit 仅溯源展示。全部条目一律取官方价，缓存写取 5 分钟档。
    页面不主动请求 vendor URL。 */
 const COST_REFERENCE={
-  date:'2026-11-15',currency:'USD',
+  date:'2026-11-19',currency:'USD',
   vendors:{
     anthropic:{label:'Anthropic',date:'2026-11-06',url:'https://platform.claude.com/docs/en/about-claude/pricing'},
     openai:{label:'OpenAI',date:'2026-11-06',url:'https://developers.openai.com/api/docs/pricing'},
-    google:{label:'Google',date:'2026-11-15',url:'https://ai.google.dev/gemini-api/docs/pricing'},
+    google:{label:'Google',date:'2026-11-19',url:'https://ai.google.dev/gemini-api/docs/pricing'},
     deepseek:{label:'DeepSeek',date:'2026-11-06',url:'https://api-docs.deepseek.com/quick_start/pricing'},
-    zai:{label:'Z.ai',date:'2026-11-06',url:'https://docs.z.ai/guides/overview/pricing'},
+    zai:{label:'Z.ai',date:'2026-11-19',url:'https://docs.z.ai/guides/overview/pricing'},
     moonshot:{label:'Moonshot AI',date:'2026-11-06',url:'https://platform.kimi.ai/docs/pricing'}
   },
   prices:{
@@ -38,19 +38,32 @@ const COST_REFERENCE={
     'gpt-5.6-terra':{vendor:'openai',rates:['2','12','0.20','2.50',''],tier:'Standard 短上下文档 ≤272K'},
     'gpt-6-luna':{vendor:'openai',date:'2026-11-06',rates:['0.10','0.50','0.01','0.125',''],tier:'Standard 短上下文档 ≤272K'},
     'gpt-5.3-codex':{vendor:'openai',date:'2026-11-15',rates:['1.75','14','0.175','',''],tier:'Standard；官网未单列缓存写'},
-    'gemini-4-hydrogen':{vendor:'google',date:'2026-11-15',rates:['1.50','7.50','0.075','','7.50'],tier:'Global Endpoint 标准档；思考 token 同输出价；官网未单列缓存写（缓存存储按小时计）'},
-    'gemini-2.5-pro':{vendor:'google',date:'2026-11-15',rates:['1.25','10','0.125','','10'],tier:'Standard ≤200K 上下文档；思考 token 同输出价'},
-    'gemini-2.5-flash':{vendor:'google',date:'2026-11-15',rates:['0.30','2.50','0.03','','2.50'],tier:'Standard Paid；思考 token 同输出价'},
-    'gemini-3-flash-preview':{vendor:'google',date:'2026-11-15',rates:['0.50','3','0.05','','3'],tier:'Standard Paid（Legacy preview）；思考 token 同输出价'},
+    /* Google Gemini：2026-11-19 对照 ai.google.dev/gemini-api/docs/pricing 的 Standard 付费档；
+       官网“输出价含思考 token”，故 thoughts=输出价；缓存写官网只列按小时计的存储价，无法折成每百万 token，留空。
+       官网未列出的精确名（gemini-3-pro-preview、gemini-3.8-flash-n、gemini-4-argon-trial 等）不入表、不猜价。 */
+    'gemini-4-neon':{vendor:'google',date:'2026-11-19',rates:['3','15','0.15','','15'],tier:'Standard Paid；1M 统一上下文不分档；输出价含思考 token；仅隐式缓存（不支持显式缓存）'},
+    'gemini-4-hydrogen':{vendor:'google',date:'2026-11-19',rates:['1.50','7.50','0.075','','7.50'],tier:'Standard Paid；1M 统一上下文不分档；输出价含思考 token；仅隐式缓存（不支持显式缓存）'},
+    'gemini-2.5-pro':{vendor:'google',date:'2026-11-19',rates:['1.25','10','0.125','','10'],tier:'Standard Paid ≤200K 上下文档（>200K 为输入 $2.50／输出 $15／缓存读 $0.25）；输出价含思考 token；缓存存储 $4.50/百万 token/小时未计；官网标注已弃用，2026-12-01 起改按 gemini-3.8-flash 计价'},
+    'gemini-2.5-flash':{vendor:'google',date:'2026-11-19',rates:['0.30','2.50','0.03','','2.50'],tier:'Standard Paid 文本/图像/视频档（音频输入 $1.00）；输出价含思考 token；缓存存储 $1.00/百万 token/小时未计；官网标注已弃用，2026-12-01 起改按 gemini-3.5-flash-lite 计价'},
+    'gemini-3-flash-preview':{vendor:'google',date:'2026-11-19',rates:['0.50','3','0.05','','3'],tier:'Standard Paid 文本/图像/视频档（Legacy preview；音频输入 $1.00）；输出价含思考 token；缓存存储 $1.00/百万 token/小时未计'},
     'deepseek-flash':{vendor:'deepseek',date:'2026-11-18',rates:['0.30','1.20','0.006','','1.20'],tier:'峰时基准（off-peak 五折）；官网按输入、输出 token 总量计费，思考内容按输出计'},
     'deepseek-v4-flash':{vendor:'deepseek',date:'2026-11-18',rates:['0.30','1.20','0.006','','1.20'],tier:'峰时基准（off-peak 五折；官网注明由 V4.1-Flash 按同价服务）；官网按输入、输出 token 总量计费，思考内容按输出计'},
     'deepseek-v4-pro':{vendor:'deepseek',date:'2026-11-18',rates:['1.32','3.96','0.044','','3.96'],tier:'峰时基准（off-peak 五折）；官网按输入、输出 token 总量计费，思考内容按输出计'},
     'deepseek-v4.1-flash':{vendor:'deepseek',date:'2026-11-18',rates:['0.30','1.20','0.006','','1.20'],tier:'峰时基准（即 deepseek-flash，DeepSeek-V4.1-Flash-1017；off-peak 五折）；官网按输入、输出 token 总量计费，思考内容按输出计'},
-    'glm-5.2':{vendor:'zai',rates:['1.40','4.40','0.26','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
-    'glm-5.3':{vendor:'zai',rates:['1.40','4.40','0.26','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
-    'glm-5.3-flash':{vendor:'zai',date:'2026-11-06',rates:['0.15','0.50','0.03','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
-    /* 直写 provider 前缀的记录（非 CCR hex 别名）：同后端同价，精确名单独入表。 */
-    'zhipu/glm-5.3-flash':{vendor:'zai',date:'2026-11-06',rates:['0.15','0.50','0.03','0',''],tier:'Z.ai 国际美元参考，非国内智谱同价；缓存写限时免费'},
+    /* Z.ai GLM：2026-11-19 对照 docs.z.ai/guides/overview/pricing（USD／百万 token）。 */
+    'glm-5.3':{vendor:'zai',date:'2026-11-19',rates:['1.40','4.40','0.26','0','4.40'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'glm-5.3-flash':{vendor:'zai',date:'2026-11-19',rates:['0.15','0.50','0.03','0','0.50'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'glm-5.3-flashx':{vendor:'zai',date:'2026-11-19',rates:['0.37','1.25','0.075','0','1.25'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'glm-5.2':{vendor:'zai',date:'2026-11-19',rates:['1.40','4.40','0.26','0','4.40'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'glm-5.1':{vendor:'zai',date:'2026-11-19',rates:['1.40','4.40','0.26','0','4.40'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'glm-5':{vendor:'zai',date:'2026-11-19',rates:['1','3.20','0.20','0','3.20'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    /* 直写 provider 前缀的记录（非 CCR hex 别名，如 zhipu/glm-5.3-flash）：同后端同价，精确名单独入表。 */
+    'zhipu/glm-5.3':{vendor:'zai',date:'2026-11-19',rates:['1.40','4.40','0.26','0','4.40'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'zhipu/glm-5.3-flash':{vendor:'zai',date:'2026-11-19',rates:['0.15','0.50','0.03','0','0.50'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'zhipu/glm-5.3-flashx':{vendor:'zai',date:'2026-11-19',rates:['0.37','1.25','0.075','0','1.25'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'zhipu/glm-5.2':{vendor:'zai',date:'2026-11-19',rates:['1.40','4.40','0.26','0','4.40'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'zhipu/glm-5.1':{vendor:'zai',date:'2026-11-19',rates:['1.40','4.40','0.26','0','4.40'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
+    'zhipu/glm-5':{vendor:'zai',date:'2026-11-19',rates:['1','3.20','0.20','0','3.20'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
     'claude-fable-5-1':{vendor:'anthropic',date:'2026-11-15',rates:['10','50','0.25','12.50',''],tier:'官方价（Legacy）；缓存写取 5 分钟档'},
     'claude-opus-5.5':{vendor:'anthropic',date:'2026-11-06',rates:['4','20','0.20','5',''],tier:'官方价，缓存读 0.05×基础输入；缓存写取 5 分钟档'},
     'claude-sonnet-5.5':{vendor:'anthropic',date:'2026-11-06',rates:['2','10','0.10','2.50',''],tier:'官方价，缓存读 0.05×基础输入；缓存写取 5 分钟档'},
