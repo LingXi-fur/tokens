@@ -12,7 +12,7 @@
 const COST_PARTS=['input','output','cache_read','cache_write','thoughts'];
 const COST_SAFE_MAX=9007199254740991; // 2^53-1，单行 parts/total/calls 必须是 JS 安全整数；多行总和用 BigInt 精确累加
 const COST_VERSION=1,COST_MAX_ENTRIES=4000;
-/* 官方公开参考价（USD／百万 Token，2026-11-06 核对）：只读叠加层，非渠道实际扣费。
+/* 官方公开参考价（USD／百万 Token；各 vendor 与条目以自身 date 为准）：只读叠加层，非渠道实际扣费。
    key=精确模型名整串匹配；rates 顺序同 COST_PARTS；''=官网未公布不得填 0；
    tier/limit 仅溯源展示。全部条目一律取官方价，缓存写取 5 分钟档。
    页面不主动请求 vendor URL。 */
@@ -50,7 +50,10 @@ const COST_REFERENCE={
     'deepseek-v4-flash':{vendor:'deepseek',date:'2026-11-18',rates:['0.30','1.20','0.006','','1.20'],tier:'峰时基准（off-peak 五折；官网注明由 V4.1-Flash 按同价服务）；官网按输入、输出 token 总量计费，思考内容按输出计'},
     'deepseek-v4-pro':{vendor:'deepseek',date:'2026-11-18',rates:['1.32','3.96','0.044','','3.96'],tier:'峰时基准（off-peak 五折）；官网按输入、输出 token 总量计费，思考内容按输出计'},
     'deepseek-v4.1-flash':{vendor:'deepseek',date:'2026-11-18',rates:['0.30','1.20','0.006','','1.20'],tier:'峰时基准（即 deepseek-flash，DeepSeek-V4.1-Flash-1017；off-peak 五折）；官网按输入、输出 token 总量计费，思考内容按输出计'},
-    /* Z.ai GLM：2026-11-19 对照 docs.z.ai/guides/overview/pricing（USD／百万 token）。 */
+    /* Z.ai GLM：2026-11-19 对照 docs.z.ai/guides/overview/pricing（USD／百万 token）。
+       思考分量=输出价的依据：价目表无单独思考价，官方 Deep Thinking 文档
+       （docs.z.ai/guides/capabilities/thinking.md）的响应示例把 reasoning_content
+       计入 completion_tokens，usage 无单独思考字段，故按输出价计。 */
     'glm-5.3':{vendor:'zai',date:'2026-11-19',rates:['1.40','4.40','0.26','0','4.40'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
     'glm-5.3-flash':{vendor:'zai',date:'2026-11-19',rates:['0.15','0.50','0.03','0','0.50'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},
     'glm-5.3-flashx':{vendor:'zai',date:'2026-11-19',rates:['0.37','1.25','0.075','0','1.25'],tier:'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计'},

@@ -4841,7 +4841,13 @@ const COST_TIER_EN = Object.freeze({
   '官方价，缓存读 0.05×基础输入；缓存写取 5 分钟档':'Official rate; cache read 0.05× base input; 5m cache write tier',
   '官方价 ≤100K 上下文档；>100K 为 $0.50/$2.50；缓存写取 5 分钟档':'Official rate ≤100K context (>100K: $0.50/$2.50); 5m cache write tier',
   '官方价；缓存写取 5 分钟档':'Official rate; 5m cache write tier',
-  '官方价（原促销价已转正式）；缓存写取 5 分钟档':'Official rate (promotional rate now permanent); 5m cache write tier'
+  '官方价（原促销价已转正式）；缓存写取 5 分钟档':'Official rate (promotional rate now permanent); 5m cache write tier',
+  /* 2026-11-19 复核新增的 GLM / Gemini tier；键须与 cost_core.js 逐字一致。 */
+  'Standard Paid；1M 统一上下文不分档；输出价含思考 token；仅隐式缓存（不支持显式缓存）':'Standard Paid; unified 1M context with no tier split; output price includes thinking tokens; implicit caching only (explicit caching not supported)',
+  'Standard Paid ≤200K 上下文档（>200K 为输入 $2.50／输出 $15／缓存读 $0.25）；输出价含思考 token；缓存存储 $4.50/百万 token/小时未计；官网标注已弃用，2026-12-01 起改按 gemini-3.8-flash 计价':'Standard Paid ≤200K context tier (>200K: $2.50 input / $15 output / $0.25 cache read); output price includes thinking tokens; cache storage $4.50 per 1M tokens/hour not counted; deprecated, from 2026-12-01 billed as gemini-3.8-flash',
+  'Standard Paid 文本/图像/视频档（音频输入 $1.00）；输出价含思考 token；缓存存储 $1.00/百万 token/小时未计；官网标注已弃用，2026-12-01 起改按 gemini-3.5-flash-lite 计价':'Standard Paid text/image/video tier (audio input $1.00); output price includes thinking tokens; cache storage $1.00 per 1M tokens/hour not counted; deprecated, from 2026-12-01 billed as gemini-3.5-flash-lite',
+  'Standard Paid 文本/图像/视频档（Legacy preview；音频输入 $1.00）；输出价含思考 token；缓存存储 $1.00/百万 token/小时未计':'Standard Paid text/image/video tier (Legacy preview; audio input $1.00); output price includes thinking tokens; cache storage $1.00 per 1M tokens/hour not counted',
+  'Z.ai 国际美元价，非国内智谱同价；缓存写入记 0：缓存存储限时免费；官网价目表只列输出价，思考内容计入 completion_tokens，按输出价计':'Z.ai international USD rate, not domestic Zhipu pricing; cache write recorded as 0 (cache storage is limited-time free); the price sheet lists only output and reasoning is counted in completion_tokens, billed at the output rate'
 });
 function costReferenceLabel(ref){
   let tier=ref.tier||'';
