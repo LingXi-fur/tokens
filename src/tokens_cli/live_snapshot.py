@@ -15,7 +15,7 @@ import sys
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
-from . import config, dashboard_payload, dashboard_wire, readers, sources as source_registry
+from . import config, dashboard_payload, dashboard_wire, outcomes, readers, sources as source_registry
 
 
 STORAGE_SCHEMA = 1
@@ -37,7 +37,7 @@ _PAYLOAD_KEYS = frozenset((
     "day_details", "block", "top_cwds", "session_series", "session_context",
     "n_cwds", "n_sessions", "max_turns", "provenance", "achievement_stats",
     "achievement_daily", "reuse", "day", "week", "month", "cost",
-    "request_models", "source_labels",
+    "request_models", "source_labels", "outcomes",
 ))
 _REF = re.compile(r"(?:0|[1-9a-z][0-9a-z]*)\Z")
 _TOP_SESSION_CONTEXT = frozenset(("p", "pm", "s", "d0", "d1"))
@@ -454,6 +454,85 @@ def _aggregate_shapes(payload, sources):
             _numeric_tree(row[1])
 
 
+_OUTCOMES_SCHEMA = outcomes.OUTCOMES_SCHEMA
+_OUTCOMES_TOP = frozenset((
+    "schema", "range", "status", "reasons", "totals", "days", "projects",
+    "models", "no_commit_sessions",
+))
+_OUTCOMES_TOTALS = frozenset((
+    "sessions", "tokens", "cost", "commits", "no_session_commits",
+    "sessions_without_commits", "added", "deleted", "files", "surviving",
+    "settled_cost", "rework_tax", "retained_per_dollar",
+    "retained_per_dollar_settled", "cost_per_commit",
+))
+_OUTCOMES_DAY = frozenset((
+    "day", "commits", "added", "deleted", "surviving", "no_session",
+    "pending_added",
+))
+_OUTCOMES_PROJECT = frozenset((
+    "project", "repo", "sessions", "commits", "tokens", "cost", "added",
+    "deleted", "surviving", "rework_tax",
+))
+_OUTCOMES_MODEL = frozenset((
+    "model", "sessions", "commits", "tokens", "cost", "added", "surviving",
+))
+_OUTCOMES_NO_COMMIT = frozenset((
+    "session", "project", "repo", "cost", "tokens", "duration_min",
+))
+
+
+def _outcomes_shape(outcomes):
+    """Whitelist the outcomes block; counts and ratios only, no git internals."""
+    _require(type(outcomes) is dict and set(outcomes) == _OUTCOMES_TOP)
+    _require(type(outcomes["schema"]) is int
+             and outcomes["schema"] == _OUTCOMES_SCHEMA)
+    _require(outcomes["status"] in ("ok", "partial", "unavailable"))
+    reasons = outcomes["reasons"]
+    _require(type(reasons) is dict and len(reasons) <= 16)
+    for key, count in reasons.items():
+        _require(type(key) is str and 0 < len(key) <= 32
+                and all(char.isalnum() or char == "_" for char in key))
+        _require(_nonnegative(count))
+    block_range = outcomes["range"]
+    _require(type(block_range) is dict and set(block_range) == {"since", "until"})
+    _date(block_range["since"], optional=True)
+    _date(block_range["until"], optional=True)
+    _require((block_range["since"] is None) == (block_range["until"] is None))
+    if block_range["since"] is not None:
+        _require(block_range["since"] <= block_range["until"])
+    totals = outcomes["totals"]
+    _require(type(totals) is dict and set(totals) == _OUTCOMES_TOTALS)
+    for key, value in totals.items():
+        _require(type(value) in (int, float) and value >= 0)
+    for row in outcomes["days"]:
+        _require(type(row) is dict and set(row) == _OUTCOMES_DAY)
+        _date(row["day"])
+        for key, value in row.items():
+            if key != "day":
+                _require(type(value) in (int, float) and value >= 0)
+    for row in outcomes["projects"]:
+        _require(type(row) is dict and set(row) == _OUTCOMES_PROJECT)
+        _require(type(row["project"]) is str and 0 < len(row["project"]) <= 4096)
+        _require(type(row["repo"]) is bool)
+        for key, value in row.items():
+            if key not in ("project", "repo"):
+                _require(type(value) in (int, float) and value >= 0)
+    for row in outcomes["models"]:
+        _require(type(row) is dict and set(row) == _OUTCOMES_MODEL)
+        _require(type(row["model"]) is str and 0 < len(row["model"]) <= 4096)
+        for key, value in row.items():
+            if key != "model":
+                _require(type(value) in (int, float) and value >= 0)
+    for row in outcomes["no_commit_sessions"]:
+        _require(type(row) is dict and set(row) == _OUTCOMES_NO_COMMIT)
+        _require(all(type(row[key]) is str and 0 < len(row[key]) <= 4096
+                    for key in ("session", "project")))
+        _require(type(row["repo"]) is bool)
+        for key, value in row.items():
+            if key not in ("session", "project", "repo"):
+                _require(type(value) in (int, float) and value >= 0)
+
+
 def _validate_payload(payload, sources, since, until, tz):
     _require(type(payload) is dict
              and set(payload) in (_PAYLOAD_KEYS, _PAYLOAD_KEYS - {"source_labels"}))
@@ -506,6 +585,7 @@ def _validate_payload(payload, sources, since, until, tz):
     _require(_nonnegative(payload["block"]["total"]) and type(payload["block"]["buckets"]) is list)
     _require(set(payload["reuse"]) == {"day", "week", "month"})
     _require(set(payload["colors"]) == {"light", "dark"})
+    _outcomes_shape(payload["outcomes"])
     provenance_sources = payload["provenance"].get("sources")
     achievement_sources = payload["achievement_stats"].get("source_totals")
     _require(type(provenance_sources) is dict and set(provenance_sources) <= set(sources))
