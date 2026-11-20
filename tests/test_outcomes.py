@@ -124,7 +124,7 @@ class OutcomesTests(unittest.TestCase):
         self.assertEqual(5, block["totals"]["surviving"])
         self.assertEqual(0.0, block["totals"]["rework_tax"])
         project = block["projects"][0]
-        self.assertEqual(cwd, project["project"])
+        self.assertEqual(os.path.realpath(cwd), project["project"])
         self.assertTrue(project["repo"])
         self.assertEqual(1, project["commits"])
 
@@ -165,6 +165,46 @@ class OutcomesTests(unittest.TestCase):
         self.assertAlmostEqual(block["totals"]["cost"], 0.36, places=2)
         self.assertAlmostEqual(block["totals"]["rework_tax"], 0.24, places=2)
 
+    def test_since_only_range_extends_to_today(self):
+        repo = _init_repo(self.root / "proj")
+        cwd = str(repo)
+        # One commit on the --since day, one commit "today" (NOW's day).
+        _commit(repo, {"old.py": "old = 1\n"},
+                date_epoch=NOW.timestamp() - 7 * DAY)
+        _commit(repo, {"new.py": "new = 1\n"},
+                date_epoch=NOW.timestamp() - 3600)
+        records = [
+            _record("2026-11-13T10:00:00Z", "ses-1", cwd),
+            _record(f"{NOW.date().isoformat()}T09:00:00Z", "ses-1", cwd),
+        ]
+        block = self.build(records, since="2026-11-13")
+        # The window covers the since day through today (NOW's day), and the
+        # real git log actually resolves that ISO range.
+        self.assertEqual({"since": "2026-11-13",
+                          "until": NOW.date().isoformat()}, block["range"])
+        self.assertEqual(2, block["totals"]["commits"])
+        self.assertEqual(2, block["totals"]["added"])
+        # Both sessions' spend and both commits describe one same range.
+        self.assertEqual(4000, block["totals"]["tokens"])
+
+    def test_git_log_iso_boundaries_include_the_since_day(self):
+        repo = _init_repo(self.root / "proj")
+        cwd = str(repo)
+        # The in.py commit sits on 2026-11-10 at 09:00 UTC, i.e. inside the
+        # --since day boundary; out.py sits a day earlier and must stay
+        # outside.  A bare epoch (git cannot parse it) would miss both.
+        # Commit the older one first: git log --since prunes history as it
+        # walks, so an out-of-window commit at HEAD would stop the walk.
+        _commit(repo, {"out.py": "out = 1\n"},
+                date_epoch=datetime(2026, 11, 9, 9, tzinfo=timezone.utc).timestamp())
+        _commit(repo, {"in.py": "in = 1\n"},
+                date_epoch=datetime(2026, 11, 10, 9, tzinfo=timezone.utc).timestamp())
+        records = [_record("2026-11-10T10:00:00Z", "ses-1", cwd)]
+        block = self.build(records, since="2026-11-10", until="2026-11-11")
+        self.assertEqual(1, block["totals"]["commits"])
+        self.assertEqual(1, block["totals"]["added"])
+        self.assertNotIn("out.py", json.dumps(block))
+
     def test_recent_commits_are_pending_not_reworked(self):
         repo = _init_repo(self.root / "proj")
         _commit(repo, {"app.py": "fresh = 1\n"},
@@ -194,17 +234,53 @@ class OutcomesTests(unittest.TestCase):
 
     def test_worktree_cwd_resolves_to_its_repository(self):
         repo = _init_repo(self.root / "main")
-        _commit(repo, {"app.py": "base = 1\n"}, date_epoch=NOW.timestamp() - 15 * DAY)
+        # The commit lives on the repository's main HEAD: worktrees share the
+        # object store, and the repository is counted exactly once.
+        _commit(repo, {"app.py": "base = 1\nextra = 2\n"},
+                date_epoch=NOW.timestamp() - 8 * DAY)
         worktree = self.root / "wt"
         _git(repo, "worktree", "add", "-q", str(worktree))
-        _git(worktree, "config", "user.email", EMAIL)
-        _git(worktree, "config", "user.name", NAME)
-        _commit(worktree, {"app.py": "base = 1\nextra = 2\n"},
-                date_epoch=NOW.timestamp() - 8 * DAY)
         records = [_record("2026-11-12T11:45:00Z", "ses-1", str(worktree))]
         block = self.build(records, since="2026-11-10", until="2026-11-20")
         self.assertEqual(1, block["totals"]["commits"])
-        self.assertEqual(1, block["totals"]["added"])
+        self.assertEqual(2, block["totals"]["added"])
+        # The session's project rolls up to the repository; the worktree
+        # never becomes its own project row.
+        self.assertEqual(os.path.realpath(str(repo)),
+                         block["projects"][0]["project"])
+        self.assertTrue(block["projects"][0]["repo"])
+
+    def test_worktrees_of_one_repository_count_commits_once(self):
+        repo = _init_repo(self.root / "main")
+        _commit(repo, {"app.py": "first = 1\n"},
+                date_epoch=NOW.timestamp() - 8 * DAY)
+        _commit(repo, {"app.py": "first = 1\nsecond = 2\n"},
+                date_epoch=NOW.timestamp() - 8 * DAY + 900)
+        wt_one = self.root / "wt-one"
+        wt_two = self.root / "wt-two"
+        _git(repo, "worktree", "add", "-q", str(wt_one))
+        _git(repo, "worktree", "add", "-q", str(wt_two))
+        # One session per checkout: main plus both worktrees, all inside the
+        # same session window.  One repository, two commits, three sessions.
+        records = [
+            _record("2026-11-12T11:45:00Z", "ses-main", str(repo)),
+            _record("2026-11-12T11:45:00Z", "ses-wt-one", str(wt_one)),
+            _record("2026-11-12T11:45:00Z", "ses-wt-two", str(wt_two)),
+        ]
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        # Each commit counted exactly once, never once per worktree.
+        self.assertEqual(2, block["totals"]["commits"])
+        self.assertEqual(0, block["totals"]["no_session_commits"])
+        # 1 new line in the first commit + 1 more line in the second.
+        self.assertEqual(2, block["totals"]["added"])
+        self.assertEqual(1, len(block["projects"]))
+        self.assertEqual(os.path.realpath(str(repo)),
+                         block["projects"][0]["project"])
+        # Per-day sums are invariant: sum(days) == totals.
+        self.assertEqual(block["totals"]["commits"],
+                         sum(row["commits"] for row in block["days"]))
+        self.assertEqual(block["totals"]["added"],
+                         sum(row["added"] for row in block["days"]))
 
     def test_non_git_directory_is_reported_without_git_calls(self):
         plain = self.root / "plain"
@@ -215,6 +291,13 @@ class OutcomesTests(unittest.TestCase):
         self.assertEqual("ok", block["status"])
         self.assertFalse(block["projects"][0]["repo"])
         self.assertEqual(0, block["totals"]["commits"])
+        # A session outside any git repo is its own category, never a
+        # "session without commits" (those can never match a commit anyway).
+        self.assertEqual([], block["no_commit_sessions"])
+        self.assertEqual(1, block["totals"]["no_repo_sessions"])
+        self.assertEqual(0, block["totals"]["sessions_without_commits"])
+        self.assertEqual("ses-1", block["no_repo_sessions"][0]["session"])
+        self.assertNotIn("repo", block["no_repo_sessions"][0])
 
     def test_foreign_author_commits_are_ignored(self):
         repo = _init_repo(self.root / "proj")
@@ -343,6 +426,26 @@ class OutcomesTests(unittest.TestCase):
         self.assertEqual(1, block["totals"]["commits"])
         self.assertEqual(1, block["totals"]["surviving"])
         self.assertEqual("ok", block["status"])
+
+    def test_days_sum_matches_totals_invariant(self):
+        repo = _init_repo(self.root / "proj")
+        cwd = str(repo)
+        _commit(repo, {"a.py": "one = 1\n"}, date_epoch=NOW.timestamp() - 9 * DAY)
+        _commit(repo, {"b.py": "two = 2\n"}, date_epoch=NOW.timestamp() - 5 * DAY)
+        _commit(repo, {"c.py": "three = 3\n"}, date_epoch=NOW.timestamp() - 1 * DAY)
+        records = [
+            _record("2026-11-11T11:45:00Z", "ses-1", cwd),
+            _record("2026-11-15T11:45:00Z", "ses-2", cwd),
+            _record("2026-11-19T11:45:00Z", "ses-3", cwd),
+        ]
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        self.assertEqual(3, block["totals"]["commits"])
+        self.assertEqual(block["totals"]["commits"],
+                         sum(row["commits"] for row in block["days"]))
+        self.assertEqual(block["totals"]["added"],
+                         sum(row["added"] for row in block["days"]))
+        self.assertEqual(block["totals"]["deleted"],
+                         sum(row["deleted"] for row in block["days"]))
 
     def test_no_sessions_returns_empty_clean_block(self):
         block = self.build([], since="2026-11-10", until="2026-11-20")
