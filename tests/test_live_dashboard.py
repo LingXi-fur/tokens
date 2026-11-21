@@ -113,20 +113,28 @@ class LiveDashboardTests(unittest.TestCase):
     def start_server(self, dashboard=None):
         dashboard = dashboard or _FakeDashboard()
         server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        # Small poll_interval so server.shutdown() returns promptly in cleanup.
+        thread = threading.Thread(
+            target=lambda: server.serve_forever(poll_interval=0.05), daemon=True)
         thread.start()
+        # addCleanup runs LIFO: shutdown must precede join, or join burns its
+        # whole 2s timeout while the server thread is still serving.
+        self.addCleanup(thread.join, 2)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        self.addCleanup(thread.join, 2)
         return server, dashboard
 
     def start_real_server(self, dashboard):
         server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        # Small poll_interval so server.shutdown() returns promptly in cleanup.
+        thread = threading.Thread(
+            target=lambda: server.serve_forever(poll_interval=0.05), daemon=True)
         thread.start()
+        # addCleanup runs LIFO: shutdown must precede join, or join burns its
+        # whole 2s timeout while the server thread is still serving.
+        self.addCleanup(thread.join, 2)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        self.addCleanup(thread.join, 2)
         return server
 
     def request(self, server, path, headers=None):
@@ -208,11 +216,15 @@ class LiveDashboardTests(unittest.TestCase):
         server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
         errors = []
         server.handle_error = lambda *args: errors.append(args)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        # Small poll_interval so server.shutdown() returns promptly in cleanup.
+        thread = threading.Thread(
+            target=lambda: server.serve_forever(poll_interval=0.05), daemon=True)
         thread.start()
+        # addCleanup runs LIFO: shutdown must precede join, or join burns its
+        # whole 2s timeout while the server thread is still serving.
+        self.addCleanup(thread.join, 2)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        self.addCleanup(thread.join, 2)
 
         def request_quietly(path):
             try:
@@ -250,11 +262,15 @@ class LiveDashboardTests(unittest.TestCase):
             build_payload.reset_mock()
             dashboard.start = lambda interval: None
             server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            # Small poll_interval so server.shutdown() returns promptly in cleanup.
+            thread = threading.Thread(
+                target=lambda: server.serve_forever(poll_interval=0.05), daemon=True)
             thread.start()
+            # addCleanup runs LIFO: shutdown must precede join, or join burns
+            # its whole 2s timeout while the server thread is still serving.
+            self.addCleanup(thread.join, 2)
             self.addCleanup(server.server_close)
             self.addCleanup(server.shutdown)
-            self.addCleanup(thread.join, 2)
 
             paths = (
                 "/",
@@ -298,11 +314,15 @@ class LiveDashboardTests(unittest.TestCase):
         dashboard = _FakeDashboard()
         dashboard.page = lambda interval: "x" * 2_000_000
         server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        # Small poll_interval so server.shutdown() returns promptly in cleanup.
+        thread = threading.Thread(
+            target=lambda: server.serve_forever(poll_interval=0.05), daemon=True)
         thread.start()
+        # addCleanup runs LIFO: shutdown must precede join, or join burns its
+        # whole 2s timeout while the server thread is still serving.
+        self.addCleanup(thread.join, 2)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        self.addCleanup(thread.join, 2)
         stderr = io.StringIO()
         with self.assertLogs("tokens.live", level="DEBUG") as logs, \
                 mock.patch("sys.stderr", stderr):
