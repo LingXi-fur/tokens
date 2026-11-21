@@ -84,7 +84,7 @@ Status: ok
 Session spend: $1,833.10  ·  Commits: 6  ·  Commits outside any session: 0  ·  Sessions without commits: 3
 Sessions outside any git repo: 30  ·  Session spend: $1,688.02
 Added/deleted lines: 6,948 / 290  ·  Surviving lines: 6,804
-Rework tax: $0.77  ·  Retained lines per $1: 3.711745  ·  Retained lines per $1 (settled only): 155.094598  ·  Cost per commit: $305.52
+Rework tax: $0.77  ·  Retained lines per $1: 3.7  ·  Retained lines per $1 (settled only): 155.1  ·  Cost per commit: $305.52
 
 Project                                Repo  Commits  Surviving        Spend     Rework
 /path/to/home                            no        0          0      $288.23      $0.00
