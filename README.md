@@ -65,6 +65,40 @@ Claude has no official percentage, so its section is explicitly an estimate. For
 
 `--source codex` (repeatable) limits the sections, `--json` prints machine-readable output, and `--no-cache` ignores the separate `quota-v1.json` scan cache under the local cache directory. Only timestamps, quota fields, model names, and token totals are used; message text, cwd, session ids, and project names are never printed. The first run scans all local logs and can be slow; later runs reuse the quota and reader caches.
 
+### Token outcomes
+
+`./run outcomes` answers a different question than `quota` — not “how much is left?”, but “what did the spend produce?” It reports commits, added and deleted lines, lines still present after 7 days, a rework tax, retained lines per $1, and cost per commit, by day, project, and model. `--since`/`--until` (`YYYY-MM-DD`, inclusive, in the reporting timezone) bound the range: with only `--since` the range runs through today, with only `--until` it starts at the records' earliest day, and with no explicit bound it covers the records' own day span. `--json` prints machine-readable output.
+
+Each session's working directory is matched to its git repository — worktrees of one repository roll up into that repository — and your own commits (git config `user.email`/`user.name`, extended by `TOKENS_OUTCOME_EMAILS`) are attributed to the session they fall in, from the session's start until 30 minutes after its last activity; commits inside several windows go to the session whose activity ends closest, merge commits are not counted, and commits outside every session count as manual work. **Surviving lines** are lines still present at HEAD 7 days after the commit, measured with read-only `git blame` and cached per repository and commit under the local cache directory (`outcomes-blame-v1.json`, invalidated when HEAD moves). Commits younger than 7 days are **pending**: their added lines are counted, but survival is reported as unknown, not as zero. The **rework tax** is the share of a session's added lines removed within 7 days, times that session's spend. Costs use the same official USD reference prices as the Cost Ledger — records without an official price contribute tokens but no cost, and the report says amounts cover the priced part. Lock files, `package-lock.json`, `dist/`, `node_modules/`, and `*.min.js` never enter the measurements; `TOKENS_OUTCOME_EXCLUDE` adds patterns.
+
+Sessions outside any git repository are listed separately with their spend (a missing working directory counts there too), and sessions in a repository that produced no commits are listed separately. The block reports a status: `ok` when everything was measured; `partial` when a repository could not be read, a file could not be blamed within 10 seconds, or the per-build blame budget of 400 commits ran out (`reasons` names the failed checks, such as `repo_unavailable`, `blame_timeout`, `blame_skipped`); or `unavailable` when git is missing — session spend is still reported then. Other reason counters include `no_repo` (sessions outside any git repository), `bad_session_ts` (records with unparseable timestamps are skipped), `blame_cache_reset` (the on-disk blame cache was corrupt or version-mismatched and was rebuilt), `binary_commit` (commits touching binary files, where numstat provides no line counts), and `unestimated_cost` (records without an official price).
+
+Privacy is unchanged: the outcomes block holds only counts, ratios, and labels — never commit messages, file names, or author emails — and project names follow `--anonymize`. Git is only read, and every call is bounded by a timeout.
+
+Example (project paths replaced with placeholders):
+
+```text
+Outcomes (2026-10-20 ~ 2026-11-05)
+Status: ok
+
+Session spend: $1,833.10  ·  Commits: 6  ·  Commits outside any session: 0  ·  Sessions without commits: 3
+Sessions outside any git repo: 30  ·  Session spend: $1,688.02
+Added/deleted lines: 6,948 / 290  ·  Surviving lines: 6,804
+Rework tax: $0.77  ·  Retained lines per $1: 3.711745  ·  Retained lines per $1 (settled only): 155.094598  ·  Cost per commit: $305.52
+
+Project                                Repo  Commits  Surviving        Spend     Rework
+/path/to/home                            no        0          0      $288.23      $0.00
+/path/to/project-a                       no        0          0        $4.18      $0.00
+/path/to/project-b                       no        0          0        $6.37      $0.00
+/path/to/repo-a                         yes        3      2,196       $11.75      $0.62
+/path/to/repo-b                         yes        0          0       $45.56      $0.00
+/path/to/project-c                       no        0          0    $1,303.64      $0.00
+/path/to/project-d                       no        0          0       $20.54      $0.00
+/path/to/project-e                       no        0          0       $58.47      $0.00
+/path/to/project-f                       no        0          0        $6.60      $0.00
+/path/to/repo-c                         yes        3      4,608       $87.75      $0.15
+```
+
 The live dashboard binds only to `127.0.0.1`. A background worker checks local logs every five minutes by default (`--interval`); page requests read the latest successful in-memory snapshot without waiting for a scan. The page checks for published updates at most every minute by default, with shorter checks while data is being prepared. Its 1, 5, 15, or 30 minute selector and pause control affect browser checks only, not background scans. Initial preparation is shown explicitly; later scan failures keep the last successful data visible with its last successful check time. Unchanged files are not reparsed.
 
 Browser checks use the small `/api/status` response; the full `/api/snapshot` is fetched only when needed. Older servers without the status endpoint retain conditional snapshot polling. Scan details show discovery, collection, payload building, and encoding, plus elapsed time, successfully processed files, discovered candidates, cache hits, parses, and skips. Discovered candidates are a running count, not a known total: these numbers are **not a completion percentage or an ETA**. A single large file can take time without changing the counters. Paused, hidden, or disconnected pages retain the last received state rather than inventing a heartbeat. Timings diagnose work; they do not promise a speedup.
