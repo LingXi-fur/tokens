@@ -3,17 +3,19 @@ import math
 import random
 from datetime import date, datetime, time, timedelta
 
-from . import config
+from . import config, readers
 
 
 DEMO_DAYS = 91
 DEMO_SEED = 0x70C3A
-DEMO_SOURCES = ("claude", "gemini", "codex")
+DEMO_SOURCES = ("claude", "gemini", "codex", "opencode", "antigravity")
 
 _MODELS = {
     "claude": ("claude-sonnet-4-5", "claude-opus-4-1"),
     "gemini": ("gemini-2.5-pro", "gemini-2.5-flash"),
     "codex": ("gpt-5-codex", "gpt-5-mini"),
+    "opencode": ("deepseek-v4.1-flash", "kimi-k2.6"),
+    "antigravity": ("gemini-3-pro", "gemini-3-flash"),
 }
 _PROJECTS = (
     "pixel-garden",
@@ -91,21 +93,40 @@ def build_demo(today=None, sources=None):
                 tzinfo=config.TZ,
             )
 
-            model_scale = 1.18 if model in ("claude-opus-4-1", "gemini-2.5-pro") else 0.9
+            if model in ("claude-opus-4-1", "gemini-2.5-pro"):
+                model_scale = 1.18
+            elif model in ("gemini-3-flash", "gpt-5-mini"):
+                model_scale = 0.26
+            else:
+                model_scale = 0.92
             jitter = 0.82 + rng.random() * 0.38
             base = int(92000 * daily_scale * model_scale * jitter)
             output = max(1800, int(base * (0.12 + rng.random() * 0.07)))
             cache_read = max(0, int(base * (0.34 + rng.random() * 0.24)))
             cache_write = max(0, int(base * (0.05 + rng.random() * 0.06)))
             fresh_input = max(5000, base - output - cache_read - cache_write)
+            billing = None
             if source == "codex":
                 input_tokens = fresh_input + cache_read
                 total = input_tokens + output + cache_write
+            elif source == "opencode":
+                input_tokens = fresh_input
+                total = input_tokens + output + cache_read + cache_write
+                # OpenCode counts reasoning inside output but keeps it as a
+                # separate billing component; derive both from the same split.
+                reasoning = int(output * 0.3)
+                billing = readers._opencode_billing({
+                    "input": input_tokens,
+                    "output": output - reasoning,
+                    "reasoning": reasoning,
+                    "cache_read": cache_read,
+                    "cache_write": cache_write,
+                })
             else:
                 input_tokens = fresh_input
                 total = input_tokens + output + cache_read + cache_write
 
-            records.append({
+            record = {
                 "source": source,
                 "ts": timestamp.isoformat(),
                 "date": current_day.isoformat(),
@@ -117,7 +138,10 @@ def build_demo(today=None, sources=None):
                 "total": total,
                 "session": session,
                 "cwd": f"/synthetic/{project}",
-            })
+            }
+            if billing is not None:
+                record["billing"] = billing
+            records.append(record)
 
     return {
         "records": records,
