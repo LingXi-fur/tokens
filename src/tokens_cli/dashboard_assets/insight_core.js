@@ -22,6 +22,17 @@ function hours24(values){const out=new Array(24).fill(0);if(Array.isArray(values
 function cumulative(hours){const out=[0];for(let i=0;i<24;i++)out.push(out[i]+hours[i]);return out;}
 function cumulativeAt(cum,hours,hour,minute){return cum[hour]+hours[hour]*minute/60;}
 function percentChange(current,previous){return previous>0?(current-previous)/previous*100:null;}
+/* 变化百分比护栏：分母为 0 或低于今日 1% 时不计算，因为这种比例主要
+   由起步时间差和噪声决定；超过 +999% 时改用倍数（跌幅不会超过 −100%）。 */
+const DELTA_FLOOR_SHARE=0.01;
+function deltaSignal(current,previous){
+  const curr=num(current),prev=num(previous);
+  if(prev<=0)return {kind:'none',percent:null,ratio:null};
+  if(prev<=curr*DELTA_FLOOR_SHARE)return {kind:'none',percent:null,ratio:null};
+  const percent=(curr-prev)/prev*100;
+  if(Math.abs(percent)>999)return {kind:'multiple',percent,ratio:curr>=prev?curr/prev:prev/curr};
+  return {kind:'percent',percent,ratio:null};
+}
 
 /* 今日 vs 昨日同时刻：生成时刻 hour:minute 是截止点。
    今日只取已记录的数据（截止点之后本就没有数据）；昨日与基线在截止小时内按分钟线性折算，
@@ -152,5 +163,5 @@ function streakStats(totals,endDay,first){
     longest,busiest,weekdayTotals:weekday,topWeekday};
 }
 
-global.InsightCore=Object.freeze({isoDayValid,addDays,weekdayMonday,continuousDays,paceRace,shareStream,activityCalendar,streakStats,percentChange});
+global.InsightCore=Object.freeze({isoDayValid,addDays,weekdayMonday,continuousDays,paceRace,shareStream,activityCalendar,streakStats,percentChange,deltaSignal});
 })(globalThis);

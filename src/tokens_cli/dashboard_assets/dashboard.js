@@ -844,13 +844,14 @@ function renderDominantShift(rows=selectedRows()){
 function renderDelta(rows=selectedRows()){
   const window=deltaWindowInfo(rows),dEl=document.getElementById('k-delta');
   const d=deltaPercent(window);
-  if(d!==null){
+  const text=window?insightDeltaText(window.currTotal,window.prevTotal):null;
+  if(d!==null&&text){
     dEl.style.display='';dEl.className='delta '+(d>=0?'up':'down');
-    dEl.textContent=(d>=0?'▲ ':'▼ ')+Math.abs(d).toFixed(1)+'% '+window.label;
+    dEl.textContent=text+' '+window.label;
     dEl.title=(dashboardLanguage==='en'?'Previous ':'上期 ')+fmt(window.prevTotal)+' → '+(dashboardLanguage==='en'?'current ':'本期 ')+fmt(window.currTotal)+' tk';
     if(dEl.__deltaValue!==undefined&&dEl.__deltaValue!==d&&!motionDisabled()){dEl.classList.remove('flash-up','flash-down');void dEl.offsetWidth;dEl.classList.add(d>dEl.__deltaValue?'flash-up':'flash-down');}
     dEl.__deltaValue=d;
-  } else {dEl.style.display='none';dEl.title='';dEl.__deltaValue=undefined;}
+  } else {dEl.style.display='none';dEl.title=window?(dashboardLanguage==='en'?'Previous period is too small for a percentage':'上期用量过少，不计算百分比'):'';dEl.__deltaValue=undefined;}
 }
 
 function completeIntervalRows(){
@@ -2437,8 +2438,8 @@ function resolveSignalEvidence(signal){
     return {total,calls,copy:'当前范围与时光探针下的完整模型聚合；Pin 不会修改模型筛选。',stamps:[human(total)+' tk',pct(total,all)+' 当前占比',fmt(calls)+' 条调用记录',state.focusPeriod?'时光探针 '+fmtLabel(state.focusPeriod,state.gran):'当前全景'],exact:[fmt(total)+' Token','分子 '+fmt(total)+' / 分母 '+fmt(all),fmt(calls)+' 条调用记录',state.focusPeriod?'周期 '+state.focusPeriod:'报告范围']};
   }
   if(signal.type==='period'){
-    const rows=selectedRows(true),index=rows.findIndex(row=>row.period===signal.id),row=rows[index],previous=index>0?rows[index-1]:null,delta=row&&previous&&previous.total?((row.total-previous.total)/previous.total*100):null;
-    return {total:row?.total||0,calls:row?.calls||0,copy:'周期 Pin 继续使用 state.focusPeriod；上一期是同粒度中紧邻的上一条聚合记录。',stamps:[human(row?.total||0)+' tk',fmt(row?.calls||0)+' 条调用记录',row&&previous?((row.total-previous.total)>=0?'+':'')+human(row.total-previous.total)+' tk':'无上一期',delta==null?'无百分比变化':(delta>=0?'+':'')+delta.toFixed(1)+'%'],exact:[fmt(row?.total||0)+' Token',fmt(row?.calls||0)+' 条调用记录',row&&previous?((row.total-previous.total)>=0?'+':'')+fmt(row.total-previous.total)+' Token':'无上一期绝对变化',delta==null?'无上一期百分比变化':(delta>=0?'+':'')+delta.toFixed(1)+'%']};
+    const rows=selectedRows(true),index=rows.findIndex(row=>row.period===signal.id),row=rows[index],previous=index>0?rows[index-1]:null,deltaText=row&&previous?insightDeltaText(row.total,previous.total,false):null;
+    return {total:row?.total||0,calls:row?.calls||0,copy:'周期 Pin 继续使用 state.focusPeriod；上一期是同粒度中紧邻的上一条聚合记录。',stamps:[human(row?.total||0)+' tk',fmt(row?.calls||0)+' 条调用记录',row&&previous?((row.total-previous.total)>=0?'+':'')+human(row.total-previous.total)+' tk':'无上一期',deltaText||'无百分比变化'],exact:[fmt(row?.total||0)+' Token',fmt(row?.calls||0)+' 条调用记录',row&&previous?((row.total-previous.total)>=0?'+':'')+fmt(row.total-previous.total)+' Token':'无上一期绝对变化',deltaText||'无上一期百分比变化']};
   }
   if(signal.type==='project'){
     const item=scopedEntities('project').find(row=>row[2]===signal.id),models=item?.[3]||{},dominant=topModelOf(models),total=item?.[1]||0,all=sumBy(selectedRows(),'total');
@@ -2448,7 +2449,7 @@ function resolveSignalEvidence(signal){
   return {total,calls:null,copy:'会话信号来自完整筛选会话聚合及真实模型→会话流向；它与项目证据保持平行，不构造配对关系。',stamps:[human(total)+' tk',series.length+' 轮已保留',series.length>=200?'最多最近 200 轮':'完整保留序列','横轴是轮次，不代表耗时'],exact:[fmt(total)+' Token',fmt(series.length)+' 轮已保留',series.length>=200?'保留边界：最近 200 轮':'未触及 200 轮边界','回放不按模型或时光探针裁剪']};
 }
 function signalEvidence(signal){return resolveSignalEvidence(signal);}
-function signalComparison(pair=signalPair()){const compatibility=signalCompatibility(pair.pin,pair.peek);if(!pair.pin||!pair.peek)return {compatible:false,label:'固定后再 Peek 一个兼容信号',reason:compatibility.reason};if(!compatibility.compatible)return {compatible:false,mixed:true,label:compatibility.reason,reason:compatibility.reason};const pin=resolveSignalEvidence(pair.pin),peek=resolveSignalEvidence(pair.peek);if(!Number.isFinite(pin.total)||!Number.isFinite(peek.total))return {compatible:false,label:'当前信号没有可比较 Token 聚合',reason:'缺少可比较聚合'};const delta=peek.total-pin.total,ratio=pin.total?delta/pin.total:null;return {compatible:true,delta,ratio,label:(delta>=0?'+':'')+human(delta)+' tk'+(ratio==null?'':(' · '+(ratio>=0?'+':'')+(ratio*100).toFixed(1)+'%')),reason:'Peek 相对 Pin'};}
+function signalComparison(pair=signalPair()){const compatibility=signalCompatibility(pair.pin,pair.peek);if(!pair.pin||!pair.peek)return {compatible:false,label:'固定后再 Peek 一个兼容信号',reason:compatibility.reason};if(!compatibility.compatible)return {compatible:false,mixed:true,label:compatibility.reason,reason:compatibility.reason};const pin=resolveSignalEvidence(pair.pin),peek=resolveSignalEvidence(pair.peek);if(!Number.isFinite(pin.total)||!Number.isFinite(peek.total))return {compatible:false,label:'当前信号没有可比较 Token 聚合',reason:'缺少可比较聚合'};const delta=peek.total-pin.total,ratio=pin.total?delta/pin.total:null,ratioText=insightDeltaText(peek.total,pin.total,false);return {compatible:true,delta,ratio,label:(delta>=0?'+':'')+human(delta)+' tk'+(ratioText?' · '+ratioText:''),reason:'Peek 相对 Pin'};}
 function signalActions(signal){if(!signal)return {label:'选择一个信号',disabled:true};if(signal.type==='model')return {label:'只看此模型',run:()=>setModels([signal.id],'只看 '+signal.label)};if(signal.type==='period')return {label:state.focusPeriod===signal.id?'退出时光探针':'进入时光探针',run:()=>toggleFocus(signal.id,true)};if(signal.type==='project')return {label:'打开项目透镜',run:()=>{selectedProject=signal.id;renderLazy('project',true);scrollToSection('section-project');setTimeout(()=>document.getElementById('project-select')?.focus(),60);}};return {label:'打开会话回放',run:()=>openReplay(signal.id,signal.label)};}
 function renderSignalDock(){
   const pair=signalPair(),signal=effectiveSignal(),evidence=resolveSignalEvidence(signal),comparison=signalComparison(pair),action=signalActions(signal),pinned=!!pair.pin,dock=document.getElementById('signal-dock');if(!dock)return;
@@ -2557,8 +2558,8 @@ function viewSummaryText(){
   const models=en?(state.models.size===DATA.models.length?'All models':state.models.size+' / '+DATA.models.length+' models'):(state.models.size===DATA.models.length?'全部模型':state.models.size+' / '+DATA.models.length+' 个模型');
   const parts=[(en?'Token Usage Dashboard':'Token 用量 Dashboard'),gran,models,rangeLabel(),(en?'Total':'总')+' '+human(sumBy(rows,'total'))+' tk',(en?'Calls':'调用')+' '+fmt(sumBy(rows,'calls')),dom?(en?'Top model ':'主力 ')+pretty(dom[0]):''];
   const win=deltaWindowInfo(rows);
-  const d=deltaPercent(win);
-  if(d!==null){parts.push((en?'Δ ':'环比 ')+(d>=0?'+':'')+d.toFixed(1)+'%');}
+  const deltaText=win?insightDeltaText(win.currTotal,win.prevTotal,false):null;
+  if(deltaText){parts.push((en?'Δ ':'环比 ')+deltaText);}
   return parts.filter(Boolean).join(' · ');
 }
 function copyViewSummary(){copyText(viewSummaryText()).then(ok=>toast(ok?(dashboardLanguage==='en'?'View summary copied':'视图摘要已复制'):(dashboardLanguage==='en'?'Copy failed':'复制失败')));}
@@ -2646,7 +2647,15 @@ function insightClock(){
   if(!match)return null;const hour=Number(match[1]),minute=Number(match[2]);
   return hour<24&&minute<60?{hour,minute}:null;
 }
-function insightSignedPct(value){return (value>=0?'+':'−')+Math.abs(value).toFixed(1)+'%';}
+/* 变化文本：昨日/上期过小时返回 null（改用人话），超过 ±999% 用倍数。
+   arrows=false 时用 +/− 前缀，供复制摘要与明细行使用。 */
+function insightDeltaText(current,previous,arrows=true){
+  const s=InsightCore.deltaSignal(current,previous);
+  if(!s||s.kind==='none')return null;
+  const body=s.kind==='multiple'?s.ratio.toFixed(1)+'×':Math.abs(s.percent).toFixed(1)+'%';
+  return arrows?((s.percent>=0?'▲ ':'▼ ')+body):((s.percent>=0?'+':'−')+body);
+}
+function insightAlmostNothing(en){return en?'almost nothing at this time yesterday':'昨日此时几乎没有用量';}
 function insightTip(tip,plot,html,x,anchor){
   tip.innerHTML=html;tip.hidden=false;
   const width=plot.clientWidth,tipWidth=tip.offsetWidth;
@@ -2681,22 +2690,27 @@ function renderPaceRace(){
   const en=insightEn(),time=String(race.hour).padStart(2,'0')+':'+String(race.minute).padStart(2,'0');
   document.getElementById('pace-k').textContent=en?'Today vs yesterday · same time':'今日 vs 昨日 · 同一时刻';
   const deltaEl=document.getElementById('pace-delta'),leadEl=document.getElementById('pace-lead');
-  deltaEl.dataset.lead=race.lead;
-  if(race.delta!==null){deltaEl.textContent=(race.lead==='ahead'?'▲ ':race.lead==='behind'?'▼ ':'')+insightSignedPct(race.delta);}
-  else deltaEl.textContent=human(race.today.total);
-  leadEl.textContent={
-    ahead:en?'ahead of yesterday at '+time:'领先昨日 '+time,
-    behind:en?'behind yesterday at '+time:'落后昨日 '+time,
-    even:en?'level with yesterday at '+time:'与昨日 '+time+' 持平',
-    new:en?'tokens today; nothing yet by '+time+' yesterday':'Token · 昨日此时尚无用量',
-    idle:en?'quiet so far, like yesterday at '+time:'今天和昨天此时都还没开工',
-  }[race.lead];
+  const deltaText=insightDeltaText(race.today.total,race.yesterday.atCutoff);
+  if(deltaText){
+    deltaEl.dataset.lead=race.lead;
+    deltaEl.textContent=deltaText;
+    leadEl.textContent={
+      ahead:en?'ahead of yesterday at '+time:'领先昨日 '+time,
+      behind:en?'behind yesterday at '+time:'落后昨日 '+time,
+      even:en?'level with yesterday at '+time:'与昨日 '+time+' 持平',
+      idle:en?'quiet so far, like yesterday at '+time:'今天和昨天此时都还没开工',
+    }[race.lead]||'';
+  }else{
+    delete deltaEl.dataset.lead;
+    deltaEl.textContent='';
+    leadEl.textContent=insightAlmostNothing(en);
+  }
   const stats=[
     [en?'Today so far':'今日截至 '+time,human(race.today.total)],
     [en?'Yesterday by '+time:'昨日同时刻',human(race.yesterday.atCutoff)],
     [en?'Yesterday, full day':'昨日全天',human(race.yesterday.total)],
   ];
-  if(race.baseline)stats.push([en?race.baseline.days+'-day average by '+time:'近 '+race.baseline.days+' 日同时刻均值',human(race.baseline.atCutoff)+(race.baseline.delta!==null?' · '+insightSignedPct(race.baseline.delta):'')]);
+  if(race.baseline){const baselineDelta=insightDeltaText(race.today.total,race.baseline.atCutoff,false);stats.push([en?race.baseline.days+'-day average by '+time:'近 '+race.baseline.days+' 日同时刻均值',human(race.baseline.atCutoff)+(baselineDelta?' · '+baselineDelta:'')]);}
   if(race.projection!==null)stats.push([en?'Full day at yesterday\'s pace':'按昨日节奏外推全天','≈ '+human(race.projection)]);
   document.getElementById('pace-stats').innerHTML=stats.map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('');
   document.getElementById('pace-note').textContent=en
@@ -3002,8 +3016,9 @@ function renderHud(){
   const topEl=document.getElementById('hud-top'),dot=document.getElementById('hud-dot');
   topEl.textContent=top?top.label:'—';topEl.title=top?top.label:'';dot.style.background=top?modelColor(top.key):'var(--border-2)';
   const race=insightState.race,deltaEl=document.getElementById('hud-delta');
-  if(race&&race.delta!==null){deltaEl.dataset.lead=race.lead;deltaEl.textContent=(race.lead==='ahead'?'▲ ':race.lead==='behind'?'▼ ':'')+insightSignedPct(race.delta)+(en?' vs yesterday, same time':' 较昨日同一时刻');}
-  else{delete deltaEl.dataset.lead;deltaEl.textContent=race?(en?'No usage by this time yesterday':'昨日此时尚无用量'):'';}
+  const hudDelta=race?insightDeltaText(race.today.total,race.yesterday.atCutoff):null;
+  if(hudDelta){deltaEl.dataset.lead=race.lead;deltaEl.textContent=hudDelta+(en?' vs yesterday, same time':' 较昨日同一时刻');}
+  else{delete deltaEl.dataset.lead;deltaEl.textContent=race?insightAlmostNothing(en):'';}
   setHudCollapsed(hudPrefs.c,false);
 }
 (function initHud(){
