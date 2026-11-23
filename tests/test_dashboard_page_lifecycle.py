@@ -36,7 +36,7 @@ class DashboardPageLifecycleTests(unittest.TestCase):
                 self.assertEqual(([], []), result[2:])
                 context.close.assert_not_called()
                 expected = dict(viewport={'width': 1280, 'height': 820},
-                                color_scheme='light', reduced_motion='no-preference')
+                                color_scheme='light', reduced_motion='reduce')
                 if helper is ActionsPageMixin.new_page:
                     expected['accept_downloads'] = True
                 browser.new_context.assert_called_once_with(**expected)

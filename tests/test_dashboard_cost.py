@@ -69,6 +69,19 @@ def cost_block(models, rows, total_incomplete=None):
     return block
 
 
+def freeze_motion(page):
+    """Set the dashboard's built-in motion-off mode right after load.
+
+    These suites never assert on animations, but the live dashboard runs an
+    infinite LED heartbeat plus one-shot rise/pop transitions, and under load
+    Playwright's element-stability check can starve waiting for them to stop.
+    The :root[data-motion=off] rule in dashboard.css kills transitions,
+    animations, and smooth scrolling for the whole page.
+    """
+    page.evaluate(
+        "() => document.documentElement.setAttribute('data-motion', 'off')")
+
+
 @unittest.skipIf(sync_playwright is None, "Playwright is not installed")
 class DashboardCostTests(unittest.TestCase):
     BROWSER = os.environ.get("TOKENS_DASHBOARD_BROWSER", "chromium")
@@ -257,7 +270,7 @@ class DashboardCostTests(unittest.TestCase):
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
         )
         page = context.new_page()
         for script in init_scripts:
@@ -272,6 +285,7 @@ class DashboardCostTests(unittest.TestCase):
         )
         target = path or self._path
         page.goto(target.as_uri(), wait_until="load")
+        freeze_motion(page)
         page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         return context, page, page_errors, console_errors
 
@@ -1124,7 +1138,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
         )
         page = context.new_page()
         page_errors, console_errors = [], []
@@ -1136,6 +1150,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
             else None,
         )
         page.goto((path or self._ref_path).as_uri(), wait_until="load")
+        freeze_motion(page)
         page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         return context, page, page_errors, console_errors
 
@@ -1645,7 +1660,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
         context = self._browser.new_context(
             viewport={"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
         )
         page = context.new_page()
         page_errors, console_errors = [], []
@@ -1659,6 +1674,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
         requested = []
         page.on("request", lambda request: requested.append(request.url))
         page.goto(self._ref_path.as_uri(), wait_until="load")
+        freeze_motion(page)
         page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         self.open_ledger(page)
         # Source links to the vendor pricing pages live in the ledger

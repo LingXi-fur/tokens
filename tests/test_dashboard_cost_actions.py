@@ -161,7 +161,7 @@ class ActionsPageMixin:
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
             accept_downloads=True,
         )
         try:
@@ -178,6 +178,7 @@ class ActionsPageMixin:
             uri = (target if isinstance(target, str) and "://" in target
                    else Path(target).resolve().as_uri())
             page.goto(uri, wait_until="load")
+            base.freeze_motion(page)
             page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
             return context, page, page_errors, console_errors
         except BaseException:
@@ -1015,7 +1016,7 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
         context = self._browser.new_context(
             viewport={"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
             accept_downloads=True,
         )
         page = context.new_page()
@@ -1034,6 +1035,7 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
             "download", lambda download: auto.append(download.suggested_filename)
         )
         page.goto(self._page.as_uri(), wait_until="load")
+        base.freeze_motion(page)
         page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         self.open_ledger(page)
         page.wait_for_timeout(600)

@@ -453,6 +453,89 @@ class OutcomesTests(unittest.TestCase):
         self.assertEqual({}, block["reasons"])
         self.assertEqual(0, block["totals"]["sessions"])
 
+    # ---- terminal number formatting -----------------------------------------
+
+    def test_fmt_ratio_one_decimal_with_thousands(self):
+        self.assertEqual("0.0", outcomes._fmt_ratio(0))
+        self.assertEqual("3.7", outcomes._fmt_ratio(3.711745))
+        self.assertEqual("155.1", outcomes._fmt_ratio(155.094598))
+        self.assertEqual("1,234.5", outcomes._fmt_ratio(1234.5))
+        self.assertEqual("1,234,567.9", outcomes._fmt_ratio(1234567.89))
+
+    def test_print_report_formats_settled_ratios_and_keeps_payload_raw(self):
+        repo = _init_repo(self.root / "proj")
+        _commit(repo, {"app.py": "x = 1\n" * 5}, date_epoch=NOW.timestamp() - 8 * DAY)
+        records = [_record("2026-11-12T11:45:00Z", "ses-1", str(repo))]
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        # The payload keeps the full 6-decimal ratio; only the terminal
+        # formats it down to one decimal with thousands separators.
+        expected = round(block["totals"]["surviving"] / block["totals"]["cost"], 6)
+        self.assertEqual(expected, block["totals"]["retained_per_dollar"])
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            outcomes.print_report(block, lang="en")
+        text = out.getvalue()
+        self.assertIn(f"Retained lines per $1: {outcomes._fmt_ratio(expected)}", text)
+        self.assertNotIn("—", text)
+
+    def test_print_report_all_pending_shows_dash_not_zero(self):
+        repo = _init_repo(self.root / "proj")
+        _commit(repo, {"app.py": "fresh = 1\n"}, date_epoch=NOW.timestamp() - 2 * DAY)
+        records = [_record("2026-11-18T11:45:00Z", "ses-1", str(repo))]
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        self.assertEqual(0, block["totals"]["settled_cost"])
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            outcomes.print_report(block, lang="en")
+        text = out.getvalue()
+        self.assertIn("Retained lines per $1: — (all lines under 7 days old)", text)
+        self.assertIn("Retained lines per $1 (settled only): —", text)
+        self.assertNotIn("per $1: 0.0", text)
+        # The pending count line still reports how many lines are waiting.
+        self.assertIn("1 added lines are under 7 days old; survival pending", text)
+
+    def test_print_report_zh_dash_note_localized(self):
+        repo = _init_repo(self.root / "proj")
+        _commit(repo, {"app.py": "fresh = 1\n"}, date_epoch=NOW.timestamp() - 2 * DAY)
+        records = [_record("2026-11-18T11:45:00Z", "ses-1", str(repo))]
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            outcomes.print_report(block, lang="zh")
+        text = out.getvalue()
+        self.assertIn("每 $1 留存行: —（所有新增行都不满 7 天，留存待定）", text)
+        self.assertIn("每 $1 留存行（仅满 7 天）: —", text)
+
+    def test_print_report_no_commits_keeps_zero_ratio(self):
+        # No commits at all: 0.0 is truthful (nothing was produced), so the
+        # dash note must not appear.
+        records = [_record("2026-11-12T11:45:00Z", "ses-1", str(self.root))]
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        self.assertEqual(0, block["totals"]["commits"])
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            outcomes.print_report(block, lang="en")
+        text = out.getvalue()
+        self.assertIn("Retained lines per $1: 0.0", text)
+        self.assertNotIn("(all lines under 7 days old)", text)
+
+    def test_cli_json_payload_ratios_stay_unformatted(self):
+        repo = _init_repo(self.root / "proj")
+        _commit(repo, {"app.py": "x = 1\n"}, date_epoch=NOW.timestamp() - 8 * DAY)
+        records = [_record("2026-11-12T11:45:00Z", "ses-1", str(repo))]
+        stdout = io.StringIO()
+        with mock.patch("tokens_cli.cli.readers.read_all", return_value=records), \
+                mock.patch("sys.stdout", stdout):
+            status = cli.main(["outcomes", "--json", "--source", "claude",
+                               "--since", "2026-11-10", "--until", "2026-11-20"])
+        self.assertEqual(0, status)
+        raw = stdout.getvalue()
+        block = json.loads(raw)
+        ratio = block["totals"]["retained_per_dollar"]
+        self.assertIsInstance(ratio, float)
+        self.assertEqual(round(block["totals"]["surviving"] / block["totals"]["cost"], 6), ratio)
+        self.assertNotIn("—", raw)  # terminal dashes never leak into the JSON
+
 
 if __name__ == "__main__":
     unittest.main()

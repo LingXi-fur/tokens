@@ -1026,6 +1026,8 @@ _STATUS_TEXT = {
         "no_repo": "非 git 目录",
         "no_cwd_label": "(无工作目录)",
         "pending": "另有 {count} 行新增不满 7 天，留存待定",
+        "dash": "—",
+        "no_settled": "—（所有新增行都不满 7 天，留存待定）",
         "empty": "该范围内没有可统计的会话。",
     },
     "en": {
@@ -1057,6 +1059,8 @@ _STATUS_TEXT = {
         "no_repo": "not a git repo",
         "no_cwd_label": "(no working directory)",
         "pending": "{count} added lines are under 7 days old; survival pending",
+        "dash": "—",
+        "no_settled": "— (all lines under 7 days old)",
         "empty": "No measurable sessions in this range.",
     },
 }
@@ -1064,6 +1068,11 @@ _STATUS_TEXT = {
 
 def _fmt_money(value):
     return f"${value:,.2f}"
+
+
+def _fmt_ratio(value):
+    """Terminal-only formatting: one decimal, thousands separators."""
+    return f"{value:,.1f}"
 
 
 def _clip_path(path, width):
@@ -1098,11 +1107,21 @@ def print_report(report, lang="zh"):
               f"  ·  {text['spend']}: {_fmt_money(sum(row['cost'] for row in report['no_repo_sessions']))}")
     print(f"{text['lines']}: {totals['added']:,} / {totals['deleted']:,}"
           f"  ·  {text['surviving']}: {totals['surviving']:,}")
-    print(f"{text['rework_tax']}: {_fmt_money(totals['rework_tax'])}"
-          f"  ·  {text['per_dollar']}: {totals['retained_per_dollar']}"
-          f"  ·  {text['per_dollar_settled']}: {totals['retained_per_dollar_settled']}"
-          f"  ·  {text['per_commit']}: {_fmt_money(totals['cost_per_commit'])}")
     pending = sum(row.get("pending_added", 0) for row in report["days"])
+    if totals["settled_cost"] > 0:
+        per_dollar = _fmt_ratio(totals["retained_per_dollar"])
+        per_dollar_settled = _fmt_ratio(totals["retained_per_dollar_settled"])
+    elif pending:
+        # Survival is unknown, not zero: a bare 0.0 would read as "no output".
+        per_dollar = text["no_settled"]
+        per_dollar_settled = text["dash"]
+    else:
+        per_dollar = _fmt_ratio(totals["retained_per_dollar"])
+        per_dollar_settled = _fmt_ratio(totals["retained_per_dollar_settled"])
+    print(f"{text['rework_tax']}: {_fmt_money(totals['rework_tax'])}"
+          f"  ·  {text['per_dollar']}: {per_dollar}"
+          f"  ·  {text['per_dollar_settled']}: {per_dollar_settled}"
+          f"  ·  {text['per_commit']}: {_fmt_money(totals['cost_per_commit'])}")
     if pending:
         print(text["pending"].format(count=f"{pending:,}"))
     print()

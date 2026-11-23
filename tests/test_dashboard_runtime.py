@@ -357,7 +357,10 @@ class DashboardRuntimeTests(unittest.TestCase):
         *,
         viewport=None,
         color_scheme="light",
-        reduced_motion="no-preference",
+        # Tests read settled numbers and layout; the default page animates KPI
+        # counters for 600ms each, so prefer reduced motion unless a test
+        # explicitly asks for full motion (it then passes no-preference).
+        reduced_motion="reduce",
         freeze_lazy=False,
         path=None,
     ):
@@ -4631,7 +4634,10 @@ class DashboardRuntimeTests(unittest.TestCase):
             page.on("pageerror", lambda e: page_errors.append(str(e)))
             page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
             try:
-                page.goto(html_path.as_uri(), wait_until="networkidle")
+                page.goto(html_path.as_uri(), wait_until="load")
+                page.wait_for_function(
+                    "() => document.getElementById('k-total')?.textContent.length > 0"
+                )
                 page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
                 # Switch to English via UI toggle button
                 page.click("#lang-btn")
@@ -4859,7 +4865,9 @@ class DashboardRuntimeTests(unittest.TestCase):
                 path=html_path
             )
             try:
-                page.wait_for_load_state("networkidle")
+                page.wait_for_function(
+                    "() => (document.getElementById('k-total')?.textContent || '').includes('亿')"
+                )
                 self.assertIn("亿", page.locator("#k-total").inner_text())
 
                 for sel in (
