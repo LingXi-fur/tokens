@@ -14,6 +14,7 @@ function emptyLiveShell(){
     reuse:{day:[],week:[],month:[]}, day:[], week:[], month:[],
     request_models:[],
     snapshot:{snapshot_schema:'',metric_schema:'',timezone:'',coverage:{first_day:null,last_day:null},id:''},
+    outcomes:{schema:1,range:{since:null,until:null},status:'unavailable',reasons:{},totals:{sessions:0,tokens:0,cost:0,commits:0,no_session_commits:0,sessions_without_commits:0,no_repo_sessions:0,added:0,deleted:0,files:0,surviving:0,settled_cost:0,rework_tax:0,retained_per_dollar:0,retained_per_dollar_settled:0,cost_per_commit:0},days:[],projects:[],models:[],no_commit_sessions:[],no_repo_sessions:[]},
   };
 }
 function decodeWire(wire){
@@ -3019,10 +3020,16 @@ function renderHud(){
   /* 主 KPI 跟手柔光：只写 CSS 变量，样式由 CSS 决定 */
   const primary=document.querySelector('.kpi.is-primary');
   if(primary)primary.addEventListener('pointermove',event=>{const box=primary.getBoundingClientRect();primary.style.setProperty('--mx',Math.round(event.clientX-box.left)+'px');primary.style.setProperty('--my',Math.round(event.clientY-box.top)+'px');},{passive:true});
-  /* 总览 KPI 在视口内时 HUD 让位（信息重复）；滚离后滑入 */
+  /* 总览 KPI 或今日简报在视口内时 HUD 让位（信息重复）；都滚离后滑入 */
   const kpis=document.querySelector('.kpis');
-  if(kpis&&'IntersectionObserver' in window){
-    new IntersectionObserver(entries=>{entries.forEach(entry=>{const away=entry.isIntersecting;hud.classList.toggle('away',away);if(away){hud.setAttribute('inert','');hud.setAttribute('aria-hidden','true');}else{hud.removeAttribute('inert');hud.removeAttribute('aria-hidden');}});},{threshold:0}).observe(kpis);
+  const brief=document.getElementById('section-brief');
+  if('IntersectionObserver' in window){
+    const visible=new Map();
+    const apply=()=>{const away=[...visible.values()].some(Boolean);hud.classList.toggle('away',away);if(away){hud.setAttribute('inert','');hud.setAttribute('aria-hidden','true');}else{hud.removeAttribute('inert');hud.removeAttribute('aria-hidden');}};
+    [kpis,brief].filter(Boolean).forEach(target=>{
+      visible.set(target,false);
+      new IntersectionObserver(entries=>{entries.forEach(entry=>visible.set(target,entry.isIntersecting));apply();},{threshold:0}).observe(target);
+    });
   }
   try{renderHud();}catch(e){}
 })();
@@ -3086,7 +3093,7 @@ function renderHud(){
   },140);},{passive:true});
 })();
 
-function renderCoreViews(){renderRangeUI();renderKPI();renderBar();renderPeakProfile();renderTrendLegend();renderAttribution();renderDonut();renderOtherModelSummary();renderTable();renderDailyModels();renderTop();renderStatusPulse();renderViewCapsule();renderRequestModels();renderRouteMap();renderInsights();}
+function renderCoreViews(){renderRangeUI();renderKPI();renderBrief();renderBar();renderPeakProfile();renderTrendLegend();renderAttribution();renderDonut();renderOtherModelSummary();renderTable();renderDailyModels();renderTop();renderStatusPulse();renderViewCapsule();renderRequestModels();renderRouteMap();renderInsights();}
 function renderTimeViews(){renderProbe();renderRhythm();renderBlock();}
 function renderModelViews(){markLazyDirty();markStaticLazyDirty();}
 function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderFooter();renderDataTrail();applySignalLens();syncViewURL();}
@@ -3097,6 +3104,7 @@ function renderLanguageViews(){
   preserveTableRows=true;
   try{renderDataViews();}finally{preserveTableRows=false;}
   syncExactness();
+  renderBrief();renderDigToggles();
   renderSignalDock();
   renderDominantShift();
   renderDelta();
@@ -3837,6 +3845,7 @@ function secretCommand(q){
 
 function scrollToSection(id){
   const el=document.getElementById(id);if(!el)return;
+  digOpen(id);
   for(const card of document.querySelectorAll('[data-lazy]')){
     if(card!==el&&!(card.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING))continue;
     const name=card.dataset.lazy;
@@ -5451,6 +5460,439 @@ function costSaveDraft(){
     if(costDraft)renderCostEditorList();
   }).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});
 })();
+
+/* ---- 今日简报 Briefing: rule-based sentence, four metric cards, tips ----
+   完全按规则生成，不调用任何大模型。口径与 outcomes 数据层 (#31) 一致：
+   留存行 = 提交满 7 天后在当前 HEAD 仍然存活的行；返工税 = 已结算部分
+   花费 × 回滚比例；金额 = 官方参考价估算（非实际扣费）。 */
+
+const DIG_KEY='tk-dig-v1';
+const DIG_KEEP=new Set(['section-brief','section-scope','section-overview','live-progress','signal-dock-root']);
+
+function briefO(){return (DATA&&typeof DATA.outcomes==='object'&&DATA.outcomes)||null;}
+function briefTotals(o){return (o&&typeof o.totals==='object'&&o.totals)||{};}
+function briefToday(){const raw=(typeof DATA.calendar_day==='string'&&DATA.calendar_day)||String(DATA.generated||'');return raw.slice(0,10);}
+function briefDayIso(day,offset){const d=new Date(day+'T00:00:00');d.setDate(d.getDate()+offset);return localISO(d);}
+function briefRangeCost(days){
+  // Returns {scaled (BigInt x1e12, for CostCore.moneyText), amount (number
+  // for comparisons), anyPriced}.
+  try{
+    const view=CostCore.compute(DATA.cost,{days:new Set(days),models:new Set(DATA.models||[]),config:costPrices});
+    const scaled=view.subtotal||0n;
+    return {scaled,amount:Number(scaled)/1e12,anyPriced:view.pricedCount>0};
+  }catch(e){return{scaled:0n,amount:0,anyPriced:false};}
+}
+function briefMoney(v){
+  // Float USD from the outcomes payload; CostCore moneyText expects scaled.
+  const n=Number(v)||0;
+  return '$'+(n>=100?n.toFixed(0):n.toFixed(2));
+}
+function durText(min){
+  const m=Math.max(0,Math.round(Number(min)||0));
+  if(m<60)return m+(dashboardLanguage==='en'?' min':' 分钟');
+  if(m<1440)return (m/60).toFixed(1).replace(/\.0$/,'')+(dashboardLanguage==='en'?' hours':' 小时');
+  return (m/1440).toFixed(1).replace(/\.0$/,'')+(dashboardLanguage==='en'?' days':' 天');
+}
+function briefCacheHit(){
+  const detail=focusDetail();
+  const cr=Number(detail?detail.cache_read:selectedCacheRead())||0;
+  const rows=scopedGranRows();
+  const sum=rows.reduce((acc,row)=>acc+(row.total||0),0);
+  const hit=sum?(cr/sum*100):0;
+  return {hit,read:cr};
+}
+function briefWorstSource(){
+  // cache_read share per source from the cost ledger's token buckets
+  const per={};
+  (DATA.cost&&DATA.cost.models||[]).forEach(model=>{});
+  const entries=(costView()&&costView().entries)||[];
+  entries.forEach(e=>{
+    const src=e.model.source;
+    if(!per[src])per[src]={read:0n,input:0n,tokens:0n};
+    per[src].read+=e.partSums[2]||0n;
+    per[src].input+=e.partSums[0]||0n;
+    per[src].tokens+=e.tokens||0n;
+  });
+  let worst=null;
+  Object.entries(per).forEach(([src,v])=>{
+    if(v.tokens<=0n)return;
+    const hit=Number(v.read)/Number(v.tokens);
+    if(!worst||hit<worst.hit)worst={src,hit,input:Number(v.input)};
+  });
+  return worst;
+}
+
+function briefSentence(en,o,tot,today){
+  const todayDay=briefToday();
+  const dayRow=(o.days||[]).find(row=>row.day===todayDay);
+  const todayCommits=dayRow?dayRow.commits:0;
+  const todayAdded=dayRow?dayRow.added:0;
+  const spend=briefRangeCost([todayDay]);
+  const spendText=costMoneyText(spend.scaled,'USD');
+  const models=DATA.models||[];
+  const dom=document.getElementById('k-dom');
+  const domModel=dom?dom.textContent:'';
+  const sessions=tot.sessions||0;
+  if(!o||o.status==='unavailable'){
+    return en
+      ?`Today ${spendText} of token usage across ${sessions} session${sessions===1?'':'s'}${domModel?`, mostly ${domModel}`:''}. No git repository was detected, so what it bought is not measured.`
+      :`今天 ${spendText} 的 token 用量来自 ${sessions} 个会话${domModel?`，主力模型 ${domModel}`:''}；未检测到 git 仓库，暂无投入产出。`;
+  }
+  const last7=[...Array(7)].map((_,i)=>briefDayIso(todayDay,-i));
+  const settled7=[...Array(7)].map((_,i)=>briefDayIso(todayDay,-i-7)); // 7-14 days ago
+  const commits7=(o.days||[]).filter(row=>last7.includes(row.day)).reduce((a,row)=>a+(row.commits||0),0);
+  const added7=(o.days||[]).filter(row=>last7.includes(row.day)).reduce((a,row)=>a+(row.added||0),0);
+  // Survival needs commits to be at least 7 days old; only the settled window
+  // (7-14 days ago) can report a survival number.  Reporting 0 for the last
+  // seven days would be true by definition and reads as "no output".
+  const retainedSettled=(o.days||[]).filter(row=>settled7.includes(row.day)).reduce((a,row)=>a+(row.surviving||0),0);
+  if(todayCommits>0){
+    const best=(o.projects||[]).filter(p=>p.commits>0).sort((a,b)=>b.surviving-a.surviving)[0];
+    const lost=(o.no_commit_sessions||[])[0];
+    const parts=en
+      ?[`Today ${spendText} of tokens bought ${todayCommits} commit${todayCommits===1?'':'s'} and ${todayAdded.toLocaleString('en-US')} added line${todayAdded===1?'':'s'}.`]
+      :[`今天 ${spendText} 的 token 换来了 ${todayCommits} 个提交、${todayAdded.toLocaleString('en-US')} 行新增。`];
+    if(best&&best.surviving>0)parts.push(en
+      ?`Best value: ${best.project} kept ${best.surviving.toLocaleString('en-US')} surviving lines.`
+      :`花得最值的是 ${best.project}，留存 ${best.surviving.toLocaleString('en-US')} 行。`);
+    if(lost&&lost.cost>=1)parts.push(en
+      ?`Worst: a ${durText(lost.duration_min)} session cost ${briefMoney(lost.cost)} and left no commit.`
+      :`最亏的是一个跨度 ${durText(lost.duration_min)} 的会话，花了 ${briefMoney(lost.cost)}，没有留下提交。`);
+    return parts.join(' ');
+  }
+  if(commits7>0){
+    const settledNote=retainedSettled>0
+      ?(en?` Commits from 7-14 days ago kept ${retainedSettled.toLocaleString('en-US')} surviving lines.`
+           :` 7-14 天前的提交留存了 ${retainedSettled.toLocaleString('en-US')} 行。`)
+      :'';
+    return en
+      ?`Today ${spendText} of tokens has not turned into a commit yet; the last 7 days delivered ${commits7} commit${commits7===1?'':'s'} and ${added7.toLocaleString('en-US')} added line${added7===1?'':'s'} (survival is measured once a commit is 7 days old).${settledNote}`
+      :`今天 ${spendText} 的 token 还没有换来提交；最近 7 天共 ${commits7} 个提交、新增 ${added7.toLocaleString('en-US')} 行（满 7 天后再计留存）。${settledNote}`;
+  }
+  const noCommit=tot.sessions_without_commits||0;
+  return en
+    ?`Today ${spendText} of tokens has not turned into a commit yet; ${noCommit} session${noCommit===1?'':'s'} in this snapshot matched no commit.`
+    :`今天 ${spendText} 的 token 还没有换来提交；本快照中 ${noCommit} 个会话未匹配到提交。`;
+}
+
+function briefTrendNote(en,o,tot,today){
+  const todayDay=briefToday();
+  const spend=briefRangeCost([todayDay]).amount;
+  const last7=[...Array(7)].map((_,i)=>briefDayIso(todayDay,-i));
+  const week=briefRangeCost(last7);
+  if(week.amount>0&&spend>2*week.amount/7){
+    const factor=(spend/(week.amount/7)).toFixed(1);
+    return en?`Today's spend is ${factor}× the 7-day average.`:`今天花费已是 7 日均值的 ${factor} 倍。`;
+  }
+  const rows=scopedGranRows();
+  const todayRow=rows.find(r=>r.period===todayDay);
+  let peak=0;
+  rows.forEach(r=>{if(r.period!==todayDay&&r.total>peak)peak=r.total;});
+  if(todayRow&&peak>0&&todayRow.total>peak)
+    return en?`Today's token usage set a new record for this report.`:`今日 token 用量创了本报告的新高。`;
+  return null;
+}
+
+const BRIEF_REASON_TEXT={
+  zh:{
+    git_missing:'未检测到 git，投入产出未统计',
+    repo_unavailable:'有仓库暂时无法读取，相关提交未计入',
+    blame_timeout:'个别文件读取超时，留存行按可测部分统计',
+    blame_skipped:'提交数超出本次统计预算，留存为部分值',
+    blame_cache_reset:'留存缓存已重建',
+    bad_session_ts:'有记录缺少可用时间戳',
+    no_repo:'有会话不在 git 仓库内，未参与产出归因',
+    binary_commit:'有二进制提交未计入行数',
+    unestimated_cost:'有记录缺少官方参考价，金额为可估部分',
+  },
+  en:{
+    git_missing:'git is not available; outcomes not measured',
+    repo_unavailable:'some repositories were temporarily unreadable; their commits are excluded',
+    blame_timeout:'some file reads timed out; surviving lines cover the measurable part only',
+    blame_skipped:'commit budget reached; survival is partial',
+    blame_cache_reset:'the survival cache was rebuilt',
+    bad_session_ts:'some records lacked a usable timestamp',
+    no_repo:'some sessions sit outside any git repository and did not join the attribution',
+    binary_commit:'binary commits are excluded from line counts',
+    unestimated_cost:'some records lack an official reference price; amounts cover the priced part',
+  },
+};
+
+function briefStatusText(en,o){
+  const reasons=(o&&o.reasons)||{};
+  const lines=[];
+  const order=['git_missing','repo_unavailable','blame_timeout','blame_skipped','no_repo','binary_commit','unestimated_cost','blame_cache_reset','bad_session_ts'];
+  order.forEach(key=>{
+    if(!reasons[key])return;
+    const text=(BRIEF_REASON_TEXT[en?'en':'zh'][key]||key);
+    lines.push(en?`${text} (${reasons[key]})`:`${text}（${reasons[key]}）`);
+  });
+  return lines;
+}
+
+function briefCard(value,label,sub,title,status){
+  const cls=status==='down'?'is-down':status==='up'?'is-up':'';
+  return `<div class="brief-card ${cls}" title="${esc(title)}"><div class=bc-value>${value}</div><div class=bc-label>${esc(label)}</div><div class=bc-sub>${esc(sub)}</div></div>`;
+}
+
+function renderBrief(){
+  const line=document.getElementById('brief-line');
+  if(!line)return;
+  const en=dashboardLanguage==='en';
+  const kicker=document.getElementById('brief-k');
+  if(kicker)kicker.textContent=en?'BRIEF · TODAY':'BRIEF · 今日简报';
+  const o=briefO();
+  const tot=briefTotals(o||{});
+  line.textContent=briefSentence(en,o||{status:'unavailable'},tot,briefToday());
+  const trend=briefTrendNote(en,o,tot,briefToday());
+  if(trend)line.textContent+=' '+trend;
+  // Status line: partial/unavailable explanations in plain words.
+  const statusEl=document.getElementById('brief-status');
+  const status=(o&&o.status)||'unavailable';
+  const notes=briefStatusText(en,o);
+  if(status==='partial'){
+    statusEl.hidden=false;
+    statusEl.className='brief-status is-partial';
+    statusEl.textContent=(en?'Partial data · ':'数据不完整 · ')+notes.join(' · ');
+  }else if(status==='unavailable'){
+    statusEl.hidden=false;
+    statusEl.className='brief-status is-unavailable';
+    statusEl.textContent=en?'No git repository detected for this snapshot.':'本快照未检测到可用的 git 仓库。';
+  }else{
+    statusEl.hidden=true;
+    statusEl.textContent='';
+  }
+  // ---- four metric cards ----
+  const cards=[];
+  const moneySub=()=>en?'official reference estimate, not actual charges':'官方参考价估算，非实际扣费';
+  if(status==='unavailable'){
+    cards.push(briefCard('—',en?'Retained lines per $1':'每 $1 留存行',
+      en?'no git repository detected':'未检测到 git 仓库',
+      en?'Surviving lines are the lines a commit added that still exist at HEAD after 7 days; without a repository this is not measurable.':'留存行 = 提交满 7 天后在当前 HEAD 仍存活的行（#31 口径）；没有仓库时无法度量。'));
+  }else{
+    const per=tot.retained_per_dollar||0;
+    // The big number covers the whole snapshot.  The subtitle may only compare
+    // settled windows: commits need to be 7 days old before survival exists.
+    const settled7=[...Array(7)].map((_,i)=>briefDayIso(briefToday(),-i-7));
+    const prev7=[...Array(7)].map((_,i)=>briefDayIso(briefToday(),-i-14));
+    const costSettled=briefRangeCost(settled7).amount;
+    const costPrev=briefRangeCost(prev7).amount;
+    const surviveSettled=(o.days||[]).filter(row=>settled7.includes(row.day)).reduce((a,row)=>a+(row.surviving||0),0);
+    const survivePrev=(o.days||[]).filter(row=>prev7.includes(row.day)).reduce((a,row)=>a+(row.surviving||0),0);
+    const avgSettled=(costSettled>0)?surviveSettled/costSettled:null;
+    const avgPrev=(costPrev>0)?survivePrev/costPrev:null;
+    let sub='',cls='';
+    if(avgSettled===null||(surviveSettled===0&&avgSettled===0))
+      sub=en?'last 7 days still pending (under 7 days); no comparison yet':'近 7 天的提交还不满 7 天，暂不比较';
+    else{
+      sub=(en?'7-14 day avg ':'7-14 天均值 ')+per1Text(avgSettled);
+      if(avgPrev!==null){
+        if(avgSettled>avgPrev)sub+=en?' · rising':' · 上涨',cls='up';
+        else if(avgSettled<avgPrev)sub+=en?' · falling':' · 回落',cls='down';
+        else sub+=en?' · flat':' · 持平';
+      }
+    }
+    cards.push(briefCard(per1Text(per),en?'Retained lines per $1 · all range':'每 $1 留存行 · 全部范围',sub,
+      en?`Big number: surviving lines ÷ session spend over the whole snapshot range. Subtitle: the 7-14 day window (commits there are at least 7 days old, so survival is settled) and its change against the previous 7 days; it is not compared while the last 7 days are still pending. Settled-only variant: ${per1Text(tot.retained_per_dollar_settled||0)}. ${moneySub()}.`
+         :`大字：全快照范围的留存行 ÷ 会话花费。副标题：7-14 天前的窗口（该窗口提交已满 7 天，留存已定案）及其相对再前 7 天的涨跌；最近 7 天提交未满 7 天时不做比较。仅满 7 天口径：${per1Text(tot.retained_per_dollar_settled||0)}。${moneySub()}。`,cls));
+  }
+  // Rework tax %
+  if(status==='unavailable'){
+    cards.push(briefCard('—',en?'Rework tax':'返工税',
+      en?'no git repository detected':'未检测到 git 仓库',
+      en?'Rework tax is the settled spend share weighted by rolled-back lines; without a repository it is not measurable.':'返工税 = 已结算部分花费 × 该会话提交的回滚行比例；没有仓库时无法度量。'));
+  }else{
+    const settled=tot.settled_cost||0;
+    const tax=tot.rework_tax||0;
+    const pct=settled>0?(tax/settled*100):null;
+    cards.push(briefCard(pct===null?'—':pct.toFixed(1)+'%',en?'Rework tax':'返工税',
+      pct===null?(en?'nothing settled yet (commits under 7 days)':'暂无满 7 天的提交')
+        :`${briefMoney(tax)} ${en?'of settled spend':'/ 已结算花费'}`,
+      en?`Rolled-back share of lines added by settled commits, weighted by that session's spend; settled means the commit is at least 7 days old. ${moneySub()}.`
+         :`已满 7 天提交的新增行中被回滚的比例，按会话花费加权；"满 7 天"指提交距今至少 7 天。${moneySub()}。`));
+  }
+  // Subscription payback
+  const monthDays=(en2=>{const out=[];const first=briefToday().slice(0,8)+'01';const base=new Date(first+'T00:00:00');const today=new Date(briefToday()+'T00:00:00');for(let d=new Date(base);d<=today;d.setDate(d.getDate()+1))out.push(localISO(d));return out;})(en);
+  const monthView=briefRangeCost(monthDays);
+  const monthText=costMoneyText(monthView.scaled,'USD');
+  let subFee=null;
+  try{subFee=Number(localStorage.getItem('tk-sub-v1'))||null;}catch(e){}
+  if(subFee&&subFee>0&&monthView.amount>0){
+    const mult=monthView.amount/subFee;
+    cards.push(briefCard(mult.toFixed(1)+'×',en?'Subscription payback':'订阅回本',
+      `${monthText} ${en?'this month · fee '+briefMoney(subFee):'本月 · 订阅费 '+briefMoney(subFee)}`,
+      en?`Priced month-to-date amount ÷ your stored subscription fee. Reference estimate only; your plan's actual pricing may differ.`
+         :`本月已定价金额 ÷ 你本地保存的订阅费。参考价估算；与套餐实际计费可能不同。`));
+  }else{
+    cards.push(briefCard(subFee&&subFee>0?(monthView.amount>0?'—':'—'):'',
+      en?'Subscription payback':'订阅回本',
+      en?'set your subscription fee':'设置订阅费',
+      en?`Month-to-date priced amount ÷ subscription fee, both local. Click "set subscription fee" to store yours.`
+         :`本月已定价金额 ÷ 订阅费，全部本地保存。点击"设置订阅费"保存你的月费。`,'action'));
+  }
+  // Cache hit with the weakest source
+  const cache=briefCacheHit();
+  const worst=briefWorstSource();
+  cards.push(briefCard(Math.round(cache.hit)+'%',en?'Cache hit · Read':'缓存命中 · Read',
+    worst?((en?'weakest source: ':'最差来源：')+costSourceLabel(worst.src))
+      :(en?'cache-read share of current tokens':'缓存读占当前 Token 的比例'),
+    en?`Cache-read tokens ÷ total tokens in the current view. Cache read measures tokens read from cache, not confirmed monetary savings (per the cost ledger's caliber note).`
+       :`当前视图的缓存读 Token ÷ 总 Token。缓存读衡量命中量，不等于已确认的货币节省（与费用账本口径注一致）。`));
+  document.getElementById('brief-cards').innerHTML=cards.join('');
+  briefWireActions(status);
+  // ---- tips (at most 3, ordered by the estimated saving) ----
+  renderBriefTips(en,o,tot,status);
+}
+
+function per1Text(v){return (Math.round(v*100)/100).toString();}
+
+function briefWireActions(status){
+  const box=document.getElementById('brief-cards');
+  const action=box.querySelector('.brief-card.action');
+  if(!action)return;
+  action.addEventListener('click',()=>{
+    let fee=null;
+    try{
+      const raw=window.prompt(dashboardLanguage==='en'?'Your monthly subscription fee in USD (stored locally only):':'你的每月订阅费（美元，仅保存在本地）：','20');
+      if(raw===null)return;
+      fee=Number(raw);
+    }catch(e){return;}
+    if(!Number.isFinite(fee)||fee<=0){toast(dashboardLanguage==='en'?'Please enter a positive number.':'请输入正数。');return;}
+    try{localStorage.setItem('tk-sub-v1',String(fee));}catch(e){}
+    renderBrief();
+  });
+}
+
+function renderBriefTips(en,o,tot,status){
+  const box=document.getElementById('brief-tips');
+  if(!box)return;
+  const tips=[];
+  if(status!=='unavailable'){
+    const lost=(o.no_commit_sessions||[]).find(row=>(row.cost||0)>=1);
+    if(lost){
+      tips.push({amount:null,text:en
+        ?`A session spanning ${durText(lost.duration_min)} spent ${briefMoney(lost.cost)} in a git repository but matched no commit.`
+        :`一个 ${durText(lost.duration_min)} 的会话花了 ${briefMoney(lost.cost)}，在 git 仓库内但没有匹配到提交。`});
+    }
+    const worst=briefWorstSource();
+    if(worst&&worst.hit<0.25&&worst.input>0){
+      const view=costView();
+      // partSums are BigInt: compare explicitly, sort callbacks need Number.
+      const main=(view&&view.entries||[]).slice().sort((a,b)=>a.partSums[0]>b.partSums[0]?-1:a.partSums[0]<b.partSums[0]?1:0)[0];
+      // entry.rates are BigInt x1e6 (USD per million tokens).
+      const rate=main&&main.rates?main.rates[0]:null;
+      const perMillion=(rate===null||rate===undefined)?null:Number(rate)/1e6;
+      const save=perMillion===null?null:Number(0.25*worst.input*perMillion/1e6);
+      if(save!==null&&save>=0.5){
+        tips.push({amount:save,text:en
+          ?`${costSourceLabel(worst.src)} reads only ${(worst.hit*100).toFixed(0)}% from cache; lifting the hit rate could save about ${briefMoney(save)} of reference-priced input.`
+          :`${costSourceLabel(worst.src)} 的缓存命中率仅 ${(worst.hit*100).toFixed(0)}%；把命中率提起来，参考价口径下约可省 ${briefMoney(save)} 的输入。`});
+      }else{
+        tips.push({amount:null,text:en
+          ?`${costSourceLabel(worst.src)} reads only ${(worst.hit*100).toFixed(0)}% from cache; a long shared context would benefit from caching.`
+          :`${costSourceLabel(worst.src)} 的缓存命中率仅 ${(worst.hit*100).toFixed(0)}%；长共享上下文场景值得开启缓存。`});
+      }
+    }
+    const cache=briefCacheHit();
+    const rows=scopedGranRows();
+    const inputSum=rows.reduce((acc,row)=>acc+Math.max(0,(row.total||0)),0);
+    if(cache.read>0&&cache.hit<35){
+      tips.push({amount:null,text:en
+        ?`Cache-read share is ${Math.round(cache.hit)}% of tokens in this view; sessions that repeatedly re-read large contexts inflate it in the other direction — worth a look.`
+        :`当前视图缓存读占比 ${Math.round(cache.hit)}%；重复读入大上下文的会话会拉高输入消耗——建议关注。`});
+    }
+  }
+  tips.sort((a,b)=>Number(b.amount||0)-Number(a.amount||0));
+  const top=tips.slice(0,3);
+  box.hidden=!top.length;
+  box.innerHTML=top.map(tip=>`<div class="brief-tip"><b class=tip-tag>${tip.amount!==null?(en?'can save ≈ ':'可省约 ')+briefMoney(tip.amount):(en?'watch':'关注')}</b>${esc(tip.text)}</div>`).join('');
+}
+
+function renderBriefTipsNow(){renderBriefTips(dashboardLanguage==='en',briefO(),briefTotals(briefO()||{}),(briefO()||{}).status);}
+
+/* ---- 深挖区折叠 Dig collapse ---- */
+function digSections(){
+  return [...document.querySelectorAll('section.card[id]')]
+    .filter(sec=>!DIG_KEEP.has(sec.id));
+}
+function digRead(){try{return JSON.parse(localStorage.getItem(DIG_KEY)||'{}')||{};}catch(e){return{};}}
+function digWrite(store){try{localStorage.setItem(DIG_KEY,JSON.stringify(store));}catch(e){}}
+function digApply(id,collapsed){
+  const sec=document.getElementById(id);if(!sec)return;
+  sec.classList.toggle('dig-collapsed',collapsed);
+  const h2=sec.querySelector('.dig-h2');
+  if(h2){
+    h2.setAttribute('aria-expanded',collapsed?'false':'true');
+    const chev=h2.querySelector('.dig-chev');
+    if(chev)chev.textContent=collapsed?'▸':'▾';
+  }
+}
+function digRefreshSized(section){
+  // Sections that were display:none have no layout yet; charts sized from
+  // clientWidth (activity calendar, pace race, share stream) must re-render
+  // after the section becomes visible, otherwise they stay at their initial
+  // zero-width position.
+  if(!section)return;
+  const sized=['section-overview','section-daily-models','section-rhythm'];
+  if(!sized.includes(section.id))return;
+  try{if(typeof renderInsights==='function')renderInsights();}catch(e){}
+}
+function digOpen(id){
+  const sec=document.getElementById(id);
+  if(sec&&sec.classList.contains('dig-collapsed')){
+    const store=digRead();store[id]='open';digWrite(store);
+    digApply(id,false);
+    // The lazy renderer reacts to visibility; nudge it so the section fills.
+    const name=sec.dataset&&sec.dataset.lazy;
+    if(name){lazyState[name]=Object.assign({},lazyState[name],{visible:true});if(lazyState[name].dirty||!lazyState[name].rendered)renderLazy(name,true);}
+    digRefreshSized(sec);
+  }
+}
+function digToggle(id){
+  const sec=document.getElementById(id);if(!sec)return;
+  const collapsed=!sec.classList.contains('dig-collapsed');
+  const store=digRead();store[id]=collapsed?'closed':'open';digWrite(store);
+  digApply(id,collapsed);
+  if(!collapsed){
+    const name=sec.dataset&&sec.dataset.lazy;
+    if(name){lazyState[name]=Object.assign({},lazyState[name],{visible:true});if(lazyState[name].dirty||!lazyState[name].rendered)renderLazy(name,true);}
+    digRefreshSized(sec);
+  }
+}
+function setDigAll(open){
+  const store=digRead();
+  digSections().forEach(sec=>{
+    store[sec.id]=open?'open':'closed';
+    digApply(sec.id,!open);
+    if(open)digRefreshSized(sec);
+  });
+  digWrite(store);
+}
+function initDigCollapse(){
+  digSections().forEach(sec=>{
+    sec.classList.add('dig');
+    const head=sec.firstElementChild;
+    if(!head)return;
+    head.classList.add('dig-head-row');
+    const h2=head.tagName==='H2'?head:head.querySelector('h2');
+    if(!h2)return;
+    if(!h2.querySelector('.dig-chev')){
+      const chev=document.createElement('span');
+      chev.className='dig-chev';chev.setAttribute('aria-hidden','true');
+      h2.prepend(chev);
+    }
+    h2.classList.add('dig-h2');
+    h2.setAttribute('role','button');
+    h2.tabIndex=0;
+    h2.addEventListener('click',()=>digToggle(sec.id));
+    h2.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();digToggle(sec.id);}});
+    const store=digRead();
+    digApply(sec.id,store[sec.id]!=='open'); // default: collapsed
+  });
+}
+function renderDigToggles(){ /* chevrons are glyphs; language refresh needs nothing */ }
+
+initDigCollapse();
 
 /* URL 可恢复当前视图；旧版 #day/#week/#month 仍兼容 */
 document.getElementById('lang-btn').addEventListener('click',toggleLanguage);

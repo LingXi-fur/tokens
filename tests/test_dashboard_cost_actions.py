@@ -179,6 +179,7 @@ class ActionsPageMixin:
                    else Path(target).resolve().as_uri())
             page.goto(uri, wait_until="load")
             base.freeze_motion(page)
+            page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
             return context, page, page_errors, console_errors
         except BaseException:
             try:
@@ -1035,6 +1036,7 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
         )
         page.goto(self._page.as_uri(), wait_until="load")
         base.freeze_motion(page)
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         self.open_ledger(page)
         page.wait_for_timeout(600)
         self.assertEqual(auto, [])  # never downloads without a click

@@ -85,6 +85,7 @@ class DashboardBudgetTests(unittest.TestCase):
         page.route('http://**/*', lambda route: route.abort())
         page.route('https://**/*', lambda route: route.abort())
         page.goto(self.path.as_uri(), wait_until='load')
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         page.locator('#section-cost').scroll_into_view_if_needed()
         page.wait_for_function("document.querySelector('#budget-body')?.textContent.length>0")
         self.addCleanup(context.close)
@@ -469,7 +470,9 @@ class DashboardBudgetTests(unittest.TestCase):
         page.route('http://127.0.0.1:9876/api/snapshot',lambda route:route.fulfill(content_type='application/json',body=json.dumps(response)))
         prices={'v':1,'currency':'USD','reference':False,'prices':{base.price_key('model-a'):{'rates':['1','1','1','1','1'],'note':''}}}
         page.add_init_script('localStorage.setItem("tk-cost-v1",'+json.dumps(json.dumps(prices))+');')
-        page.goto('http://127.0.0.1:9876/dashboard');page.locator('#section-cost').scroll_into_view_if_needed()
+        page.goto('http://127.0.0.1:9876/dashboard')
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
+        page.locator('#section-cost').scroll_into_view_if_needed()
         page.wait_for_function("document.querySelector('#budget-body')?.textContent.includes('2026-10')")
         self.save(page)
         before=page.locator('#budget-values').inner_text()

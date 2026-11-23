@@ -2287,7 +2287,7 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
         storage_keys = set(re.findall(r"tk-[a-z0-9-]+", report_dashboard._TEMPLATE))
         storage_keys.discard("tk-motion-change")
         self.assertEqual(
-            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang", "tk-cost-v1", "tk-budget-v1", "tk-hud-v1"},
+            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang", "tk-cost-v1", "tk-budget-v1", "tk-hud-v1", "tk-dig-v1", "tk-sub-v1"},
             storage_keys,
         )
         self.assertIn("JSON.stringify({c:hudPrefs.c,r:Math.round(hudPrefs.r),b:Math.round(hudPrefs.b)})", script)

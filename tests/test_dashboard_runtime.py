@@ -394,6 +394,11 @@ class DashboardRuntimeTests(unittest.TestCase):
             uri = (target if isinstance(target, str) and "://" in target
                    else Path(target).resolve().as_uri())
             page.goto(uri, wait_until="load")
+            # Deep-dive sections default to collapsed for real users.  The
+            # existing runtime assertions inspect those sections directly, so
+            # tests open them up first (the collapse behavior itself is covered
+            # by dedicated tests that reset the state explicitly).
+            page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
             return context, page, page_errors, console_errors
         except BaseException:
             try:
@@ -560,6 +565,234 @@ class DashboardRuntimeTests(unittest.TestCase):
             self.assertIn("Date unknown", page.locator('#prov-sources [data-source="claude"]').inner_text())
             self.assertIn("Not enabled", page.locator('#prov-sources [data-source="gemini"]').inner_text())
             self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
+    def test_top_briefing_sentence_cards_and_caliber_titles(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            line = page.locator("#brief-line").inner_text()
+            self.assertTrue(line.strip())
+            self.assertIn("BRIEF", page.locator("#brief-k").inner_text())
+            cards = page.locator(".brief-card")
+            self.assertEqual(4, cards.count())
+            for index in range(4):
+                card = cards.nth(index)
+                title = card.get_attribute("title") or ""
+                self.assertTrue(title.strip(), f"card {index} lacks a caliber title")
+            self.assertEqual(4, page.locator(".brief-card .bc-label").count())
+            self.assertIn("每 $1 留存行", page.locator(".brief-card").first.inner_text())
+            page.evaluate("applyLanguage('en',false)")
+            self.assertIn("TODAY", page.locator("#brief-k").inner_text())
+            self.assertIn("Retained lines per $1",
+                          page.locator(".brief-card").first.inner_text())
+            english = page.locator("#section-brief").inner_text()
+            for cjk in ("留存行", "返工税", "订阅回本", "缓存命中"):
+                self.assertNotIn(cjk, english)
+            page.evaluate("applyLanguage('zh',false)")
+            self.assertIn("每 $1 留存行", page.locator(".brief-card").first.inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_top_briefing_partial_and_unavailable_degrade_without_errors(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("""() => {
+              DATA.outcomes.status='partial';
+              DATA.outcomes.reasons={blame_timeout:2, no_repo:82, unestimated_cost:3};
+              renderBrief();
+            }""")
+            status = page.locator("#brief-status")
+            self.assertFalse(status.is_hidden())
+            text = status.inner_text()
+            self.assertIn("数据不完整", text)
+            self.assertIn("个别文件读取超时", text)
+            self.assertIn("（2）", text)
+            page.evaluate("applyLanguage('en',false)")
+            en = page.locator("#brief-status").inner_text()
+            self.assertIn("Partial data", en)
+            self.assertIn("some file reads timed out", en)
+            page.evaluate("""() => {
+              DATA.outcomes.status='unavailable';
+              renderBrief();
+            }""")
+            unavailable = page.locator("#section-brief").inner_text()
+            self.assertIn("No git repository detected", unavailable)
+            self.assertIn("no git repository detected", page.locator(".brief-card").first.inner_text())
+            self.assertEqual(4, page.locator(".brief-card").count())
+            page.evaluate("applyLanguage('zh',false)")
+            self.assertIn("未检测到 git 仓库", page.locator("#section-brief").inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_top_briefing_sentence_variants_for_commits_and_empty_weeks(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("""() => {
+              const today=String(DATA.calendar_day||DATA.generated||'').slice(0,10);
+              DATA.outcomes.status='ok';
+              DATA.outcomes.reasons={};
+              DATA.outcomes.totals.sessions=3;
+              DATA.outcomes.totals.commits=3;
+              DATA.outcomes.days=[{day:today,commits:3,added:120,deleted:4,surviving:0,
+                                   no_session:0,pending_added:120}];
+              DATA.outcomes.projects=[{project:'/repo/a',repo:true,sessions:1,commits:3,
+                                       tokens:1000,cost:2,added:120,deleted:4,surviving:9,
+                                       rework_tax:0}];
+              DATA.outcomes.no_commit_sessions=[{session:'s-1',project:'/repo/b',repo:true,
+                                                 cost:1.5,tokens:800,duration_min:120}];
+              renderBrief();
+            }""")
+            zh = page.locator("#brief-line").inner_text()
+            self.assertIn("3 个提交", zh)
+            self.assertIn("120 行新增", zh)
+            self.assertIn("/repo/a", zh)
+            self.assertIn("2 小时", zh)
+            page.evaluate("applyLanguage('en',false)")
+            en = page.locator("#brief-line").inner_text()
+            self.assertIn("3 commits", en)
+            self.assertIn("120 added lines", en)
+            # A day with no commit but commits in the last seven days.
+            page.evaluate("""() => {
+              const today=String(DATA.calendar_day||DATA.generated||'').slice(0,10);
+              DATA.outcomes.days=[{day:today,commits:0,added:0,deleted:0,surviving:0,
+                                   no_session:0,pending_added:0},
+                                  {day:(new Date(today+'T00:00:00')?today:today),commits:0,
+                                   added:0,deleted:0,surviving:0,no_session:0,pending_added:0}];
+              DATA.outcomes.projects=[];
+              DATA.outcomes.no_commit_sessions=[];
+              renderBrief();
+            }""")
+            quiet = page.locator("#brief-line").inner_text()
+            self.assertIn("has not turned into a commit yet", quiet)
+            page.evaluate("applyLanguage('zh',false)")
+            self.assertIn("还没有换来提交", page.locator("#brief-line").inner_text())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_top_briefing_tips_are_capped_and_sorted_by_amount(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("""() => {
+              DATA.outcomes.status='ok';
+              DATA.outcomes.reasons={};
+              DATA.outcomes.no_commit_sessions=[{session:'s-1',project:'/repo/b',repo:true,
+                                                 cost:9.5,tokens:900,duration_min:240}];
+              renderBrief();
+            }""")
+            tips = page.locator("#brief-tips .brief-tip")
+            self.assertLessEqual(tips.count(), 3)
+            self.assertGreaterEqual(tips.count(), 1)
+            tags = [tips.nth(i).locator(".tip-tag").inner_text() for i in range(tips.count())]
+            for tag in tags:
+                self.assertTrue(tag.startswith("可省约") or tag == "关注", tag)
+            amounts = []
+            for i, tag in enumerate(tags):
+                if tag.startswith("可省约"):
+                    amounts.append(float(tag.replace("可省约 $", "").replace(",", "")))
+            self.assertEqual(sorted(amounts, reverse=True), amounts,
+                             "saving tips must be ordered by amount")
+            if amounts:
+                self.assertTrue(tags[0].startswith("可省约"))
+            page.evaluate("applyLanguage('en',false)")
+            en_tags = [page.locator("#brief-tips .tip-tag").nth(i).inner_text()
+                       for i in range(page.locator("#brief-tips .tip-tag").count())]
+            for tag in en_tags:
+                self.assertTrue(tag.startswith("can save") or tag == "watch", tag)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_top_briefing_recent_week_reports_added_lines_not_pending_survival(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("""() => {
+              const today=String(DATA.calendar_day||DATA.generated||'').slice(0,10);
+              DATA.outcomes.status='ok';
+              DATA.outcomes.reasons={};
+              DATA.outcomes.totals.sessions=2;
+              DATA.outcomes.days=[
+                {day:today,commits:0,added:0,deleted:0,surviving:0,no_session:0,pending_added:0},
+                {day:briefDayIso(today,-1),commits:3,added:120,deleted:4,surviving:0,
+                 no_session:0,pending_added:120},
+              ];
+              DATA.outcomes.projects=[];
+              DATA.outcomes.no_commit_sessions=[];
+              renderBrief();
+            }""")
+            zh = page.locator("#brief-line").inner_text()
+            # Survival needs commits to be 7 days old; a 0 for the last seven
+            # days is true by definition and would read as "no output".
+            self.assertNotIn("留存 0 行", zh)
+            self.assertIn("新增 120 行", zh)
+            self.assertIn("满 7 天后再计留存", zh)
+            page.evaluate("applyLanguage('en',false)")
+            en = page.locator("#brief-line").inner_text()
+            self.assertNotIn("0 surviving lines", en)
+            self.assertIn("120 added lines", en)
+            self.assertIn("7 days old", en)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_top_briefing_is_visible_in_the_first_screen(self):
+        context, page, page_errors, console_errors = self.new_page(
+            viewport={"width": 1280, "height": 900}
+        )
+        try:
+            page.wait_for_function(
+                "() => document.querySelectorAll('.brief-card').length > 0"
+            )
+            box = page.evaluate("""() => {
+              const brief=document.getElementById('section-brief').getBoundingClientRect();
+              const cards=document.getElementById('brief-cards').getBoundingClientRect();
+              return {top:brief.top, cardsBottom:cards.bottom, height:innerHeight};
+            }""")
+            self.assertLess(box["top"], 300,
+                            "the briefing must sit directly under the header")
+            self.assertLessEqual(box["cardsBottom"], box["height"],
+                                 "the four metric cards must fit in the first screen")
+            self.assertEqual(4, page.locator(".brief-card").count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_deep_dive_sections_collapse_open_on_dock_and_remember(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            # Start collapsed (the test helper opened everything up front).
+            page.evaluate("setDigAll(false)")
+            page.wait_for_timeout(120)
+            self.assertGreater(page.locator("section.dig.dig-collapsed").count(), 5)
+            self.assertEqual(0, page.locator("#section-trend:not(.dig-collapsed)").count())
+            self.assertTrue(page.locator("#section-trend .dig-chev").inner_text() in ("▸", "▾"))
+            # Clicking the heading expands it and flips aria-expanded.
+            page.locator("#section-trend .dig-h2").click()
+            page.wait_for_timeout(150)
+            self.assertEqual(0, page.locator("#section-trend.dig-collapsed").count())
+            self.assertEqual("true", page.locator("#section-trend .dig-h2")
+                             .get_attribute("aria-expanded"))
+            # The dock opens a collapsed section before scrolling to it.
+            page.locator('#section-dock button[data-target="section-cost"]').click()
+            page.wait_for_timeout(150)
+            self.assertEqual(0, page.locator("#section-cost.dig-collapsed").count())
+            # Collapse again, reload the same page, and the state is remembered.
+            page.evaluate("setDigAll(false)")
+            page.wait_for_timeout(100)
+            page.reload(wait_until="load")
+            page.wait_for_timeout(300)
+            self.assertGreater(page.locator("section.dig.dig-collapsed").count(), 5)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
         finally:
             context.close()
 
@@ -2345,6 +2578,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             page.add_init_script(f"localStorage.setItem('tk-theme', '{saved}')")
             try:
                 page.goto(probe.as_uri() + "?t=" + query, wait_until="load")
+                page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
                 actual = page.evaluate("""() => ({first:window.__preTheme,
                     selected:currentTheme(),effective:effectiveTheme(),saved:localStorage.getItem('tk-theme'),
                     query:new URLSearchParams(location.search).get('t')})""")
@@ -4354,6 +4588,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
             try:
                 page.goto(html_path.as_uri(), wait_until="load")
+                page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
                 page.evaluate("applyLanguage('en', false)")
                 # 1. Unified single-line legend with model name, source (multi-source joined), exact tokens, share
                 items = page.evaluate("""() => [...document.querySelectorAll('#donut-legend .dl-item')].map(el => ({
@@ -4459,6 +4694,7 @@ class DashboardRuntimeTests(unittest.TestCase):
                 page.wait_for_function(
                     "() => document.getElementById('k-total')?.textContent.length > 0"
                 )
+                page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
                 # Switch to English via UI toggle button
                 page.click("#lang-btn")
                 page.wait_for_timeout(150)
