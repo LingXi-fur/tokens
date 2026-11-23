@@ -1647,7 +1647,7 @@ class SafeReadStatProbeTests(unittest.TestCase):
                          self.info(st_ctime_ns=400, st_birthtime_ns=400))
         self.assertEqual(readers._stat_version(first), readers._stat_version(second))
         handles = [self.info(st_ctime_ns=401), self.info(st_ctime_ns=402)]
-        with mock.patch.object(readers.os, "name", "nt"), \
+        with mock.patch.object(readers, "_IS_WINDOWS", True), \
                 mock.patch.object(readers.os, "open", return_value=17), \
                 mock.patch.object(readers.os, "fstat", side_effect=handles), \
                 mock.patch.object(readers.os, "close") as closed:
@@ -1656,7 +1656,8 @@ class SafeReadStatProbeTests(unittest.TestCase):
         self.assertNotEqual(before, after)
         self.assertEqual(2, closed.call_count)
         # POSIX still reads the ctime already present in stat, no extra handle.
-        with mock.patch.object(readers.os, "open") as opened:
+        with mock.patch.object(readers, "_IS_WINDOWS", False), \
+                mock.patch.object(readers.os, "open") as opened:
             self.assertEqual(400, readers._path_change_ns("target", first))
         opened.assert_not_called()
 

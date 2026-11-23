@@ -296,8 +296,7 @@ class ReaderMemoTests(unittest.TestCase):
         with self.io_counts() as (reads, opens, _):
             self.assertEqual(expected, self.failure(memo))
             self.assertEqual(0, reads[str(a)])
-            # Windows opens one extra read-only handle to read change time.
-            self.assertEqual(2 if os.name == "nt" else 1, opens[str(a)])
+            self.assertEqual(1, opens[str(a)])
         self.assertIn(("processed_cached", "claude"), self.events)
 
     def test_cross_file_conflict_is_not_registered_and_repair_matches_no_memo(self):
@@ -507,8 +506,7 @@ class ReaderMemoTests(unittest.TestCase):
         with self.io_counts() as (reads, opens, _):
             self.failure(memo)
             self.assertEqual(0, reads[str(a)])
-            # Windows opens one extra read-only handle to read change time.
-            self.assertEqual(2 if os.name == "nt" else 1, opens[str(a)])
+            self.assertEqual(1, opens[str(a)])
 
     def test_lru_and_entry_record_byte_limits_are_nonfatal(self):
         a = self.write("codex", "a.jsonl", [codex_event()]); self.bad()
