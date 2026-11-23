@@ -1640,6 +1640,26 @@ class SafeReadStatProbeTests(unittest.TestCase):
         self.assertNotEqual(readers._stat_version_cross_api(before),
                             readers._stat_version_cross_api(changed))
 
+    def test_path_version_uses_handle_change_time_when_stat_misses_rewrite(self):
+        # Windows semantics: stat/lstat keep creation time, so a same-size
+        # rewrite with a restored mtime leaves _stat_version identical.
+        first, second = (self.info(st_ctime_ns=400, st_birthtime_ns=400),
+                         self.info(st_ctime_ns=400, st_birthtime_ns=400))
+        self.assertEqual(readers._stat_version(first), readers._stat_version(second))
+        handles = [self.info(st_ctime_ns=401), self.info(st_ctime_ns=402)]
+        with mock.patch.object(readers.os, "name", "nt"), \
+                mock.patch.object(readers.os, "open", return_value=17), \
+                mock.patch.object(readers.os, "fstat", side_effect=handles), \
+                mock.patch.object(readers.os, "close") as closed:
+            before = readers._path_version("target", first)
+            after = readers._path_version("target", second)
+        self.assertNotEqual(before, after)
+        self.assertEqual(2, closed.call_count)
+        # POSIX still reads the ctime already present in stat, no extra handle.
+        with mock.patch.object(readers.os, "open") as opened:
+            self.assertEqual(400, readers._path_change_ns("target", first))
+        opened.assert_not_called()
+
     def test_interpretation_matches_real_entry_and_finish_failure_conditions(self):
         for slot in ("opened", "current", "named"):
             for changes, condition in (({"st_ino": 999}, "identity"),
@@ -1865,6 +1885,58 @@ class WindowsStatDiagnosticTests(unittest.TestCase):
         except OSError:
             report["status"] = "os_error"
         print(_stat_probe_line(report), flush=True)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows-only change-time diagnostic")
+    def test_same_size_rewrite_change_time_probe(self):
+        """Show the gap #29 fixes: stat-only versions miss a same-size rewrite.
+
+        A fresh read-only handle exposes the Windows change time, while the
+        old stat/birthtime version stays identical.  Printed for CI logs.
+        """
+        prefix = "TOKENS_WINDOWS_CHANGE_TIME_PROBE="
+        fields = ("st_size", "st_mtime_ns", "st_ctime_ns", "st_birthtime_ns", "st_ino")
+
+        def snapshot(path):
+            stat_row = os.stat(path)
+            lstat_row = os.lstat(path)
+            fd = os.open(path, os.O_RDONLY)
+            try:
+                fstat_row = os.fstat(fd)
+            finally:
+                os.close(fd)
+            rows = {"stat": stat_row, "lstat": lstat_row, "fstat": fstat_row}
+            return ({"values": {api: {field: getattr(row, field, None) for field in fields}
+                                for api, row in rows.items()},
+                     "stat_version": list(readers._stat_version(stat_row)),
+                     "path_version": list(readers._path_version(path, stat_row))})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "same-size.bin"
+            path.write_bytes(b"abcdefgh")
+            before = snapshot(path)
+            original = os.stat(path)
+            path.write_bytes(b"wxyz")
+            os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+            after = snapshot(path)
+        report = {
+            "runtime": {"python": list(sys.version_info[:2]), "platform": sys.platform},
+            "fields": list(fields),
+            "before": before, "after": after,
+            "size_equal": before["values"]["stat"]["st_size"] == after["values"]["stat"]["st_size"],
+            "mtime_equal": (before["values"]["stat"]["st_mtime_ns"]
+                            == after["values"]["stat"]["st_mtime_ns"]),
+            "stat_ctime_equal": (before["values"]["stat"]["st_ctime_ns"]
+                                 == after["values"]["stat"]["st_ctime_ns"]),
+            "fstat_ctime_equal": (before["values"]["fstat"]["st_ctime_ns"]
+                                  == after["values"]["fstat"]["st_ctime_ns"]),
+            "stat_version_equal": before["stat_version"] == after["stat_version"],
+            "path_version_equal": before["path_version"] == after["path_version"],
+        }
+        print(prefix + json.dumps(report, sort_keys=True), flush=True)
+        # Size and mtime are identical after the rewrite; the reader contract
+        # is that the version used for cache validation still changes.
+        self.assertTrue(report["size_equal"] and report["mtime_equal"])
+        self.assertFalse(report["path_version_equal"])
 
 
 if __name__ == "__main__":

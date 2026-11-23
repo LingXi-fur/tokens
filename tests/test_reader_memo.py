@@ -296,7 +296,8 @@ class ReaderMemoTests(unittest.TestCase):
         with self.io_counts() as (reads, opens, _):
             self.assertEqual(expected, self.failure(memo))
             self.assertEqual(0, reads[str(a)])
-            self.assertEqual(1, opens[str(a)])
+            # Windows opens one extra read-only handle to read change time.
+            self.assertEqual(2 if os.name == "nt" else 1, opens[str(a)])
         self.assertIn(("processed_cached", "claude"), self.events)
 
     def test_cross_file_conflict_is_not_registered_and_repair_matches_no_memo(self):
@@ -378,19 +379,17 @@ class ReaderMemoTests(unittest.TestCase):
                 elif change == "replace":
                     other = a.with_suffix(".new"); other.write_bytes(a.read_bytes()); other.replace(a)
                 elif change == "ctime":
+                    # Same-size rewrite with mtime restored: size and mtime are
+                    # unchanged on every platform, so only change time can
+                    # expose it.  Windows stat exposes creation time, so the
+                    # reader must take change time from a handle there; this
+                    # assertion is deliberately platform-identical.
                     raw = a.read_bytes().replace(b'"input_tokens":7', b'"input_tokens":8')
                     self.assertEqual(before.st_size, len(raw)); a.write_bytes(raw)
-                    if os.name == "nt":
-                        # Windows os.stat exposes creation time, not inode
-                        # change time, so restoring mtime would hide the write.
-                        # The same-size rewrite itself must still invalidate.
-                        self.assertEqual(before.st_ctime_ns, a.stat().st_ctime_ns)
-                        os.utime(a, ns=(before.st_atime_ns,
-                                        before.st_mtime_ns + 1_000_000))
-                        self.assertNotEqual(before.st_mtime_ns, a.stat().st_mtime_ns)
-                    else:
-                        os.utime(a, ns=(before.st_atime_ns, before.st_mtime_ns))
-                        self.assertNotEqual(before.st_ctime_ns, a.stat().st_ctime_ns)
+                    os.utime(a, ns=(before.st_atime_ns, before.st_mtime_ns))
+                    after = a.stat()
+                    self.assertEqual(before.st_size, after.st_size)
+                    self.assertEqual(before.st_mtime_ns, after.st_mtime_ns)
                 else:
                     a.unlink()
                 with self.io_counts() as (reads, _, _):
@@ -508,7 +507,8 @@ class ReaderMemoTests(unittest.TestCase):
         with self.io_counts() as (reads, opens, _):
             self.failure(memo)
             self.assertEqual(0, reads[str(a)])
-            self.assertEqual(1, opens[str(a)])
+            # Windows opens one extra read-only handle to read change time.
+            self.assertEqual(2 if os.name == "nt" else 1, opens[str(a)])
 
     def test_lru_and_entry_record_byte_limits_are_nonfatal(self):
         a = self.write("codex", "a.jsonl", [codex_event()]); self.bad()

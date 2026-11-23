@@ -409,12 +409,50 @@ def _stat_version_cross_api(st):
 
     Python 3.13 on Windows reports fstat.st_ctime_ns as change time while
     stat/lstat keep creation time.  Birth time is the comparable field there;
-    platforms without birth time retain the historical ctime check.
+    platforms without birth time retain the historical ctime check.  This is
+    only for pairs observed while the same handle stays open; cache versions
+    use _path_version so a restored mtime cannot hide a same-size rewrite.
     """
     ctime = getattr(st, "st_birthtime_ns", None)
     if ctime is None:
         ctime = st.st_ctime_ns
     return (*_stat_identity(st), st.st_size, st.st_mtime_ns, ctime)
+
+
+def _path_change_ns(path, st=None):
+    """Inode/change time for a named path.
+
+    POSIX stat already exposes the inode change time, so a previously fetched
+    stat is enough.  On Windows stat/lstat expose creation time while fstat
+    exposes change time, so the only way to read change time for a path is to
+    open a read-only handle and fstat it.  The handle lives for microseconds
+    and the CRT default share mode allows concurrent writers; birth time is
+    NOT used here because a same-size rewrite with a restored mtime leaves it
+    unchanged.
+    """
+    if os.name != "nt":
+        return (os.stat(path) if st is None else st).st_ctime_ns
+    fd = os.open(path, _safe_open_flags())
+    try:
+        return os.fstat(fd).st_ctime_ns
+    finally:
+        os.close(fd)
+
+
+def _version_with_change(st, change_ns):
+    return (*_stat_identity(st), st.st_size, st.st_mtime_ns, change_ns)
+
+
+def _path_version(path, st):
+    """Version of a named path, comparable with another _path_version or with
+    a handle's fstat version (_version_with_change(st, st.st_ctime_ns)).
+
+    POSIX keeps the historical stat-ctime semantics.  Windows substitutes the
+    handle change time for every side of the comparison, so a same-size
+    rewrite with a restored mtime is still detected.
+    """
+    change = _path_change_ns(path) if os.name == "nt" else st.st_ctime_ns
+    return _version_with_change(st, change)
 
 
 def _safe_open_flags():
@@ -1396,18 +1434,22 @@ def _load_cache():
         before = os.lstat(config.CACHE_FILE)
         if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_CACHE_BYTES:
             return {}
+        before_change = _path_change_ns(config.CACHE_FILE, before)
         fd = os.open(config.CACHE_FILE, _safe_open_flags())
         opened = os.fstat(fd)
         if (not stat.S_ISREG(opened.st_mode) or opened.st_size > MAX_CACHE_BYTES
-                or _stat_version_cross_api(opened) != _stat_version_cross_api(before)):
+                or _version_with_change(opened, opened.st_ctime_ns)
+                != _version_with_change(before, before_change)):
             return {}
         with os.fdopen(fd, "rb") as fh:
             fd = None
             raw = fh.read(MAX_CACHE_BYTES + 1)
+            named_cache = os.lstat(config.CACHE_FILE)
             if (len(raw) > MAX_CACHE_BYTES
                     or _stat_version(os.fstat(fh.fileno())) != _stat_version(opened)
-                    or _stat_version_cross_api(os.lstat(config.CACHE_FILE))
-                    != _stat_version_cross_api(opened)):
+                    or _version_with_change(named_cache,
+                                            _path_change_ns(config.CACHE_FILE, named_cache))
+                    != _version_with_change(opened, opened.st_ctime_ns)):
                 return {}
         data = json.loads(raw)
         return data if isinstance(data, dict) else {}
@@ -1776,8 +1818,13 @@ def _memo_router_state():
             return None, None
         if not stat.S_ISREG(target.st_mode):
             return None, None
-        identity = (path, (own.st_mode, _stat_version(own)),
-                    (target.st_mode, _stat_version(target)))
+        try:
+            identity = (path, (own.st_mode, _path_version(path, own)),
+                        (target.st_mode, _path_version(path, target)))
+        except OSError:
+            # Windows needs a handle for change time; a transient lock is a
+            # conservative memo miss, never a new collection error.
+            return None, None
         signature = f"{target.st_mtime_ns}|{target.st_size}"
     saved_signature, rules = _ccr_rules_cache
     if saved_signature != signature or not isinstance(rules, list):
@@ -1906,12 +1953,12 @@ class _MemoRound:
         self.memo.activate(self.source, self.namespace)
         return True
 
-    def get(self, key, st):
-        return self.memo.get(key, _stat_version(st)) if self.current() else None
+    def get(self, key, version):
+        return self.memo.get(key, version) if self.current() else None
 
-    def put(self, key, st, records, dedup, stable):
+    def put(self, key, version, records, dedup, stable):
         if stable and self.current():
-            self.memo.put(key, _stat_version(st), records, dedup)
+            self.memo.put(key, version, records, dedup)
         else:
             self.memo.discard(key)
 
@@ -2017,27 +2064,42 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                 memo_hit = None
                 stable = True
                 disk_warm = False
+                path_version = None
+
+                def current_version():
+                    """Version of this path including change time.
+
+                    POSIX uses the stat ctime already fetched above.  Windows
+                    stat/lstat only expose creation time, so the change time
+                    comes from a short read-only handle; same-size rewrites
+                    with a restored mtime must still invalidate the cache.
+                    """
+                    nonlocal path_version
+                    if path_version is None:
+                        path_version = _path_version(path, st)
+                    return path_version
                 # Disk keeps its existing priority and full validation chain.
                 # A controlled safety/budget exception propagates immediately;
                 # only a normal miss may try the optional RAM fallback.
                 for cache_kind in ("disk", "memo"):
                     if cache_kind == "memo":
-                        memo_hit = memo_round.get(active_memo_key, st) if memo_round else None
+                        memo_hit = (memo_round.get(active_memo_key, current_version())
+                                    if memo_round else None)
                         if memo_hit is None:
                             break
                         memo_records, memo_dedup = memo_hit
                         cached = {"key": key, "records": memo_records, "dedup": memo_dedup,
                                   "identity": list(_stat_identity(st)),
-                                  "version": list(_stat_version(st))}
+                                  "version": list(current_version())}
                     warm = (use_cache and isinstance(cached, dict) and cached.get("key") == key
                             and _cached_records_valid(cached.get("records"), src))
+                    # The version is compared on the handle opened below, so
+                    # warm scans keep exactly one open per claude/codex file.
                     if warm and src == "claude":
                         warm = (cached.get("identity") == list(_stat_identity(st))
-                                and cached.get("version") == list(_stat_version(st))
                                 and _cached_claude_keys_valid(cached["records"], cached.get("dedup")))
                     if warm and src == "codex":
                         warm = (cached.get("identity") == list(_stat_identity(st))
-                                and cached.get("version") == list(_stat_version(st))
                                 and _cached_codex_keys_valid(cached["records"], cached.get("dedup")))
                     if warm:
                         recs = cached["records"]
@@ -2048,8 +2110,10 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                         if src == "codex":
                             try:
                                 with _SafeReader(path, source=src) as reader:
-                                    warm = (_stat_version_cross_api(reader.initial)
-                                            == _stat_version_cross_api(st) and reader.finish())
+                                    warm = (cached.get("version")
+                                            == list(_version_with_change(
+                                                reader.initial, reader.initial.st_ctime_ns))
+                                            and reader.finish())
                             except OSError:
                                 raise CollectionIncompleteError(src, "read_failed") from None
                         if src == "claude":
@@ -2057,8 +2121,9 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                             try:
                                 # Warm path still safely opens/fstats/finishes.
                                 with _SafeReader(path) as reader:
-                                    if (_stat_version_cross_api(reader.initial)
-                                            != _stat_version_cross_api(st)):
+                                    if (cached.get("version")
+                                            != list(_version_with_change(
+                                                reader.initial, reader.initial.st_ctime_ns))):
                                         warm = False
                                     else:
                                         warm = reader.finish()
@@ -2084,13 +2149,13 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                             else:
                                 recs, dedup, opened, stable = _claude_parse_state(path)
                             # pre-stat 到 open 的追加也不能缓存为 pre-stat 版本。
-                            stable = stable and (_stat_version_cross_api(opened)
-                                                 == _stat_version_cross_api(st))
+                            stable = stable and (_version_with_change(
+                                opened, opened.st_ctime_ns) == current_version())
                         elif src == "codex" and parse_fn is _BUILTIN_CODEX_PARSE:
                             from . import codex_usage
                             recs, dedup, opened, stable = codex_usage.parse_state(path)
-                            stable = stable and (_stat_version_cross_api(opened)
-                                                 == _stat_version_cross_api(st))
+                            stable = stable and (_version_with_change(
+                                opened, opened.st_ctime_ns) == current_version())
                         elif src == "gemini" and parse_fn is gemini_parse:
                             recs, partial = gemini_parse_state(path)
                         elif src == "opencode" and parse_fn is opencode_parse:
@@ -2136,7 +2201,7 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                             entry["partial"] = partial
                         if src in ("claude", "codex"):
                             entry.update(identity=list(_stat_identity(st)),
-                                         version=list(_stat_version(st)), dedup=dedup)
+                                         version=list(current_version()), dedup=dedup)
                         cache[ckey] = entry
                     else:
                         cache.pop(ckey, None)
@@ -2160,7 +2225,8 @@ def read_all(sources=None, use_cache=True, observer=None, *, parse_memo=None,
                     if src == "claude" and not warm and memo_proof != [True]:
                         parse_memo.discard(active_memo_key)
                     else:
-                        memo_round.put(active_memo_key, st, raw_records, dedup, stable)
+                        memo_round.put(active_memo_key, current_version(), raw_records,
+                                       dedup, stable)
                 if memo_hit is not None and warm:
                     # The disk schema/timing stays unchanged; no mutable memo
                     # containers escape into the local disk-cache transaction.

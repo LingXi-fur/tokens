@@ -54,6 +54,7 @@ TIMEOUTS = {"logic": 900, "browser": 1800}
 PLATFORM_ONLY_TESTS = {
     "tests.test_large_claude_logs.LargeClaudeLogsTests.test_capture_stat_fields_at_failing_safe_open": "win32",
     "tests.test_large_claude_logs.WindowsStatDiagnosticTests.test_raw_stat_diagnostic": "win32",
+    "tests.test_large_claude_logs.WindowsStatDiagnosticTests.test_same_size_rewrite_change_time_probe": "win32",
 }
 
 
