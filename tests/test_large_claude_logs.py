@@ -14,6 +14,7 @@ from pathlib import Path
 import stat
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -1904,11 +1905,13 @@ class WindowsStatDiagnosticTests(unittest.TestCase):
             fd = os.open(path, os.O_RDONLY)
             try:
                 fstat_row = os.fstat(fd)
+                change = readers._windows_change_ns(fd)
             finally:
                 os.close(fd)
             rows = {"stat": stat_row, "lstat": lstat_row, "fstat": fstat_row}
             return ({"values": {api: {field: getattr(row, field, None) for field in fields}
                                 for api, row in rows.items()},
+                     "change_ns": change,
                      "stat_version": list(readers._stat_version(stat_row)),
                      "path_version": list(readers._path_version(path, stat_row))})
 
@@ -1917,7 +1920,9 @@ class WindowsStatDiagnosticTests(unittest.TestCase):
             path.write_bytes(b"abcdefgh")
             before = snapshot(path)
             original = os.stat(path)
-            path.write_bytes(b"wxyz")
+            # Windows file times move on the system clock tick (~15.6 ms).
+            time.sleep(0.05)
+            path.write_bytes(b"wxyz1234")
             os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
             after = snapshot(path)
         report = {
@@ -1931,13 +1936,16 @@ class WindowsStatDiagnosticTests(unittest.TestCase):
                                  == after["values"]["stat"]["st_ctime_ns"]),
             "fstat_ctime_equal": (before["values"]["fstat"]["st_ctime_ns"]
                                   == after["values"]["fstat"]["st_ctime_ns"]),
+            "change_equal": before["change_ns"] == after["change_ns"],
             "stat_version_equal": before["stat_version"] == after["stat_version"],
             "path_version_equal": before["path_version"] == after["path_version"],
         }
         print(prefix + json.dumps(report, sort_keys=True), flush=True)
         # Size and mtime are identical after the rewrite; the reader contract
         # is that the version used for cache validation still changes.
+        self.assertIsNotNone(before["change_ns"])
         self.assertTrue(report["size_equal"] and report["mtime_equal"])
+        self.assertFalse(report["change_equal"])
         self.assertFalse(report["path_version_equal"])
 
 

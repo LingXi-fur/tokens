@@ -422,6 +422,8 @@ def _stat_version_cross_api(st):
 
 _IS_WINDOWS = sys.platform == "win32"
 _WIN_CHANGE_QUERY = False
+# 1601-01-01 (FILETIME epoch) to 1970-01-01, in nanoseconds.
+_FILETIME_EPOCH_OFFSET_NS = 11644473600000000000
 
 
 def _windows_change_query():
@@ -454,7 +456,8 @@ def _windows_change_query():
             if not call(wintypes.HANDLE(handle), 0, ctypes.byref(info),
                         ctypes.sizeof(info)):
                 return None
-            return int(info.change) or None
+            # FILETIME is 100 ns ticks since 1601; match st_*_ns (ns, 1970).
+            return (int(info.change) * 100 - _FILETIME_EPOCH_OFFSET_NS) or None
     except Exception:
         read = None
     _WIN_CHANGE_QUERY = read

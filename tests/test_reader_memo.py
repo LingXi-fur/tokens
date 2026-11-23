@@ -384,7 +384,11 @@ class ReaderMemoTests(unittest.TestCase):
                     # reader must take change time from a handle there; this
                     # assertion is deliberately platform-identical.
                     raw = a.read_bytes().replace(b'"input_tokens":7', b'"input_tokens":8')
-                    self.assertEqual(before.st_size, len(raw)); a.write_bytes(raw)
+                    self.assertEqual(before.st_size, len(raw))
+                    # Windows file times move on the system clock tick
+                    # (~15.6 ms); cross it so the rewrite is observable.
+                    time.sleep(0.05)
+                    a.write_bytes(raw)
                     os.utime(a, ns=(before.st_atime_ns, before.st_mtime_ns))
                     after = a.stat()
                     self.assertEqual(before.st_size, after.st_size)
