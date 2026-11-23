@@ -614,6 +614,45 @@ if (model.includes('opus')) { return 'provider-b,backend-large'; }
             self.assertEqual("gemini-sonnet-research", readers.gemini_parse(gemini_log)[0]["model"])
             self.assertEqual("codex-opus-compatible", readers.codex_parse(codex_log)[0]["model"])
 
+    def test_gemini_project_folder_recovers_cwd_without_guessing(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".gemini"
+            tmpdir = root / "tmp"
+            tmpdir.mkdir(parents=True)
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (root / "projects.json").write_text(json.dumps({
+                "projects": {str(repo): "myproj", "/missing/project": "gone"}}),
+                encoding="utf-8")
+
+            def write(folder, name):
+                chats = tmpdir / folder / "chats"
+                chats.mkdir(parents=True)
+                path = chats / name
+                path.write_text(json.dumps({
+                    "sessionId": "session-" + folder[:6],
+                    "messages": [{
+                        "type": "gemini", "model": "gemini-test",
+                        "timestamp": "2026-07-01T00:00:00Z",
+                        "tokens": {"input": 1, "output": 1, "total": 2},
+                    }],
+                }), encoding="utf-8")
+                return path
+
+            hashed = hashlib.sha256(str(repo).encode()).hexdigest()
+            by_hash = write(hashed, "session-a.json")
+            by_name = write("myproj", "session-b.json")
+            unknown = write("f" * 64, "session-c.json")
+            with mock.patch.object(readers.config, "GEMINI_TMP", str(tmpdir)), \
+                    mock.patch.object(readers, "_GEMINI_PROJECT_CACHE", (None, {})):
+                first = readers.gemini_parse_state(str(by_hash))[0][0]
+                second = readers.gemini_parse_state(str(by_name))[0][0]
+                third = readers.gemini_parse_state(str(unknown))[0][0]
+            self.assertEqual(str(repo), first["cwd"])
+            self.assertEqual(str(repo), second["cwd"])
+            self.assertNotIn("cwd", third)
+
     def test_pretty_model_preserves_logged_and_router_backend_names(self):
         names = (
             "glm-5.3",

@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -535,6 +536,166 @@ class OutcomesTests(unittest.TestCase):
         self.assertIsInstance(ratio, float)
         self.assertEqual(round(block["totals"]["surviving"] / block["totals"]["cost"], 6), ratio)
         self.assertNotIn("—", raw)  # terminal dashes never leak into the JSON
+
+    # ---- value by model / tool (#39) ----------------------------------------
+
+    def test_schema_two_adds_sources_without_changing_old_fields(self):
+        block = self.build([], since="2026-11-10", until="2026-11-20")
+        self.assertEqual(2, outcomes.OUTCOMES_SCHEMA)
+        self.assertEqual(2, block["schema"])
+        self.assertIn("sources", block)
+        for key in ("range", "status", "reasons", "totals", "days", "projects",
+                    "models", "no_commit_sessions", "no_repo_sessions"):
+            self.assertIn(key, block)
+
+    def test_two_models_in_one_session_split_cost_and_output_by_spend(self):
+        repo = _init_repo(self.root / "proj")
+        _commit(repo, {"app.py": "a = 1\nb = 2\n"},
+                date_epoch=NOW.timestamp() - 8 * DAY)
+        cwd = str(repo)
+        first, second = "claude-sonnet-5.5", "gpt-5.6-sol"
+        records = [
+            _record("2026-11-12T10:00:00Z", "ses-1", cwd, model=first,
+                    total=1500, parts=(1000, 500, 0, 0, 0)),
+            _record("2026-11-12T11:45:00Z", "ses-1", cwd, model=second,
+                    total=3000, parts=(2000, 1000, 0, 0, 0)),
+        ]
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        rows = {row["model"]: row for row in block["models"]}
+        rates = outcomes._reference_rates()
+
+        def priced(model, parts):
+            return sum(part * rate for part, rate in zip(parts, rates[model])
+                       if rate is not None) / 1_000_000
+
+        cost_first = priced(first, (1000, 500, 0, 0, 0))
+        cost_second = priced(second, (2000, 1000, 0, 0, 0))
+        share = float(cost_first / (cost_first + cost_second))
+        self.assertAlmostEqual(float(cost_first), rows[first]["cost"], places=2)
+        self.assertAlmostEqual(float(cost_second), rows[second]["cost"], places=2)
+        self.assertAlmostEqual(block["totals"]["cost"],
+                               float(cost_first + cost_second), places=2)
+        # Cost is exact; commits/lines follow the spend share, never the
+        # "primary model takes everything" shortcut.
+        self.assertAlmostEqual(share, rows[first]["commits"], places=3)
+        self.assertAlmostEqual(1 - share, rows[second]["commits"], places=3)
+        self.assertAlmostEqual(2 * share, rows[first]["added"], places=3)
+        self.assertAlmostEqual(2 * (1 - share), rows[second]["added"], places=3)
+        self.assertAlmostEqual(2 * share, rows[first]["surviving"], places=3)
+        self.assertEqual(1, rows[first]["sessions"])
+        self.assertEqual(1, rows[second]["sessions"])
+        self.assertTrue(rows[first]["low_sample"])  # one session only
+        # Tool rows use the same allocation; a session can appear in both.
+        tools = {row["source"]: row for row in block["sources"]}
+        self.assertEqual({"claude"}, set(tools))
+        self.assertAlmostEqual(1.0, tools["claude"]["commits"], places=3)
+
+    def test_low_sample_rows_are_marked_and_placed_outside_the_ranking(self):
+        repo = _init_repo(self.root / "proj")
+        cwd = str(repo)
+        big = (1_000_000, 1_000_000, 0, 0, 0)
+        teen = (100, 100, 0, 0, 0)
+        records = []
+        for index in range(3):
+            day = 10 + index
+            # One settled commit per session (9, 8 and 7 days old) so the
+            # three-session row has real settled spend and kept lines.
+            _commit(repo, {f"day{day}.py": f"line = {day}\n"},
+                    date_epoch=datetime(2026, 11, day, 12,
+                                        tzinfo=timezone.utc).timestamp())
+            records.append(_record(f"2026-11-{day}T11:45:00Z",
+                                   f"ses-adult-{index}", cwd,
+                                   model="claude-sonnet-5.5", total=2_000_000,
+                                   parts=big))
+        records.append(_record("2026-11-12T15:00:00Z", "ses-teen", cwd,
+                               model="deepseek-v4-pro", total=200, parts=teen))
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        rows = {row["model"]: row for row in block["models"]}
+        self.assertFalse(rows["claude-sonnet-5.5"]["low_sample"])
+        self.assertTrue(rows["deepseek-v4-pro"]["low_sample"])
+        labels = [row["model"] for row in block["models"]]
+        self.assertLess(labels.index("claude-sonnet-5.5"),
+                        labels.index("deepseek-v4-pro"))
+
+    def test_all_pending_value_row_reports_dash_and_no_ratio(self):
+        repo = _init_repo(self.root / "proj")
+        _commit(repo, {"app.py": "fresh = 1\n"},
+                date_epoch=NOW.timestamp() - 2 * DAY)
+        records = [_record("2026-11-18T11:45:00Z", "ses-1", str(repo))]
+        block = self.build(records, since="2026-11-10", until="2026-11-20")
+        row = block["models"][0]
+        self.assertEqual(0, row["settled_cost"])
+        self.assertEqual(0, row["surviving"])
+        self.assertEqual(row["pending_added"], row["added"])
+        self.assertEqual(0.0, row["retained_per_dollar"])
+        self.assertTrue(row["low_sample"])
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            outcomes.print_report(block, lang="zh")
+        table = out.getvalue().split("按模型", 1)[1]
+        self.assertIn("—", table)
+        self.assertIn("样本少", out.getvalue())
+
+    def test_deleted_opencode_worktree_recovers_its_project(self):
+        repo = _init_repo(self.root / "main")
+        _commit(repo, {"app.py": "base = 1\n"},
+                date_epoch=NOW.timestamp() - 8 * DAY)
+        missing = self.root / "worktree" / "gone"
+        db = self.root / "opencode.db"
+        con = sqlite3.connect(db)
+        try:
+            con.executescript("""
+                CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
+                CREATE TABLE worktree (project_id TEXT NOT NULL, directory TEXT NOT NULL,
+                                       strategy TEXT, time_created INTEGER NOT NULL);
+                CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                                         directory TEXT NOT NULL);
+            """)
+            con.execute("INSERT INTO project VALUES ('p1', ?)", (str(repo),))
+            con.execute("INSERT INTO worktree VALUES ('p1', ?, 'git', 1)",
+                        (str(missing),))
+            con.execute("INSERT INTO session_v2 VALUES ('ses-gone', 'p1', ?)",
+                        (str(missing),))
+            con.commit()
+        finally:
+            con.close()
+        records = [_record("2026-11-12T11:45:00Z", "ses-gone", str(missing))]
+        with mock.patch.object(config, "OPENCODE_DB", str(db)), \
+                mock.patch.object(outcomes, "_REPO_CACHE", {}), \
+                mock.patch.object(outcomes, "_OPENCODE_REPO_CACHE", {}):
+            block = self.build(records, since="2026-11-10", until="2026-11-20")
+        self.assertEqual(0, block["reasons"].get("no_repo", 0))
+        self.assertEqual(1, block["totals"]["commits"])
+        self.assertEqual(os.path.realpath(str(repo)),
+                         block["projects"][0]["project"])
+
+    def test_missing_cwd_opencode_session_uses_project_mapping(self):
+        repo = _init_repo(self.root / "main")
+        _commit(repo, {"app.py": "base = 1\n"},
+                date_epoch=NOW.timestamp() - 8 * DAY)
+        db = self.root / "opencode.db"
+        con = sqlite3.connect(db)
+        try:
+            con.executescript("""
+                CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
+                CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                                         directory TEXT NOT NULL);
+            """)
+            con.execute("INSERT INTO project VALUES ('p1', ?)", (str(repo),))
+            con.execute("INSERT INTO session_v2 VALUES ('ses-gone', 'p1', ?)",
+                        (str(self.root / "gone"),))
+            con.commit()
+        finally:
+            con.close()
+        record = _record("2026-11-12T11:45:00Z", "ses-gone", None)
+        with mock.patch.object(config, "OPENCODE_DB", str(db)), \
+                mock.patch.object(outcomes, "_REPO_CACHE", {}), \
+                mock.patch.object(outcomes, "_OPENCODE_REPO_CACHE", {}):
+            block = self.build([record], since="2026-11-10",
+                               until="2026-11-20")
+        self.assertEqual(1, block["totals"]["commits"])
+        self.assertEqual(os.path.realpath(str(repo)),
+                         block["projects"][0]["project"])
 
 
 if __name__ == "__main__":

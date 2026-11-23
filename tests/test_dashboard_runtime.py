@@ -542,6 +542,74 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    VALUE_ROWS = """() => {
+      DATA.outcomes.models=[
+        {model:'deepseek-v4.1-flash',sessions:12,cost:120.5,settled_cost:100,commits:30.5,
+         added:5000,surviving:4000,pending_added:500,rework_tax:3,retained_per_dollar:40,low_sample:false},
+        {model:'gemini-2.5-pro',sessions:2,cost:10,settled_cost:0,commits:0,added:0,
+         surviving:0,pending_added:0,rework_tax:0,retained_per_dollar:0,low_sample:true}];
+      DATA.outcomes.sources=[
+        {source:'claude',sessions:20,cost:130.5,settled_cost:120,commits:40,added:6000,
+         surviving:4500,pending_added:600,rework_tax:4,retained_per_dollar:37.5,low_sample:false},
+        {source:'gemini',sessions:2,cost:9,settled_cost:0,commits:0,added:0,surviving:0,
+         pending_added:0,rework_tax:0,retained_per_dollar:0,low_sample:true}];
+      lazyState.value=Object.assign({},lazyState.value,{visible:true,rendered:true});
+      renderValueComparison();
+      return {rows:document.querySelectorAll('#value-tbody tr').length,
+              text:document.getElementById('value-tbody').innerText,
+              note:document.getElementById('value-note').textContent};
+    }"""
+
+    def test_value_comparison_table_shows_low_sample_dashes_and_toggles(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            info = page.evaluate(self.VALUE_ROWS)
+            self.assertEqual(2, info["rows"])
+            self.assertIn("deepseek-v4.1-flash", info["text"])
+            self.assertIn("样本少", info["text"])
+            # The unsettled row keeps its spend but shows no ratio.
+            last = page.locator("#value-tbody tr").nth(1).inner_text()
+            self.assertIn("—", last)
+            self.assertIn("排名", info["note"])
+            page.locator("[data-value-mode=source]").click()
+            text = page.locator("#value-tbody").inner_text()
+            self.assertIn("Claude", text)
+            self.assertIn("样本少", text)
+            page.evaluate("() => applyLanguage('en')")
+            page.evaluate(self.VALUE_ROWS)
+            text = page.locator("#value-tbody").inner_text()
+            self.assertIn("low sample", text)
+            self.assertIn("Name", page.locator("#value-thead").inner_text())
+            self.assertIn("Kept / $1", page.locator("#value-thead").inner_text())
+            page.evaluate("() => applyTheme('dark')")
+            self.assertEqual(2, page.locator("#value-tbody tr").count())
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
+    def test_brief_names_best_value_only_with_two_ranked_models(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            phrase = page.evaluate("""() => {
+              const two={status:'ok',days:[],models:[
+                {model:'alpha',low_sample:false,retained_per_dollar:12.34,cost:10},
+                {model:'beta',low_sample:false,retained_per_dollar:5,cost:9}],sources:[]};
+              const one={status:'ok',days:[],models:[
+                {model:'alpha',low_sample:false,retained_per_dollar:12.34,cost:10},
+                {model:'beta',low_sample:true,retained_per_dollar:99,cost:9}],sources:[]};
+              return {withTwo:briefSentence(true,two,{sessions:2},'2026-07-02'),
+                      withOne:briefSentence(true,one,{sessions:2},'2026-07-02')};
+            }""")
+            self.assertIn("Best value this week: alpha (12.3 retained lines per $1)", phrase["withTwo"])
+            self.assertNotIn("Best value", phrase["withOne"])
+            zh = page.evaluate("""() => briefSentence(false,{status:'ok',days:[],models:[
+                {model:'alpha',low_sample:false,retained_per_dollar:12.34,cost:10},
+                {model:'beta',low_sample:false,retained_per_dollar:5,cost:9}],sources:[]},{sessions:2},'2026-07-02')""")
+            self.assertIn("本周最划算：alpha（每 $1 留存 12.3 行）", zh)
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
     def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
         context, page, page_errors, console_errors = self.new_page()
         try:

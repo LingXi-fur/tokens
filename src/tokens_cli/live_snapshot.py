@@ -457,7 +457,7 @@ def _aggregate_shapes(payload, sources):
 _OUTCOMES_SCHEMA = outcomes.OUTCOMES_SCHEMA
 _OUTCOMES_TOP = frozenset((
     "schema", "range", "status", "reasons", "totals", "days", "projects",
-    "models", "no_commit_sessions", "no_repo_sessions",
+    "models", "sources", "no_commit_sessions", "no_repo_sessions",
 ))
 _OUTCOMES_TOTALS = frozenset((
     "sessions", "tokens", "cost", "commits", "no_session_commits",
@@ -473,9 +473,13 @@ _OUTCOMES_PROJECT = frozenset((
     "project", "repo", "sessions", "commits", "tokens", "cost", "added",
     "deleted", "surviving", "rework_tax",
 ))
-_OUTCOMES_MODEL = frozenset((
-    "model", "sessions", "commits", "tokens", "cost", "added", "surviving",
-))
+_VALUE_FIELDS = (
+    "sessions", "commits", "tokens", "cost", "settled_cost", "added",
+    "surviving", "pending_added", "rework_tax", "retained_per_dollar",
+    "low_sample",
+)
+_OUTCOMES_MODEL = frozenset(("model",) + _VALUE_FIELDS)
+_OUTCOMES_SOURCE = frozenset(("source",) + _VALUE_FIELDS)
 _OUTCOMES_NO_COMMIT = frozenset((
     "session", "project", "repo", "cost", "tokens", "duration_min",
 ))
@@ -518,12 +522,16 @@ def _outcomes_shape(outcomes):
         for key, value in row.items():
             if key not in ("project", "repo"):
                 _require(type(value) in (int, float) and value >= 0)
-    for row in outcomes["models"]:
-        _require(type(row) is dict and set(row) == _OUTCOMES_MODEL)
-        _require(type(row["model"]) is str and 0 < len(row["model"]) <= 4096)
-        for key, value in row.items():
-            if key != "model":
-                _require(type(value) in (int, float) and value >= 0)
+    for key, row_shape, label in (
+            ("models", _OUTCOMES_MODEL, "model"),
+            ("sources", _OUTCOMES_SOURCE, "source")):
+        for row in outcomes[key]:
+            _require(type(row) is dict and set(row) == row_shape)
+            _require(type(row[label]) is str and 0 < len(row[label]) <= 4096)
+            _require(type(row["low_sample"]) is bool)
+            for field, value in row.items():
+                if field not in (label, "low_sample"):
+                    _require(type(value) in (int, float) and value >= 0)
     for row in outcomes["no_commit_sessions"]:
         _require(type(row) is dict and set(row) == _OUTCOMES_NO_COMMIT)
         _require(all(type(row[key]) is str and 0 < len(row[key]) <= 4096

@@ -1109,3 +1109,11 @@ section.dig .dig-chev{color:var(--faint);font-size:12px;width:1em;display:inline
 section.dig.dig-collapsed>:not(.dig-head-row){display:none}
 section.dig.dig-collapsed .dig-chev{color:var(--faint)}
 @media(forced-colors:active){.brief-card.is-up .bc-value,.brief-card.is-down .bc-value{forced-color-adjust:auto}}
+
+/* 模型/工具价值对比（outcomes #39） */
+.value-modes{display:flex;gap:6px;flex-wrap:wrap}
+.value-mode.is-on{border-color:var(--accent);color:var(--ink);background:var(--surface-2)}
+.value-note{margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.value-foot{margin:8px 0 0;color:var(--faint);font-size:11px;line-height:1.45}
+.value-table td.value-low,.value-table tr.value-low td{color:var(--faint)}
+.value-badge{display:inline-block;margin-left:6px;padding:1px 6px;border:1px solid var(--border-2);border-radius:999px;color:var(--faint);font-size:10px;vertical-align:1px;white-space:nowrap}

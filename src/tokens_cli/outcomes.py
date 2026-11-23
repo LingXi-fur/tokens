@@ -20,13 +20,14 @@ import fnmatch
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import tempfile
 from shutil import which
 
 from . import config, readers
 
-OUTCOMES_SCHEMA = 1
+OUTCOMES_SCHEMA = 2
 SURVIVAL_DAYS = 7
 SESSION_GRACE_SECONDS = 30 * 60
 GIT_TIMEOUT_SECONDS = 15.0
@@ -171,10 +172,86 @@ def _worktree_repository(gitdir):
     return None
 
 
-def _repo_root(cwd):
-    """Repository root above cwd; worktrees merge into their main root."""
-    if cwd in _REPO_CACHE:
-        return _REPO_CACHE[cwd]
+_OPENCODE_REPO_CACHE = {}
+
+
+def _opencode_project_repo(cwd, session):
+    """Main repository path for an OpenCode session/worktree, or None.
+
+    OpenCode keeps the project's main path even after a worktree directory is
+    removed: ``session_v2.project_id`` and ``worktree.project_id`` both point
+    at ``project.worktree``.  This is a read-only lookup, used only when the
+    filesystem walk cannot find a repository; a missing DB or schema is a
+    miss, not an error.  The database never leaves the machine.
+    """
+    key = (cwd, session)
+    if key in _OPENCODE_REPO_CACHE:
+        return _OPENCODE_REPO_CACHE[key]
+    repo = None
+    path = config.OPENCODE_DB
+    if os.path.isfile(path):
+        try:
+            con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=0.5)
+            try:
+                if session:
+                    for table in ("session_v2", "session"):
+                        try:
+                            row = con.execute(
+                                "SELECT p.worktree FROM " + table + " s "
+                                "JOIN project p ON p.id = s.project_id "
+                                "WHERE s.id = ? LIMIT 1", (session,)).fetchone()
+                        except sqlite3.Error:
+                            continue
+                        if row and row[0]:
+                            repo = row[0]
+                            break
+                if not repo and cwd:
+                    for sql in (
+                        "SELECT p.worktree FROM worktree w "
+                        "JOIN project p ON p.id = w.project_id "
+                        "WHERE w.directory = ? LIMIT 1",
+                        "SELECT p.worktree FROM project_directory d "
+                        "JOIN project p ON p.id = d.project_id "
+                        "WHERE d.directory = ? LIMIT 1",
+                        "SELECT p.worktree FROM worktree w "
+                        "JOIN project p ON p.id = w.project_id "
+                        "WHERE ? LIKE w.directory || '/' || '%' "
+                        "ORDER BY length(w.directory) DESC LIMIT 1",
+                    ):
+                        try:
+                            row = con.execute(sql, (cwd,)).fetchone()
+                        except sqlite3.Error:
+                            continue
+                        if row and row[0]:
+                            repo = row[0]
+                            break
+            finally:
+                con.close()
+        except (OSError, sqlite3.Error):
+            repo = None
+    if repo and os.path.isdir(repo):
+        found = _repo_root(repo, None, False)
+        repo = found
+    else:
+        repo = None
+    _OPENCODE_REPO_CACHE[key] = repo
+    return repo
+
+
+def _repo_root(cwd, session=None, _tool_lookup=True):
+    """Repository root above cwd; worktrees merge into their main root.
+
+    A missing cwd or a cwd without any ``.git`` ancestor falls back to the
+    read-only OpenCode project mapping (including deleted worktrees).  Other
+    tools keep their historical behaviour: no repo means no repo.
+    """
+    if cwd is None:
+        if _tool_lookup:
+            return _opencode_project_repo(None, session)
+        return None
+    cache_key = (cwd, session) if _tool_lookup else cwd
+    if cache_key in _REPO_CACHE:
+        return _REPO_CACHE[cache_key]
     root = None
     probe = os.path.abspath(cwd)
     while True:
@@ -199,11 +276,13 @@ def _repo_root(cwd):
         if parent == probe:
             break
         probe = parent
+    if root is None and _tool_lookup:
+        root = _opencode_project_repo(cwd, session)
     # Normalize through realpath so the main checkout and its worktrees (git
     # stores resolved paths in their .git pointers) land on one identical key.
     if root is not None:
         root = os.path.realpath(root)
-    _REPO_CACHE[cwd] = root
+    _REPO_CACHE[cache_key] = root
     return root
 
 
@@ -380,7 +459,8 @@ def _load_outcomes_cache(reasons):
 
 
 _SESSION_SUMMARY_FIELDS = ("start", "last", "tokens", "cost",
-                          "cost_estimated", "cwds", "models")
+                          "cost_estimated", "cwds", "models",
+                          "model_costs", "source_costs", "source_tokens")
 
 
 def _freeze_sessions(sessions):
@@ -393,6 +473,11 @@ def _freeze_sessions(sessions):
             "cost": str(window["cost"]),
             "cost_estimated": window["cost_estimated"],
             "cwds": dict(window["cwds"]), "models": dict(window["models"]),
+            "model_costs": {key: str(value)
+                            for key, value in window["model_costs"].items()},
+            "source_costs": {key: str(value)
+                             for key, value in window["source_costs"].items()},
+            "source_tokens": dict(window["source_tokens"]),
         }
     return frozen
 
@@ -407,6 +492,11 @@ def _thaw_sessions(frozen):
                 "cost": Decimal(item["cost"]),
                 "cost_estimated": item["cost_estimated"],
                 "cwds": dict(item["cwds"]), "models": dict(item["models"]),
+                "model_costs": {key: Decimal(value)
+                                for key, value in item["model_costs"].items()},
+                "source_costs": {key: Decimal(value)
+                                 for key, value in item["source_costs"].items()},
+                "source_tokens": dict(item["source_tokens"]),
             }
         except (KeyError, TypeError, ValueError, InvalidOperation):
             return None  # any malformed entry: recompute from records
@@ -533,12 +623,14 @@ def _epoch(ts, reasons):
 
 
 def _session_windows(records, rates_table, reasons, model_of=None):
-    """sid -> {start, last, tokens, cost, cost_estimated, cwd, model}.
+    """sid -> session window with exact per-model and per-source costs.
 
-    Billing components are accumulated per (session, model) bucket and priced
-    once per bucket, so a large report does not pay a Decimal multiply per
-    record.  Unpriceable records only flip cost_estimated; their tokens stay
-    in the totals.
+    Billing components are accumulated per (session, source, model) bucket and
+    priced once per bucket, so a large report does not pay a Decimal multiply
+    per record.  ``model_costs``/``source_costs`` are exact USD amounts;
+    ``models``/``source_tokens`` keep token weights for sessions whose priced
+    cost is zero (local/free models), where cost share cannot allocate output.
+    Unpriceable records only flip cost_estimated; their tokens stay in totals.
     """
     sessions = {}
     for record in records:
@@ -549,12 +641,14 @@ def _session_windows(records, rates_table, reasons, model_of=None):
         if stamp is None:
             continue
         total = record.get("total", 0) or 0
+        source = record.get("source") or "unknown"
         window = sessions.get(sid)
         if window is None:
             window = sessions[sid] = {
                 "start": stamp, "last": stamp, "tokens": 0,
                 "cost": Decimal(0), "cost_estimated": True,
-                "cwds": {}, "models": {}, "priced": {},
+                "cwds": {}, "models": {}, "source_tokens": {},
+                "model_costs": {}, "source_costs": {}, "priced": {},
             }
         if stamp < window["start"]:
             window["start"] = stamp
@@ -564,6 +658,8 @@ def _session_windows(records, rates_table, reasons, model_of=None):
         cwd = record.get("cwd")
         if cwd:
             window["cwds"][cwd] = window["cwds"].get(cwd, 0) + total
+        window["source_tokens"][source] = (
+            window["source_tokens"].get(source, 0) + total)
         model = (model_of(record) if model_of is not None
                  else record.get("model"))
         if model:
@@ -572,9 +668,10 @@ def _session_windows(records, rates_table, reasons, model_of=None):
         if parts is None:
             window["cost_estimated"] = False
             continue
-        bucket = window["priced"].get(model)
+        key = (source, model)
+        bucket = window["priced"].get(key)
         if bucket is None:
-            bucket = window["priced"][model] = [Decimal(0)] * len(parts)
+            bucket = window["priced"][key] = [Decimal(0)] * len(parts)
         for index, (part, rate) in enumerate(zip(parts, rates)):
             if rate is not None and part:
                 bucket[index] += Decimal(part) * rate
@@ -583,9 +680,16 @@ def _session_windows(records, rates_table, reasons, model_of=None):
                          if window["cwds"] else None)
         window["model"] = (max(window["models"], key=window["models"].get)
                            if window["models"] else None)
-        window["cost"] = sum(
-            (sum(bucket) for bucket in window["priced"].values()),
-            Decimal(0)) / Decimal(1_000_000)
+        model_costs = {}
+        source_costs = {}
+        for (source, model), bucket in window["priced"].items():
+            amount = sum(bucket) / Decimal(1_000_000)
+            model_costs[model] = model_costs.get(model, Decimal(0)) + amount
+            source_costs[source] = (
+                source_costs.get(source, Decimal(0)) + amount)
+        window["model_costs"] = model_costs
+        window["source_costs"] = source_costs
+        window["cost"] = sum(model_costs.values(), Decimal(0))
         del window["priced"]
     return sessions
 
@@ -625,7 +729,7 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
         "status": "ok",
         "reasons": {},
         "totals": _empty_totals(),
-        "days": [], "projects": [], "models": [],
+        "days": [], "projects": [], "models": [], "sources": [],
         "no_commit_sessions": [], "no_repo_sessions": [],
     }
     cache = _load_outcomes_cache(reasons)
@@ -650,12 +754,7 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
     repos = {}
     for sid, window in sessions.items():
         cwd = window.get("cwd")
-        if not cwd:
-            window["repo"] = None
-            if git_ready:
-                reasons["no_repo"] += 1
-            continue
-        repo = _repo_root(cwd) if os.path.isdir(cwd) else None
+        repo = _repo_root(cwd, sid) if git_ready else None
         window["repo"] = repo
         if repo is None:
             if git_ready:
@@ -818,21 +917,40 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
     per_day = {}
     per_project = {}
     per_model = {}
+    per_source = {}
     settled_cost = Decimal(0)
+
+    def _share_map(costs, tokens):
+        """Allocation weights for commits/lines inside one session.
+
+        Exact priced cost is the primary weight.  Only when every priced
+        amount is zero (local/free models) do token counts decide; a model
+        with neither cost nor tokens gets no share.  This is why the split
+        never hands all output to a "primary model": every model that
+        actually consumed tokens gets a proportional slice.
+        """
+        keys = set(costs) | set(tokens)
+        total_cost = sum(costs.values(), Decimal(0))
+        if total_cost > 0:
+            return {key: float(costs.get(key, Decimal(0)) / total_cost)
+                    for key in keys}
+        total_tokens = sum(tokens.values())
+        if total_tokens > 0:
+            return {key: tokens.get(key, 0) / total_tokens for key in keys}
+        return {}
 
     def _project_label(window):
         cwd = window.get("cwd")
-        if not cwd:
-            return NO_CWD_LABEL
-        if aliases is not None:
-            return aliases.get("project", cwd)
         repo = window.get("repo")
+        # Sessions inside a worktree roll up to their repository; the worktree
+        # itself is an implementation detail of one project and never becomes
+        # its own project row.  A recovered repo also labels sessions whose
+        # working directory was deleted or never recorded.
+        if aliases is not None:
+            return aliases.get("project", repo or cwd or NO_CWD_LABEL)
         if repo:
-            # Sessions inside a worktree roll up to their repository; the
-            # worktree itself is an implementation detail of one project and
-            # never becomes its own project row.
             return repo
-        return cwd
+        return cwd or NO_CWD_LABEL
 
     for sid, window in sessions.items():
         label = _project_label(window)
@@ -843,11 +961,6 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
         project["cost"] += window["cost"]
         if not window["cost_estimated"]:
             reasons["unestimated_cost"] += 1
-        model_label = window.get("model") or "unknown"
-        model_row = per_model.setdefault(model_label, _empty_model())
-        model_row["sessions"] += 1
-        model_row["tokens"] += window["tokens"]
-        model_row["cost"] += window["cost"]
 
         session_commits = attributed.get(sid, [])
         if not session_commits:
@@ -866,7 +979,7 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
             else:
                 entry["repo"] = True
                 block["no_commit_sessions"].append(entry)
-        added = deleted = files = surviving = settled_added = 0
+        added = deleted = files = surviving = settled_added = pending = 0
         session_settled = False
         for commit in session_commits:
             added += commit["added"]
@@ -877,12 +990,14 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
             day_row["added"] += commit["added"]
             day_row["deleted"] += commit["deleted"]
             if commit.get("pending"):
+                pending += commit["added"]
                 day_row["pending_added"] += commit["added"]
             if commit.get("surviving") is not None:
                 surviving += commit["surviving"]
                 settled_added += commit["added"]
                 session_settled = True
                 day_row["surviving"] += commit["surviving"]
+        tax = Decimal(0)
         if session_settled:
             settled_cost += window["cost"]
             if added:
@@ -890,13 +1005,41 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
                 tax = window["cost"] * Decimal(reworked) / Decimal(added)
                 totals["rework_tax"] += tax
                 project["rework_tax"] += tax
+        # Output follows spend inside this session; cost itself stays exact.
+        # A model/tool with a zero priced share still gets its row (sessions,
+        # tokens, cost) but no invented output.
+        for model, share in _share_map(window["model_costs"],
+                                       window["models"]).items():
+            model_row = per_model.setdefault(model, _empty_model())
+            model_cost = window["model_costs"].get(model, Decimal(0))
+            model_row["sessions"] += 1
+            model_row["tokens"] += window["models"].get(model, 0)
+            model_row["cost"] += model_cost
+            model_row["commits"] += len(session_commits) * share
+            model_row["added"] += added * share
+            model_row["surviving"] += surviving * share
+            model_row["pending_added"] += pending * share
+            model_row["rework_tax"] += tax * Decimal(str(share))
+            if session_settled:
+                model_row["settled_cost"] += model_cost
+        for source, share in _share_map(window["source_costs"],
+                                        window["source_tokens"]).items():
+            source_row = per_source.setdefault(source, _empty_model())
+            source_cost = window["source_costs"].get(source, Decimal(0))
+            source_row["sessions"] += 1
+            source_row["tokens"] += window["source_tokens"].get(source, 0)
+            source_row["cost"] += source_cost
+            source_row["commits"] += len(session_commits) * share
+            source_row["added"] += added * share
+            source_row["surviving"] += surviving * share
+            source_row["pending_added"] += pending * share
+            source_row["rework_tax"] += tax * Decimal(str(share))
+            if session_settled:
+                source_row["settled_cost"] += source_cost
         project["commits"] += len(session_commits)
         project["added"] += added
         project["deleted"] += deleted
         project["surviving"] += surviving
-        model_row["commits"] += len(session_commits)
-        model_row["added"] += added
-        model_row["surviving"] += surviving
         totals["sessions"] += 1
         totals["tokens"] += window["tokens"]
         totals["cost"] += window["cost"]
@@ -937,14 +1080,39 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
     block["projects"] = [
         dict(row, project=label) for label, row in sorted(per_project.items())
     ]
+    def _value_sort(item):
+        label, row = item
+        # Real rankings first (highest retained lines per settled $1); rows
+        # marked low_sample are displayed after them and never win a ranking.
+        return (row["low_sample"], -row["retained_per_dollar"],
+                -float(row["cost"]), label)
+
+    for label, row in list(per_model.items()) + list(per_source.items()):
+        row["retained_per_dollar"] = (
+            _ratio(row["surviving"], row["settled_cost"])
+            if row["settled_cost"] > 0 else 0.0)
+        row["low_sample"] = bool(row["sessions"] < 3
+                                 or row["settled_cost"] < 1)
+        row["commits"] = round(row["commits"], 3)
+        row["added"] = round(row["added"], 3)
+        row["surviving"] = round(row["surviving"], 3)
+        row["pending_added"] = round(row["pending_added"], 3)
     block["models"] = [
-        dict(row, model=label) for label, row in sorted(per_model.items())
+        dict(row, model=label) for label, row in sorted(per_model.items(),
+                                                        key=_value_sort)
+    ]
+    block["sources"] = [
+        dict(row, source=label) for label, row in sorted(per_source.items(),
+                                                         key=_value_sort)
     ]
     for project in block["projects"]:
         project["cost"] = _money(project["cost"])
         project["rework_tax"] = _money(project["rework_tax"])
-    for model_row in block["models"]:
-        model_row["cost"] = _money(model_row["cost"])
+    for row in block["models"] + block["sources"]:
+        row["cost"] = _money(row["cost"])
+        row["settled_cost"] = _money(row["settled_cost"])
+        row["rework_tax"] = _money(row["rework_tax"])
+        row["retained_per_dollar"] = round(row["retained_per_dollar"], 3)
     block["no_commit_sessions"].sort(key=lambda row: (-row["cost"], row["session"]))
     block["no_repo_sessions"].sort(key=lambda row: (-row["cost"], row["session"]))
     _finish(block, reasons, sessions, anonymize, aliases)
@@ -990,8 +1158,11 @@ def _empty_project():
 
 
 def _empty_model():
+    """One value row (model or tool): exact spend, allocated output."""
     return {"sessions": 0, "commits": 0, "tokens": 0, "cost": Decimal(0),
-            "added": 0, "surviving": 0}
+            "settled_cost": Decimal(0), "added": 0, "surviving": 0,
+            "pending_added": 0, "rework_tax": Decimal(0),
+            "retained_per_dollar": 0.0, "low_sample": True}
 
 
 # ---------- terminal report ---------------------------------------------------
@@ -1021,6 +1192,20 @@ _STATUS_TEXT = {
         "project_surviving": "留存",
         "project_cost": "花费",
         "project_tax": "返工税",
+        "value_by_model": "按模型",
+        "value_by_source": "按工具",
+        "value_name": "名称",
+        "value_sessions": "会话",
+        "value_spend": "花费",
+        "value_commits": "提交",
+        "value_added": "新增",
+        "value_settled": "已定案留存",
+        "value_pending": "待定",
+        "value_per_dollar": "每 $1 留存行",
+        "value_tax": "返工税",
+        "value_low_sample": "* 样本少（少于 3 个会话或已定案花费低于 $1），不参与排名",
+        "value_alloc": "提交与行数按会话内花费占比分摊；手工提交不计入；同一会话可出现在多行。",
+        "value_empty": "该范围没有可统计的模型或工具产出。",
         "yes": "是",
         "no": "否",
         "no_repo": "非 git 目录",
@@ -1054,6 +1239,20 @@ _STATUS_TEXT = {
         "project_surviving": "Surviving",
         "project_cost": "Spend",
         "project_tax": "Rework",
+        "value_by_model": "By model",
+        "value_by_source": "By tool",
+        "value_name": "Name",
+        "value_sessions": "Sessions",
+        "value_spend": "Spend",
+        "value_commits": "Commits",
+        "value_added": "Added",
+        "value_settled": "Settled kept",
+        "value_pending": "Pending",
+        "value_per_dollar": "Kept / $1",
+        "value_tax": "Rework",
+        "value_low_sample": "* low sample (fewer than 3 sessions or under $1 settled spend); not ranked",
+        "value_alloc": "Commits and lines are allocated by spend share inside each session; manual commits are excluded; one session can appear in several rows.",
+        "value_empty": "No measurable models or tools in this range.",
         "yes": "yes",
         "no": "no",
         "no_repo": "not a git repo",
@@ -1073,6 +1272,35 @@ def _fmt_money(value):
 def _fmt_ratio(value):
     """Terminal-only formatting: one decimal, thousands separators."""
     return f"{value:,.1f}"
+
+
+def _print_value_table(rows, title, text, key):
+    """One model/tool table: one decimal, thousands, — when unsettled."""
+    print()
+    print(title)
+    print(f"{text['value_name']:30} {text['value_sessions']:>6} "
+          f"{text['value_spend']:>10} {text['value_commits']:>8} "
+          f"{text['value_added']:>10} {text['value_settled']:>10} "
+          f"{text['value_pending']:>9} {text['value_per_dollar']:>12} "
+          f"{text['value_tax']:>9}")
+    if not rows:
+        print(text["value_empty"])
+        return
+    low_sample = False
+    for row in rows:
+        name = str(row[key])
+        mark = "*" if row.get("low_sample") else ""
+        low_sample = low_sample or bool(mark)
+        per_dollar = (_fmt_ratio(row["retained_per_dollar"])
+                      if row.get("settled_cost", 0) > 0 else text["dash"])
+        print(f"{name[:29] + mark:30} {row['sessions']:>6} "
+              f"{_fmt_money(row['cost']):>10} {_fmt_ratio(row['commits']):>8} "
+              f"{_fmt_ratio(row['added']):>10} {_fmt_ratio(row['surviving']):>10} "
+              f"{_fmt_ratio(row['pending_added']):>9} {per_dollar:>12} "
+              f"{_fmt_money(row['rework_tax']):>9}")
+    print(text["value_alloc"])
+    if low_sample:
+        print(text["value_low_sample"])
 
 
 def _clip_path(path, width):
@@ -1138,6 +1366,10 @@ def print_report(report, lang="zh"):
         print(f"{name:38} {(text['yes'] if row['repo'] else text['no']):>4} "
               f"{row['commits']:>8} {row['surviving']:>10,} "
               f"{_fmt_money(row['cost']):>12} {_fmt_money(row['rework_tax']):>10}")
+    _print_value_table(report.get("models", []), text["value_by_model"],
+                       text, "model")
+    _print_value_table(report.get("sources", []), text["value_by_source"],
+                       text, "source")
 
 
 def _decimals_to_floats(value):
