@@ -5539,8 +5539,13 @@ function briefSentence(en,o,tot,today){
       :`今天 ${spendText} 的 token 用量来自 ${sessions} 个会话${domModel?`，主力模型 ${domModel}`:''}；未检测到 git 仓库，暂无投入产出。`;
   }
   const last7=[...Array(7)].map((_,i)=>briefDayIso(todayDay,-i));
+  const settled7=[...Array(7)].map((_,i)=>briefDayIso(todayDay,-i-7)); // 7-14 days ago
   const commits7=(o.days||[]).filter(row=>last7.includes(row.day)).reduce((a,row)=>a+(row.commits||0),0);
-  const retained7=(o.days||[]).filter(row=>last7.includes(row.day)).reduce((a,row)=>a+(row.surviving||0),0);
+  const added7=(o.days||[]).filter(row=>last7.includes(row.day)).reduce((a,row)=>a+(row.added||0),0);
+  // Survival needs commits to be at least 7 days old; only the settled window
+  // (7-14 days ago) can report a survival number.  Reporting 0 for the last
+  // seven days would be true by definition and reads as "no output".
+  const retainedSettled=(o.days||[]).filter(row=>settled7.includes(row.day)).reduce((a,row)=>a+(row.surviving||0),0);
   if(todayCommits>0){
     const best=(o.projects||[]).filter(p=>p.commits>0).sort((a,b)=>b.surviving-a.surviving)[0];
     const lost=(o.no_commit_sessions||[])[0];
@@ -5556,9 +5561,13 @@ function briefSentence(en,o,tot,today){
     return parts.join(' ');
   }
   if(commits7>0){
+    const settledNote=retainedSettled>0
+      ?(en?` Commits from 7-14 days ago kept ${retainedSettled.toLocaleString('en-US')} surviving lines.`
+           :` 7-14 天前的提交留存了 ${retainedSettled.toLocaleString('en-US')} 行。`)
+      :'';
     return en
-      ?`Today ${spendText} of tokens has not turned into a commit yet; the last 7 days delivered ${commits7} commit${commits7===1?'':'s'} and ${retained7.toLocaleString('en-US')} surviving lines.`
-      :`今天 ${spendText} 的 token 还没有换来提交；最近 7 天共 ${commits7} 个提交、留存 ${retained7.toLocaleString('en-US')} 行。`;
+      ?`Today ${spendText} of tokens has not turned into a commit yet; the last 7 days delivered ${commits7} commit${commits7===1?'':'s'} and ${added7.toLocaleString('en-US')} added line${added7===1?'':'s'} (survival is measured once a commit is 7 days old).${settledNote}`
+      :`今天 ${spendText} 的 token 还没有换来提交；最近 7 天共 ${commits7} 个提交、新增 ${added7.toLocaleString('en-US')} 行（满 7 天后再计留存）。${settledNote}`;
   }
   const noCommit=tot.sessions_without_commits||0;
   return en
@@ -5662,28 +5671,30 @@ function renderBrief(){
       en?'Surviving lines are the lines a commit added that still exist at HEAD after 7 days; without a repository this is not measurable.':'留存行 = 提交满 7 天后在当前 HEAD 仍存活的行（#31 口径）；没有仓库时无法度量。'));
   }else{
     const per=tot.retained_per_dollar||0;
-    const last7=[...Array(7)].map((_,i)=>briefDayIso(briefToday(),-i));
-    const prev7=[...Array(7)].map((_,i)=>briefDayIso(briefToday(),-i-7));
-    const cost7=briefRangeCost(last7).amount;
+    // The big number covers the whole snapshot.  The subtitle may only compare
+    // settled windows: commits need to be 7 days old before survival exists.
+    const settled7=[...Array(7)].map((_,i)=>briefDayIso(briefToday(),-i-7));
+    const prev7=[...Array(7)].map((_,i)=>briefDayIso(briefToday(),-i-14));
+    const costSettled=briefRangeCost(settled7).amount;
     const costPrev=briefRangeCost(prev7).amount;
-    const survive7=(o.days||[]).filter(row=>last7.includes(row.day)).reduce((a,row)=>a+(row.surviving||0),0);
+    const surviveSettled=(o.days||[]).filter(row=>settled7.includes(row.day)).reduce((a,row)=>a+(row.surviving||0),0);
     const survivePrev=(o.days||[]).filter(row=>prev7.includes(row.day)).reduce((a,row)=>a+(row.surviving||0),0);
-    const avg7=(cost7>0)?survive7/cost7:null;
+    const avgSettled=(costSettled>0)?surviveSettled/costSettled:null;
     const avgPrev=(costPrev>0)?survivePrev/costPrev:null;
     let sub='',cls='';
-    if(avg7===null)sub=en?'no priced spend in the last 7 days':'近 7 天无可估花费';
-    else if(avg7===0&&survive7===0)sub=en?'last 7 days still pending (under 7 days)':'近 7 天提交均不满 7 天，留存待定';
+    if(avgSettled===null||(surviveSettled===0&&avgSettled===0))
+      sub=en?'last 7 days still pending (under 7 days); no comparison yet':'近 7 天的提交还不满 7 天，暂不比较';
     else{
-      sub=(en?'7-day avg ':'7 日均值 ')+per1Text(avg7);
+      sub=(en?'7-14 day avg ':'7-14 天均值 ')+per1Text(avgSettled);
       if(avgPrev!==null){
-        if(avg7>avgPrev)sub+=en?' · rising':' · 上涨',cls='up';
-        else if(avg7<avgPrev)sub+=en?' · falling':' · 回落',cls='down';
+        if(avgSettled>avgPrev)sub+=en?' · rising':' · 上涨',cls='up';
+        else if(avgSettled<avgPrev)sub+=en?' · falling':' · 回落',cls='down';
         else sub+=en?' · flat':' · 持平';
       }
     }
-    cards.push(briefCard(per1Text(per),en?'Retained lines per $1':'每 $1 留存行',sub,
-      en?`Surviving lines ÷ session spend over the whole snapshot range; the settled-only variant divides by sessions whose commits are at least 7 days old (settled: ${per1Text(tot.retained_per_dollar_settled||0)}). ${moneySub()}.`
-         :`全快照范围的留存行 ÷ 会话花费；"仅满 7 天"口径只除以提交已满 7 天的会话花费（当前 ${per1Text(tot.retained_per_dollar_settled||0)}）。${moneySub()}。`,cls));
+    cards.push(briefCard(per1Text(per),en?'Retained lines per $1 · all range':'每 $1 留存行 · 全部范围',sub,
+      en?`Big number: surviving lines ÷ session spend over the whole snapshot range. Subtitle: the 7-14 day window (commits there are at least 7 days old, so survival is settled) and its change against the previous 7 days; it is not compared while the last 7 days are still pending. Settled-only variant: ${per1Text(tot.retained_per_dollar_settled||0)}. ${moneySub()}.`
+         :`大字：全快照范围的留存行 ÷ 会话花费。副标题：7-14 天前的窗口（该窗口提交已满 7 天，留存已定案）及其相对再前 7 天的涨跌；最近 7 天提交未满 7 天时不做比较。仅满 7 天口径：${per1Text(tot.retained_per_dollar_settled||0)}。${moneySub()}。`,cls));
   }
   // Rework tax %
   if(status==='unavailable'){

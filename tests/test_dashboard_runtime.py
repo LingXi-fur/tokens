@@ -710,6 +710,62 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_top_briefing_recent_week_reports_added_lines_not_pending_survival(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            page.evaluate("""() => {
+              const today=String(DATA.calendar_day||DATA.generated||'').slice(0,10);
+              DATA.outcomes.status='ok';
+              DATA.outcomes.reasons={};
+              DATA.outcomes.totals.sessions=2;
+              DATA.outcomes.days=[
+                {day:today,commits:0,added:0,deleted:0,surviving:0,no_session:0,pending_added:0},
+                {day:briefDayIso(today,-1),commits:3,added:120,deleted:4,surviving:0,
+                 no_session:0,pending_added:120},
+              ];
+              DATA.outcomes.projects=[];
+              DATA.outcomes.no_commit_sessions=[];
+              renderBrief();
+            }""")
+            zh = page.locator("#brief-line").inner_text()
+            # Survival needs commits to be 7 days old; a 0 for the last seven
+            # days is true by definition and would read as "no output".
+            self.assertNotIn("留存 0 行", zh)
+            self.assertIn("新增 120 行", zh)
+            self.assertIn("满 7 天后再计留存", zh)
+            page.evaluate("applyLanguage('en',false)")
+            en = page.locator("#brief-line").inner_text()
+            self.assertNotIn("0 surviving lines", en)
+            self.assertIn("120 added lines", en)
+            self.assertIn("7 days old", en)
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
+    def test_top_briefing_is_visible_in_the_first_screen(self):
+        context, page, page_errors, console_errors = self.new_page(
+            viewport={"width": 1280, "height": 900}
+        )
+        try:
+            page.wait_for_function(
+                "() => document.querySelectorAll('.brief-card').length > 0"
+            )
+            box = page.evaluate("""() => {
+              const brief=document.getElementById('section-brief').getBoundingClientRect();
+              const cards=document.getElementById('brief-cards').getBoundingClientRect();
+              return {top:brief.top, cardsBottom:cards.bottom, height:innerHeight};
+            }""")
+            self.assertLess(box["top"], 300,
+                            "the briefing must sit directly under the header")
+            self.assertLessEqual(box["cardsBottom"], box["height"],
+                                 "the four metric cards must fit in the first screen")
+            self.assertEqual(4, page.locator(".brief-card").count())
+            self.assertEqual([], page_errors)
+            self.assertEqual([], console_errors)
+        finally:
+            context.close()
+
     def test_deep_dive_sections_collapse_open_on_dock_and_remember(self):
         context, page, page_errors, console_errors = self.new_page()
         try:
