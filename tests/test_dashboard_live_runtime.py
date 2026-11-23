@@ -1520,6 +1520,10 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         )
         cancelled = state.requests()
         page.clock.fast_forward(25000)  # backoff (>=30s) must not re-poll immediately
+        # fast_forward only guarantees that due timers ran; a buggy early fetch
+        # would still be on the wire.  Proving that nothing happened needs a
+        # short real wait so any wrong request can arrive and be counted.
+        page.wait_for_timeout(300)
         self.assertEqual(cancelled, state.requests())
         self.assertEqual([], errors)
 
@@ -1537,6 +1541,10 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             page.select_option("#live-refresh", str(seconds))
             self._wait_requests(page, state, arm + 1)  # an explicit change checks at once
             page.clock.fast_forward(seconds * 1000 - 1000)
+            # Give a hypothetical early fetch time to reach the Python server:
+            # without this the "nothing happened yet" assertion could pass
+            # while a clamped timer's request is still in flight.
+            page.wait_for_timeout(300)
             self.assertEqual(
                 arm + 1,
                 state.requests(),
@@ -1545,6 +1553,13 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             )
             page.clock.fast_forward(2000)
             self._wait_requests(page, state, arm + 2)  # the idle cadence then fires
+            # Exact count, not >=: an extra request from a too-fast timer
+            # would make this fail instead of being absorbed by the next arm.
+            self.assertEqual(
+                arm + 2,
+                state.requests(),
+                "idle polling for %ss fired more than once per cadence" % seconds,
+            )
         self.assertEqual([], errors)
 
     def test_idle_cadence_is_exact_in_virtual_browser_time(self):

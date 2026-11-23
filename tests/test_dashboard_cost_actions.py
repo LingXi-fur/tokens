@@ -161,7 +161,7 @@ class ActionsPageMixin:
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
             accept_downloads=True,
         )
         try:
@@ -1015,7 +1015,7 @@ class DashboardCostCsvTests(ActionsPageMixin, unittest.TestCase):
         context = self._browser.new_context(
             viewport={"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
             accept_downloads=True,
         )
         page = context.new_page()

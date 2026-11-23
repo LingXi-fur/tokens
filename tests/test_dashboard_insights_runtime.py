@@ -64,7 +64,7 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         cls._playwright.stop()
         cls._tmp.cleanup()
 
-    def open(self, *, path=None, viewport=None, color_scheme="light", reduced_motion="no-preference",
+    def open(self, *, path=None, viewport=None, color_scheme="light", reduced_motion="reduce",
              has_touch=False, language=None, theme=None):
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 900},
@@ -353,7 +353,8 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         page, errors = self.open(reduced_motion="reduce")
         self.assertEqual("off", page.evaluate("() => document.documentElement.dataset.motion"))
         self.assertEqual({"pace": "none", "stream": "none"}, page.evaluate(probe))
-        page, errors2 = self.open()
+        # Full motion needs a page that does not prefer reduced motion.
+        page, errors2 = self.open(reduced_motion="no-preference")
         page.evaluate("() => applyMotion('full')")
         page.evaluate("() => renderInsights()")
         self.assertEqual({"pace": "paceDraw", "stream": "streamGrow"}, page.evaluate(probe))
