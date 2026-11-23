@@ -1648,6 +1648,7 @@ class SafeReadStatProbeTests(unittest.TestCase):
         self.assertEqual(readers._stat_version(first), readers._stat_version(second))
         handles = [self.info(st_ctime_ns=401), self.info(st_ctime_ns=402)]
         with mock.patch.object(readers, "_IS_WINDOWS", True), \
+                mock.patch.object(readers, "_windows_change_ns", return_value=None), \
                 mock.patch.object(readers.os, "open", return_value=17), \
                 mock.patch.object(readers.os, "fstat", side_effect=handles), \
                 mock.patch.object(readers.os, "close") as closed:

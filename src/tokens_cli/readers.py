@@ -1514,8 +1514,9 @@ def _load_cache():
         before_change = _path_change_ns(config.CACHE_FILE, before)
         fd = os.open(config.CACHE_FILE, _safe_open_flags())
         opened = os.fstat(fd)
+        opened_change = _handle_change_ns(opened, fd)
         if (not stat.S_ISREG(opened.st_mode) or opened.st_size > MAX_CACHE_BYTES
-                or _version_with_change(opened, opened.st_ctime_ns)
+                or _version_with_change(opened, opened_change)
                 != _version_with_change(before, before_change)):
             return {}
         with os.fdopen(fd, "rb") as fh:
@@ -1526,7 +1527,7 @@ def _load_cache():
                     or _stat_version(os.fstat(fh.fileno())) != _stat_version(opened)
                     or _version_with_change(named_cache,
                                             _path_change_ns(config.CACHE_FILE, named_cache))
-                    != _version_with_change(opened, opened.st_ctime_ns)):
+                    != _version_with_change(opened, opened_change)):
                 return {}
         data = json.loads(raw)
         return data if isinstance(data, dict) else {}
