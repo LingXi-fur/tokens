@@ -279,6 +279,7 @@ class CostEndToEndUiTests(unittest.TestCase):
         context = self._browser.new_context(
             viewport={"width": 1280, "height": 820},
             color_scheme="light",
+            reduced_motion="reduce",
         )
         page = context.new_page()
         page_errors, console_errors = [], []

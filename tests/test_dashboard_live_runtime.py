@@ -310,7 +310,9 @@ def _start_server(html):
 
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     httpd.daemon_threads = True
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    # Small poll_interval so httpd.shutdown() returns promptly in cleanup.
+    thread = threading.Thread(
+        target=lambda: httpd.serve_forever(poll_interval=0.05), daemon=True)
     thread.start()
     return state, httpd
 
@@ -1509,12 +1511,19 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             ),
         )
         self._wait_rows(page)
-        self._wait_kind(page, "offline", timeout=14000)  # watchdog aborts at 10s
+        page.clock.install()  # the fixed 10s watchdog is a setTimeout timer
+        self._force_check(page)  # arms the delayed fetch and its watchdog
+        page.clock.fast_forward(10000)  # watchdog aborts the in-flight request at 10s
+        self._wait_kind(page, "offline", timeout=14000)
         self.assertEqual(
             "暂时断开（连接超时）", page.get_attribute("#live-beacon", "title")
         )
         cancelled = state.requests()
-        time.sleep(2.5)  # backoff (>=30s) must not re-poll immediately
+        page.clock.fast_forward(25000)  # backoff (>=30s) must not re-poll immediately
+        # fast_forward only guarantees that due timers ran; a buggy early fetch
+        # would still be on the wire.  Proving that nothing happened needs a
+        # short real wait so any wrong request can arrive and be counted.
+        page.wait_for_timeout(300)
         self.assertEqual(cancelled, state.requests())
         self.assertEqual([], errors)
 
@@ -1526,18 +1535,30 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
         )
         self._wait_rows(page)
         self.assertEqual("60", page.eval_on_selector("#live-refresh", "e=>e.value"))
+        page.clock.install()  # idle cadence checks are setTimeout timers
         for seconds in (300, 900, 1800, 60):
-            start = state.requests()
+            arm = state.requests()
             page.select_option("#live-refresh", str(seconds))
-            self._wait_requests(page, state, start + 1)  # an explicit change checks at once
-            time.sleep(0.3)
-            baseline = state.requests()
-            time.sleep(2.6)
+            self._wait_requests(page, state, arm + 1)  # an explicit change checks at once
+            page.clock.fast_forward(seconds * 1000 - 1000)
+            # Give a hypothetical early fetch time to reach the Python server:
+            # without this the "nothing happened yet" assertion could pass
+            # while a clamped timer's request is still in flight.
+            page.wait_for_timeout(300)
             self.assertEqual(
-                baseline,
+                arm + 1,
                 state.requests(),
                 "idle polling for %ss must not be clamped to a faster cadence"
                 % seconds,
+            )
+            page.clock.fast_forward(2000)
+            self._wait_requests(page, state, arm + 2)  # the idle cadence then fires
+            # Exact count, not >=: an extra request from a too-fast timer
+            # would make this fail instead of being absorbed by the next arm.
+            self.assertEqual(
+                arm + 2,
+                state.requests(),
+                "idle polling for %ss fired more than once per cadence" % seconds,
             )
         self.assertEqual([], errors)
 

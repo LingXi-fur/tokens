@@ -270,7 +270,7 @@ class DashboardCostTests(unittest.TestCase):
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
         )
         page = context.new_page()
         for script in init_scripts:
@@ -1137,7 +1137,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
         context = self._browser.new_context(
             viewport=viewport or {"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
         )
         page = context.new_page()
         page_errors, console_errors = [], []
@@ -1658,7 +1658,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
         context = self._browser.new_context(
             viewport={"width": 1280, "height": 820},
             color_scheme="light",
-            reduced_motion="no-preference",
+            reduced_motion="reduce",
         )
         page = context.new_page()
         page_errors, console_errors = [], []

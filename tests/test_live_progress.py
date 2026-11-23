@@ -124,7 +124,9 @@ class LiveProgressTests(unittest.TestCase):
         dashboard = live_dashboard.LiveDashboard(['claude'])
         with mock.patch.object(dashboard, 'start'):
             server = live_dashboard.LiveDashboardServer(0, dashboard, 300)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        # Small poll_interval so server.shutdown() returns promptly in cleanup.
+        thread = threading.Thread(
+            target=lambda: server.serve_forever(poll_interval=0.05), daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
