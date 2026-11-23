@@ -290,6 +290,7 @@ class CostEndToEndUiTests(unittest.TestCase):
             else None,
         )
         page.goto(self._html_path.as_uri(), wait_until="load")
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         return context, page, page_errors, console_errors
 
     def open_ledger(self, page):

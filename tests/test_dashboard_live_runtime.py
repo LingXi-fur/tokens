@@ -435,6 +435,7 @@ class DashboardLiveRuntimeTests(unittest.TestCase):
             "http://127.0.0.1:%d/" % httpd.server_port,
             wait_until="load",
         )
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         return state, page, errors, console
 
     @staticmethod

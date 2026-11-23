@@ -3020,10 +3020,16 @@ function renderHud(){
   /* 主 KPI 跟手柔光：只写 CSS 变量，样式由 CSS 决定 */
   const primary=document.querySelector('.kpi.is-primary');
   if(primary)primary.addEventListener('pointermove',event=>{const box=primary.getBoundingClientRect();primary.style.setProperty('--mx',Math.round(event.clientX-box.left)+'px');primary.style.setProperty('--my',Math.round(event.clientY-box.top)+'px');},{passive:true});
-  /* 总览 KPI 在视口内时 HUD 让位（信息重复）；滚离后滑入 */
+  /* 总览 KPI 或今日简报在视口内时 HUD 让位（信息重复）；都滚离后滑入 */
   const kpis=document.querySelector('.kpis');
-  if(kpis&&'IntersectionObserver' in window){
-    new IntersectionObserver(entries=>{entries.forEach(entry=>{const away=entry.isIntersecting;hud.classList.toggle('away',away);if(away){hud.setAttribute('inert','');hud.setAttribute('aria-hidden','true');}else{hud.removeAttribute('inert');hud.removeAttribute('aria-hidden');}});},{threshold:0}).observe(kpis);
+  const brief=document.getElementById('section-brief');
+  if('IntersectionObserver' in window){
+    const visible=new Map();
+    const apply=()=>{const away=[...visible.values()].some(Boolean);hud.classList.toggle('away',away);if(away){hud.setAttribute('inert','');hud.setAttribute('aria-hidden','true');}else{hud.removeAttribute('inert');hud.removeAttribute('aria-hidden');}};
+    [kpis,brief].filter(Boolean).forEach(target=>{
+      visible.set(target,false);
+      new IntersectionObserver(entries=>{entries.forEach(entry=>visible.set(target,entry.isIntersecting));apply();},{threshold:0}).observe(target);
+    });
   }
   try{renderHud();}catch(e){}
 })();
@@ -5546,7 +5552,7 @@ function briefSentence(en,o,tot,today){
       :`花得最值的是 ${best.project}，留存 ${best.surviving.toLocaleString('en-US')} 行。`);
     if(lost&&lost.cost>=1)parts.push(en
       ?`Worst: a ${durText(lost.duration_min)} session cost ${briefMoney(lost.cost)} and left no commit.`
-      :`最亏的是一个 ${durText(lost.duration_min)} 的会话，花了 ${briefMoney(lost.cost)}，没有留下提交。`);
+      :`最亏的是一个跨度 ${durText(lost.duration_min)} 的会话，花了 ${briefMoney(lost.cost)}，没有留下提交。`);
     return parts.join(' ');
   }
   if(commits7>0){
@@ -5624,6 +5630,8 @@ function renderBrief(){
   const line=document.getElementById('brief-line');
   if(!line)return;
   const en=dashboardLanguage==='en';
+  const kicker=document.getElementById('brief-k');
+  if(kicker)kicker.textContent=en?'BRIEF · TODAY':'BRIEF · 今日简报';
   const o=briefO();
   const tot=briefTotals(o||{});
   line.textContent=briefSentence(en,o||{status:'unavailable'},tot,briefToday());
@@ -5664,6 +5672,7 @@ function renderBrief(){
     const avgPrev=(costPrev>0)?survivePrev/costPrev:null;
     let sub='',cls='';
     if(avg7===null)sub=en?'no priced spend in the last 7 days':'近 7 天无可估花费';
+    else if(avg7===0&&survive7===0)sub=en?'last 7 days still pending (under 7 days)':'近 7 天提交均不满 7 天，留存待定';
     else{
       sub=(en?'7-day avg ':'7 日均值 ')+per1Text(avg7);
       if(avgPrev!==null){
@@ -5751,15 +5760,18 @@ function renderBriefTips(en,o,tot,status){
     const lost=(o.no_commit_sessions||[]).find(row=>(row.cost||0)>=1);
     if(lost){
       tips.push({amount:null,text:en
-        ?`A ${durText(lost.duration_min)} session spent ${briefMoney(lost.cost)} in a git repository but matched no commit.`
+        ?`A session spanning ${durText(lost.duration_min)} spent ${briefMoney(lost.cost)} in a git repository but matched no commit.`
         :`一个 ${durText(lost.duration_min)} 的会话花了 ${briefMoney(lost.cost)}，在 git 仓库内但没有匹配到提交。`});
     }
     const worst=briefWorstSource();
     if(worst&&worst.hit<0.25&&worst.input>0){
       const view=costView();
-      const main=(view&&view.entries||[]).slice().sort((a,b)=>b.partSums[0]-a.partSums[0])[0];
-      const rate=main&&main.rates&&main.rates[0];
-      const save=(rate&&rate!==null)?Number(0.25*worst.input*Number(rate)/1e6):null;
+      // partSums are BigInt: compare explicitly, sort callbacks need Number.
+      const main=(view&&view.entries||[]).slice().sort((a,b)=>a.partSums[0]>b.partSums[0]?-1:a.partSums[0]<b.partSums[0]?1:0)[0];
+      // entry.rates are BigInt x1e6 (USD per million tokens).
+      const rate=main&&main.rates?main.rates[0]:null;
+      const perMillion=(rate===null||rate===undefined)?null:Number(rate)/1e6;
+      const save=perMillion===null?null:Number(0.25*worst.input*perMillion/1e6);
       if(save!==null&&save>=0.5){
         tips.push({amount:save,text:en
           ?`${costSourceLabel(worst.src)} reads only ${(worst.hit*100).toFixed(0)}% from cache; lifting the hit rate could save about ${briefMoney(save)} of reference-priced input.`
@@ -5804,6 +5816,16 @@ function digApply(id,collapsed){
     if(chev)chev.textContent=collapsed?'▸':'▾';
   }
 }
+function digRefreshSized(section){
+  // Sections that were display:none have no layout yet; charts sized from
+  // clientWidth (activity calendar, pace race, share stream) must re-render
+  // after the section becomes visible, otherwise they stay at their initial
+  // zero-width position.
+  if(!section)return;
+  const sized=['section-overview','section-daily-models','section-rhythm'];
+  if(!sized.includes(section.id))return;
+  try{if(typeof renderInsights==='function')renderInsights();}catch(e){}
+}
 function digOpen(id){
   const sec=document.getElementById(id);
   if(sec&&sec.classList.contains('dig-collapsed')){
@@ -5812,6 +5834,7 @@ function digOpen(id){
     // The lazy renderer reacts to visibility; nudge it so the section fills.
     const name=sec.dataset&&sec.dataset.lazy;
     if(name){lazyState[name]=Object.assign({},lazyState[name],{visible:true});if(lazyState[name].dirty||!lazyState[name].rendered)renderLazy(name,true);}
+    digRefreshSized(sec);
   }
 }
 function digToggle(id){
@@ -5819,11 +5842,19 @@ function digToggle(id){
   const collapsed=!sec.classList.contains('dig-collapsed');
   const store=digRead();store[id]=collapsed?'closed':'open';digWrite(store);
   digApply(id,collapsed);
-  if(!collapsed){const name=sec.dataset&&sec.dataset.lazy;if(name){lazyState[name]=Object.assign({},lazyState[name],{visible:true});if(lazyState[name].dirty||!lazyState[name].rendered)renderLazy(name,true);}}
+  if(!collapsed){
+    const name=sec.dataset&&sec.dataset.lazy;
+    if(name){lazyState[name]=Object.assign({},lazyState[name],{visible:true});if(lazyState[name].dirty||!lazyState[name].rendered)renderLazy(name,true);}
+    digRefreshSized(sec);
+  }
 }
 function setDigAll(open){
   const store=digRead();
-  digSections().forEach(sec=>{store[sec.id]=open?'open':'closed';digApply(sec.id,!open);});
+  digSections().forEach(sec=>{
+    store[sec.id]=open?'open':'closed';
+    digApply(sec.id,!open);
+    if(open)digRefreshSized(sec);
+  });
   digWrite(store);
 }
 function initDigCollapse(){

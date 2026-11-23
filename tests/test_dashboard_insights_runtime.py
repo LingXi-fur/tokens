@@ -75,6 +75,7 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         page.on("pageerror", lambda exc: errors.append(str(exc)))
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
         page.goto((path or self._path).as_uri() + (f"?t={theme}" if theme else ""))
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         page.wait_for_function("() => document.getElementById('share-stream') && !document.getElementById('share-stream').hidden")
         if language:
             page.evaluate("lang => applyLanguage(lang)", language)
@@ -392,7 +393,10 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
     def test_section_order_is_unchanged(self):
         page, errors = self.open()
         first = page.evaluate("() => document.querySelector('main section.card, section.card').id")
-        self.assertEqual("section-scope", first)
+        # The top briefing is the first card by design; the rest keeps order.
+        self.assertEqual("section-brief", first)
+        second = page.evaluate("() => [...document.querySelectorAll('section.card')][1].id")
+        self.assertEqual("section-scope", second)
         parents = page.evaluate("""() => ({pace:document.getElementById('pace-race').closest('section').id,
             stream:document.getElementById('share-stream').closest('section').id,
             cal:document.getElementById('activity-cal').closest('section').id})""")

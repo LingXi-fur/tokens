@@ -272,6 +272,7 @@ class DashboardCostTests(unittest.TestCase):
         )
         target = path or self._path
         page.goto(target.as_uri(), wait_until="load")
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         return context, page, page_errors, console_errors
 
     def open_ledger(self, page, path=None):
@@ -1135,6 +1136,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
             else None,
         )
         page.goto((path or self._ref_path).as_uri(), wait_until="load")
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         return context, page, page_errors, console_errors
 
     def open_ledger(self, page, path=None):
@@ -1657,6 +1659,7 @@ class DashboardCostReferenceTests(unittest.TestCase):
         requested = []
         page.on("request", lambda request: requested.append(request.url))
         page.goto(self._ref_path.as_uri(), wait_until="load")
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
         self.open_ledger(page)
         # Source links to the vendor pricing pages live in the ledger
         # (attribution belongs to the ledger, not necessarily the editor).
