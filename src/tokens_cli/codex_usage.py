@@ -220,7 +220,7 @@ def _complete_usage(usage):
             and all(type(value) is int and value >= 0 for value in usage.values()))
 
 
-def parse_state(path):
+def parse_state(path, *, _change=None):
     from . import readers
     modern, old = [], []
     new_seen, old_seen = {}, {}
@@ -364,6 +364,8 @@ def parse_state(path):
                         old_seen[anchor] = current
                     append(old, (record, key, signature))
             stable = reader.finish()
+            if _change is not None:
+                _change.append(reader.initial_change)
             opened = reader.initial
     except readers.CollectionIncompleteError:
         raise

@@ -378,19 +378,21 @@ class ReaderMemoTests(unittest.TestCase):
                 elif change == "replace":
                     other = a.with_suffix(".new"); other.write_bytes(a.read_bytes()); other.replace(a)
                 elif change == "ctime":
+                    # Same-size rewrite with mtime restored: size and mtime are
+                    # unchanged on every platform, so only change time can
+                    # expose it.  Windows stat exposes creation time, so the
+                    # reader must take change time from a handle there; this
+                    # assertion is deliberately platform-identical.
                     raw = a.read_bytes().replace(b'"input_tokens":7', b'"input_tokens":8')
-                    self.assertEqual(before.st_size, len(raw)); a.write_bytes(raw)
-                    if os.name == "nt":
-                        # Windows os.stat exposes creation time, not inode
-                        # change time, so restoring mtime would hide the write.
-                        # The same-size rewrite itself must still invalidate.
-                        self.assertEqual(before.st_ctime_ns, a.stat().st_ctime_ns)
-                        os.utime(a, ns=(before.st_atime_ns,
-                                        before.st_mtime_ns + 1_000_000))
-                        self.assertNotEqual(before.st_mtime_ns, a.stat().st_mtime_ns)
-                    else:
-                        os.utime(a, ns=(before.st_atime_ns, before.st_mtime_ns))
-                        self.assertNotEqual(before.st_ctime_ns, a.stat().st_ctime_ns)
+                    self.assertEqual(before.st_size, len(raw))
+                    # Windows file times move on the system clock tick
+                    # (~15.6 ms); cross it so the rewrite is observable.
+                    time.sleep(0.05)
+                    a.write_bytes(raw)
+                    os.utime(a, ns=(before.st_atime_ns, before.st_mtime_ns))
+                    after = a.stat()
+                    self.assertEqual(before.st_size, after.st_size)
+                    self.assertEqual(before.st_mtime_ns, after.st_mtime_ns)
                 else:
                     a.unlink()
                 with self.io_counts() as (reads, _, _):
