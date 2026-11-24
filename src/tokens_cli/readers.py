@@ -21,6 +21,7 @@ total 口径说明：
   codex  : total_tokens（input_tokens 已含 cached_input_tokens，故不重复加）
 """
 import glob
+import hashlib
 import json
 import math
 import os
@@ -69,7 +70,7 @@ from . import sources as _source_registry
 #         记为路由后端；原生 ID 归一为点号版本（claude-opus-5-5 → claude-opus-5.5）
 #   v22 = Gemini/OpenCode/Antigravity 的缓存条目记录 partial（局部损坏消息数），
 #         整文件损坏不再写空缓存；升级后首次读取会重算健康计数
-CACHE_VERSION = 22
+CACHE_VERSION = 23
 
 # ---------- Billing evidence (schema 1) ----------
 # 独立计费证据：只读源头分量、字段是否实际存在及口径异常原因，绝不改写既有
@@ -1255,6 +1256,61 @@ def load_session_summaries():
 
 # ---------- Gemini ----------
 
+_GEMINI_PROJECT_CACHE = (None, {})
+
+
+def _gemini_projects():
+    """project path -> project name from ~/.gemini/projects.json (cached)."""
+    global _GEMINI_PROJECT_CACHE
+    path = os.path.join(os.path.dirname(config.GEMINI_TMP), "projects.json")
+    try:
+        info = os.stat(path)
+    except OSError:
+        return {}
+    key = (path, info.st_mtime_ns, info.st_size)
+    if _GEMINI_PROJECT_CACHE[0] == key:
+        return _GEMINI_PROJECT_CACHE[1]
+    projects = {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+        entries = raw.get("projects") if isinstance(raw, dict) else None
+        if isinstance(entries, dict):
+            for project, name in entries.items():
+                if isinstance(project, str) and os.path.isabs(project):
+                    projects[project] = name if isinstance(name, str) else None
+    except (OSError, ValueError, RecursionError):
+        projects = {}
+    _GEMINI_PROJECT_CACHE = (key, projects)
+    return projects
+
+
+def _gemini_project_cwd(path):
+    """Working directory recorded by Gemini's tmp project folder, or None.
+
+    Older Gemini layouts name the folder after sha256(cwd); newer ones use the
+    project name from projects.json.  Only exact, registered mappings count:
+    an unknown folder stays unknown instead of being guessed.
+    """
+    try:
+        folder = os.path.basename(
+            os.path.dirname(os.path.dirname(os.path.abspath(path))))
+    except (OSError, ValueError):
+        return None
+    projects = _gemini_projects()
+    if not folder or not projects:
+        return None
+    if re.fullmatch(r"[0-9a-f]{64}", folder):
+        for project in projects:
+            if hashlib.sha256(project.encode("utf-8")).hexdigest() == folder:
+                return project
+        return None
+    for project, name in projects.items():
+        if folder == name or folder == os.path.basename(project):
+            return project
+    return None
+
+
 def gemini_files():
     if not os.path.isdir(config.GEMINI_TMP):
         return []
@@ -1283,6 +1339,7 @@ def gemini_parse_state(path):
     if not isinstance(messages, list):
         raise CorruptSourceFile("gemini")
     session = data.get("sessionId")
+    cwd = _gemini_project_cwd(path)
     for m in messages:
         if not isinstance(m, dict):
             partial += 1
@@ -1317,6 +1374,8 @@ def gemini_parse_state(path):
                 "session": session,
                 "billing": _gemini_billing(tk),
             }
+            if cwd:
+                record["cwd"] = cwd
             _sanitize_token_record(record, "gemini")
         except (AttributeError, OverflowError, TypeError, ValueError):
             partial += 1

@@ -896,9 +896,11 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             anonymize=anonymize,
             aliases=aliases,
             now=generated_at,
-            # 与费用账本同一套模型归并（含 overflow 折叠），匿名报告不得
-            # 通过 outcomes 泄漏已折叠的原始模型名。
-            model_of=lambda record: _canonical_model(record, model_registry),
+            # 匿名报告沿用费用账本的模型归并（含 overflow 折叠），以免
+            # outcomes 泄漏已折叠的原始模型名；普通报告保留真实模型名，
+            # 终端与看板都回答“具体哪个模型最划算”。
+            model_of=((lambda record: _canonical_model(record, model_registry))
+                      if anonymize else None),
             records_key=outcomes.records_fingerprint(since, until),
         ),
     }

@@ -14,7 +14,7 @@ function emptyLiveShell(){
     reuse:{day:[],week:[],month:[]}, day:[], week:[], month:[],
     request_models:[],
     snapshot:{snapshot_schema:'',metric_schema:'',timezone:'',coverage:{first_day:null,last_day:null},id:''},
-    outcomes:{schema:1,range:{since:null,until:null},status:'unavailable',reasons:{},totals:{sessions:0,tokens:0,cost:0,commits:0,no_session_commits:0,sessions_without_commits:0,no_repo_sessions:0,added:0,deleted:0,files:0,surviving:0,settled_cost:0,rework_tax:0,retained_per_dollar:0,retained_per_dollar_settled:0,cost_per_commit:0},days:[],projects:[],models:[],no_commit_sessions:[],no_repo_sessions:[]},
+    outcomes:{schema:2,range:{since:null,until:null},status:'unavailable',reasons:{},totals:{sessions:0,tokens:0,cost:0,commits:0,no_session_commits:0,sessions_without_commits:0,no_repo_sessions:0,added:0,deleted:0,files:0,surviving:0,settled_cost:0,rework_tax:0,retained_per_dollar:0,retained_per_dollar_settled:0,cost_per_commit:0},days:[],projects:[],models:[],sources:[],no_commit_sessions:[],no_repo_sessions:[]},
   };
 }
 function decodeWire(wire){
@@ -61,6 +61,11 @@ const liveConfig=(()=>{
 // 后台页首轮无快照：渲染准备空壳，不显示任何伪造 0 值。
 let livePrepare = liveConfig.enabled && !liveConfig.hasSnapshot;
 const I18N_EXACT = Object.freeze({
+  '模型对比 · 谁最划算':'Model comparison · Best value',
+  '花费按会话内各模型的实际用量精确拆分；提交与行数按花费占比分摊；样本少（会话 < 3 或已定案花费 < $1）不参与排名。':'Spend is split exactly by each model’s usage in the session; commits and lines follow that spend share. Low sample (fewer than 3 sessions or under $1 settled spend) is not ranked.',
+  '模型对比':'Model comparison','按模型':'By model','按工具':'By tool',
+  '按模型或按工具对比':'Compare by model or tool',
+  '按模型或工具的价值对比，可横向滚动':'Value comparison by model or tool; horizontally scrollable',
   'Gemini total 以日志报告值为准；通常有 session，但缺少 cwd。':'Gemini totals use the reported log value; session is usually available, but cwd is often missing.',
   'Codex input 通常包含 cached input；当前记录通常缺少 cwd 与 session。':'Codex input usually includes cached input; current records often lack cwd and session.',
   'OpenCode total = input + output + reasoning + cache read/write；input 不含缓存，reasoning 单列；保留 cwd 与 session。':'OpenCode total = input + output + reasoning + cache read/write; input excludes cache, reasoning is counted separately; cwd and session are kept.',
@@ -2581,7 +2586,7 @@ compareButton.addEventListener('pointerdown',event=>{if(event.button!==0)return;
 function releaseCompareHold(){clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){setCompareHeld(false);compareHoldReached=false;}}
 compareButton.addEventListener('pointerup',event=>{clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){event.preventDefault();setCompareHeld(false);compareHoldReached=false;return;}togglePinnedCompare();});compareButton.addEventListener('pointercancel',releaseCompareHold);compareButton.addEventListener('pointerleave',releaseCompareHold);compareButton.addEventListener('click',event=>event.preventDefault());compareButton.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!event.repeat){event.preventDefault();togglePinnedCompare();}});
 
-const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,modes:renderWorkModes,almanac:renderAlmanac,badges:renderBadges,cost:renderCostLedger};
+const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,value:renderValueComparison,modes:renderWorkModes,almanac:renderAlmanac,badges:renderBadges,cost:renderCostLedger};
 const lazyState={};
 function ensureLazyPlaceholder(card){
   let placeholder=card.querySelector(':scope > .lazy-placeholder');
@@ -3373,7 +3378,7 @@ document.getElementById('k-total-copy').addEventListener('click',e=>{e.stopPropa
   el.addEventListener('mousemove',e=>{const r=el.getBoundingClientRect();el.style.setProperty('--mx',(e.clientX-r.left)+'px');el.style.setProperty('--my',(e.clientY-r.top)+'px');});
 })();
 /* ---- 模块开关（附加功能可勾选 + 记忆）---- */
-const MODS_KEY='tk-mods', MOD_DEFAULT={cost:true,block:true,rhythm:true,modes:true,provenance:true,project:true,reuse:true,flow:true,almanac:true,badges:true,top:true};
+const MODS_KEY='tk-mods', MOD_DEFAULT={cost:true,block:true,rhythm:true,modes:true,provenance:true,project:true,reuse:true,flow:true,value:true,almanac:true,badges:true,top:true};
 function loadMods(){ try{ const m=Object.assign({},JSON.parse(localStorage.getItem(MODS_KEY)||'{}'));let legacy;if(Object.prototype.hasOwnProperty.call(m,'orbit'))legacy=m.orbit;else if(Object.prototype.hasOwnProperty.call(m,'city'))legacy=m.city;if(!Object.prototype.hasOwnProperty.call(m,'flow')&&legacy!==undefined)m.flow=legacy;delete m.orbit;delete m.city;localStorage.setItem(MODS_KEY,JSON.stringify(m));return m; }catch(e){ return {}; } }
 function applyMods(){
   const m=Object.assign({},MOD_DEFAULT,loadMods());
@@ -3663,6 +3668,67 @@ function renderProjectLens(){
   select.title=chosen?chosen.id:'';
 }
 document.getElementById('project-select').addEventListener('change',e=>{selectedProject=e.target.value;renderProjectLens();document.activeElement===e.target?setSignalPeek(signalFromElement(e.target),e.target):applySignalLens();});
+
+/* ---- Value by model / tool (outcomes #39) ---- */
+let valueMode='model';
+function valueNum(value,digits=1){const n=Number(value)||0;return n.toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits});}
+function valueMoney(value){const n=Number(value)||0;return '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function valueComparisonRows(){
+  const o=briefO(),rows=o?(valueMode==='source'?o.sources:o.models):null;
+  return Array.isArray(rows)?rows:[];
+}
+function renderValueComparison(){
+  const en=dashboardLanguage==='en',thead=document.getElementById('value-thead'),tbody=document.getElementById('value-tbody');
+  if(!thead||!tbody)return;
+  document.querySelectorAll('[data-value-mode]').forEach(button=>{const on=button.dataset.valueMode===valueMode;button.classList.toggle('is-on',on);button.setAttribute('aria-pressed',String(on));});
+  const tooltip=en
+    ?'Spend is exact per model/tool. Commits, added, settled surviving and pending lines are allocated by that row\'s share of the session spend; a session can appear in more than one row.'
+    :'花费按会话内各模型/工具的实际用量精确拆分；提交、新增、已定案留存与待定行按该行在会话花费中的占比分摊；同一会话可出现在多行。';
+  const head=en?['Name','Sessions','Spend','Commits','Added','Settled kept','Pending','Kept / $1','Rework tax']:['名称','会话','花费','提交','新增','已定案留存','待定','每 $1 留存','返工税'];
+  const titles=[
+    tooltip,
+    en?'Sessions that used this model/tool; one session can count in several rows.':'使用该模型/工具的会话数；同一会话可计入多行。',
+    en?'Reference-priced spend for this model/tool (exact).':'该模型/工具按官方参考价计算的精确花费。',
+    en?'Session commits allocated by spend share (manual commits excluded).':'按花费占比分摊的会话提交；手工提交不计入。',
+    en?'Added lines allocated by spend share.':'按花费占比分摊的新增行。',
+    en?'Lines still at HEAD after 7 days, allocated by spend share (settled only).':'满 7 天后仍在 HEAD 的留存行，按花费占比分摊（仅已定案部分）。',
+    en?'Added lines younger than 7 days, survival still pending.':'不满 7 天的新增行，留存仍待定。',
+    en?'Settled surviving lines divided by settled spend; “—” when nothing is settled yet.':'已定案留存行 ÷ 已定案花费；尚无已定案数据时显示“—”。',
+    en?'Share of the session rework tax; low-sample rows are not ranked.':'该行分摊的返工税；样本少的行不参与排名。',
+  ];
+  thead.innerHTML='<tr>'+head.map((label,i)=>'<th'+(i?' class=num':'')+' title="'+esc(titles[i]||'')+'">'+esc(label)+'</th>').join('')+'</tr>';
+  const rows=valueComparisonRows();
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan=9 class=dim>'+(en?'No measurable models or tools in this range.':'该范围没有可统计的模型或工具产出。')+'</td></tr>';
+  }else{
+    tbody.innerHTML=rows.map(row=>{
+      const name=valueMode==='source'?costSourceLabel(row.source):pretty(row.model);
+      const low=!!row.low_sample;
+      const per=Number(row.settled_cost)>0?valueNum(row.retained_per_dollar,1):'—';
+      const badge=low?' <span class=value-badge>'+(en?'low sample':'样本少')+'</span>':'';
+      return '<tr'+(low?' class=value-low':'')+'>'
+        +'<td title="'+esc(tooltip)+'">'+esc(name)+badge+'</td>'
+        +'<td class=num>'+fmt(row.sessions)+'</td>'
+        +'<td class=num>'+valueMoney(row.cost)+'</td>'
+        +'<td class=num>'+valueNum(row.commits)+'</td>'
+        +'<td class=num>'+valueNum(row.added)+'</td>'
+        +'<td class=num>'+valueNum(row.surviving)+'</td>'
+        +'<td class=num>'+valueNum(row.pending_added)+'</td>'
+        +'<td class=num>'+per+'</td>'
+        +'<td class=num>'+valueMoney(row.rework_tax)+'</td>'
+        +'</tr>';
+    }).join('');
+  }
+  const note=document.getElementById('value-note');
+  if(note)note.textContent=en
+    ?'Ranked by settled retained lines per $1; low-sample rows (fewer than 3 sessions or under $1 settled spend) sit below the ranking. Commits outside every session are not attributable to a model or tool.'
+    :'按每 $1 已定案留存行排序；样本少（少于 3 个会话或已定案花费低于 $1）的行排在排名之外。不属于任何会话的手工提交无法归到模型或工具。';
+  const foot=document.getElementById('value-foot');
+  if(foot)foot.textContent=tooltip;
+}
+document.querySelectorAll('[data-value-mode]').forEach(button=>{
+  button.addEventListener('click',()=>{const mode=button.dataset.valueMode;if(mode!==valueMode){valueMode=mode;renderValueComparison();}});
+});
 
 const DEST_PAGE_SIZE=12;
 const destState={sig:null,page:0,model:null,view:'cards'};
@@ -5537,6 +5603,17 @@ function briefWorstSource(){
   return worst;
 }
 
+function briefValueNote(en,o){
+  const rows=(o&&Array.isArray(o.models)?o.models:[]).filter(row=>row&&!row.low_sample);
+  if(rows.length<2)return '';
+  const best=rows.slice().sort((a,b)=>Number(b.retained_per_dollar)-Number(a.retained_per_dollar)||Number(b.cost)-Number(a.cost))[0];
+  if(!best||!(Number(best.retained_per_dollar)>0))return '';
+  const per=Number(best.retained_per_dollar).toFixed(1);
+  return en
+    ?` Best value this week: ${best.model} (${per} retained lines per $1).`
+    :` 本周最划算：${best.model}（每 $1 留存 ${per} 行）。`;
+}
+
 function briefSentence(en,o,tot,today){
   const todayDay=briefToday();
   const dayRow=(o.days||[]).find(row=>row.day===todayDay);
@@ -5573,21 +5650,21 @@ function briefSentence(en,o,tot,today){
     if(lost&&lost.cost>=1)parts.push(en
       ?`Worst: a ${durText(lost.duration_min)} session cost ${briefMoney(lost.cost)} and left no commit.`
       :`最亏的是一个跨度 ${durText(lost.duration_min)} 的会话，花了 ${briefMoney(lost.cost)}，没有留下提交。`);
-    return parts.join(' ');
+    return parts.join(' ')+briefValueNote(en,o);
   }
   if(commits7>0){
     const settledNote=retainedSettled>0
       ?(en?` Commits from 7-14 days ago kept ${retainedSettled.toLocaleString('en-US')} surviving lines.`
            :` 7-14 天前的提交留存了 ${retainedSettled.toLocaleString('en-US')} 行。`)
       :'';
-    return en
+    return (en
       ?`Today ${spendText} of tokens has not turned into a commit yet; the last 7 days delivered ${commits7} commit${commits7===1?'':'s'} and ${added7.toLocaleString('en-US')} added line${added7===1?'':'s'} (survival is measured once a commit is 7 days old).${settledNote}`
-      :`今天 ${spendText} 的 token 还没有换来提交；最近 7 天共 ${commits7} 个提交、新增 ${added7.toLocaleString('en-US')} 行（满 7 天后再计留存）。${settledNote}`;
+      :`今天 ${spendText} 的 token 还没有换来提交；最近 7 天共 ${commits7} 个提交、新增 ${added7.toLocaleString('en-US')} 行（满 7 天后再计留存）。${settledNote}`)+briefValueNote(en,o);
   }
   const noCommit=tot.sessions_without_commits||0;
-  return en
+  return (en
     ?`Today ${spendText} of tokens has not turned into a commit yet; ${noCommit} session${noCommit===1?'':'s'} in this snapshot matched no commit.`
-    :`今天 ${spendText} 的 token 还没有换来提交；本快照中 ${noCommit} 个会话未匹配到提交。`;
+    :`今天 ${spendText} 的 token 还没有换来提交；本快照中 ${noCommit} 个会话未匹配到提交。`)+briefValueNote(en,o);
 }
 
 function briefTrendNote(en,o,tot,today){

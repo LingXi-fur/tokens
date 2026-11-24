@@ -45,6 +45,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
         <div class=mrow><label><input type=checkbox data-mod=project checked>项目透镜</label><span class="switch on" aria-hidden=true data-sw=project></span></div>
         <div class=mrow><label><input type=checkbox data-mod=reuse checked>复用之河</label><span class="switch on" aria-hidden=true data-sw=reuse></span></div>
         <div class=mrow><label><input type=checkbox data-mod=flow checked>用量去向</label><span class="switch on" aria-hidden=true data-sw=flow></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=value checked>模型对比</label><span class="switch on" aria-hidden=true data-sw=value></span></div>
         <div class=mrow><label><input type=checkbox data-mod=almanac checked>Token 年鉴</label><span class="switch on" aria-hidden=true data-sw=almanac></span></div>
         <div class=mrow><label><input type=checkbox data-mod=badges checked>成就徽章</label><span class="switch on" aria-hidden=true data-sw=badges></span></div>
         <div class=mrow><label><input type=checkbox data-mod=top checked>Top 榜</label><span class="switch on" aria-hidden=true data-sw=top></span></div>
@@ -345,6 +346,21 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
  <div class=dest-grid id=flow-map style=margin-top:14px></div>
  <div class=flow-panel id=flow-panel aria-live=polite><b>用量去向</b><span>悬停或聚焦项目/模型/会话查看证据；点击可锁定到 Signal Dock，或打开会话回放。</span></div>
  <div class=flow-stats id=flow-stats></div>
+</section>
+
+<section class="card value-compare" data-module=value data-lazy=value id=section-value>
+ <div class=row-between>
+  <div><div class=mode-k>VALUE BY MODEL · PER $1</div><h2 style=margin:0>模型对比 · 谁最划算</h2><p class=sub style="margin:6px 0 0;color:var(--faint)">花费按会话内各模型的实际用量精确拆分；提交与行数按花费占比分摊；样本少（会话 &lt; 3 或已定案花费 &lt; $1）不参与排名。</p></div>
+  <div class=value-modes role=group aria-label="按模型或按工具对比">
+   <button class="ghostbtn value-mode is-on" type=button data-value-mode=model aria-pressed=true>按模型</button>
+   <button class="ghostbtn value-mode" type=button data-value-mode=source aria-pressed=false>按工具</button>
+  </div>
+ </div>
+ <div class=value-note id=value-note></div>
+ <div class=table-scroll id=value-region tabindex=0 role=region aria-label="按模型或工具的价值对比，可横向滚动">
+  <table class="detail-table value-table"><thead id=value-thead></thead><tbody id=value-tbody></tbody></table>
+ </div>
+ <p class=value-foot id=value-foot></p>
 </section>
 
 <section class=card data-module=top id=section-top>
