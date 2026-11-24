@@ -1046,8 +1046,23 @@ class LargeClaudeLogsTests(unittest.TestCase):
                 return StatVersion(actual)
             return actual
 
+        real_change = readers._windows_change_ns
+
+        def windows_change(fd):
+            # Windows reads the change time from the handle
+            # (FILE_BASIC_INFO.ChangeTime), not from fstat.  Without this the
+            # test would compare real NTFS timestamps, whose clock tick is
+            # coarse enough that a write right after creation can keep the
+            # same ChangeTime, making the outcome timing-dependent.
+            actual = real_fstat(fd)
+            if (actual.st_dev, actual.st_ino) == (identity.st_dev, identity.st_ino):
+                return version["ctime_ns"]
+            return real_change(fd)
+
         with mock.patch.object(os, "lstat", side_effect=lstat), \
-                mock.patch.object(os, "fstat", side_effect=fstat):
+                mock.patch.object(os, "fstat", side_effect=fstat), \
+                mock.patch.object(readers, "_windows_change_ns",
+                                  side_effect=windows_change):
             yield
 
     def test_discovery_follows_directory_symlink_to_legal_jsonl(self):
