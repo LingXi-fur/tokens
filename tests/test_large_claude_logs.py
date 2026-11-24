@@ -1046,8 +1046,15 @@ class LargeClaudeLogsTests(unittest.TestCase):
                 return StatVersion(actual)
             return actual
 
+        # #29 reads Windows change time from the handle via ctypes, which
+        # would ignore the synthetic fstat above.  Disable only that provider
+        # so both sides of the comparison use this test's controlled version;
+        # the real Windows API path is covered by
+        # test_same_size_rewrite_change_time_probe.
         with mock.patch.object(os, "lstat", side_effect=lstat), \
-                mock.patch.object(os, "fstat", side_effect=fstat):
+                mock.patch.object(os, "fstat", side_effect=fstat), \
+                mock.patch.object(readers, "_windows_change_ns",
+                                  return_value=None):
             yield
 
     def test_discovery_follows_directory_symlink_to_legal_jsonl(self):
