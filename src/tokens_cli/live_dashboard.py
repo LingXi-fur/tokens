@@ -139,6 +139,9 @@ class LiveDashboard:
                 anonymize=self.anonymize,
                 aliases=self._aliases,
                 session_titles={},
+                # Shell before the first scan: no usage HUD, and no reason to
+                # pay a quota scan in the constructor.
+                include_quota=False,
             )
         )
         if self._snapshot_store is not None:

@@ -8,7 +8,7 @@ import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from . import aggregate, config, outcomes, readers, sources as source_registry
+from . import aggregate, config, outcomes, quota, readers, sources as source_registry
 
 
 LIGHT_PALETTE = [
@@ -383,7 +383,7 @@ def _snapshot_identity(payload):
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False,
                   aliases=None, generated_at=None, session_titles=None,
-                  collection_report=None):
+                  collection_report=None, include_quota=True):
     records = tuple(records)
     model_registry, model_slots = _model_registry(records)
     overflow_names = {
@@ -845,6 +845,16 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         ],
     }
 
+    # 与 payload.source 保持一致：来源未声明时不做额度扫描，避免出现
+    # source=[] 却带 Codex 数据的矛盾快照。
+    quota_selected = set(sources or ())
+    if include_quota and quota_selected & {"claude", "codex"}:
+        quota_scan = quota.scan_rate_limits(quota_selected, use_cache=True)
+        quota_block = quota.dashboard_snapshot(quota_selected, quota_scan,
+                                               records, generated_at)
+    else:
+        quota_block = None
+
     dashboard_data = {
         "anonymized": anonymize,
         "source": sources or [],
@@ -884,6 +894,9 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         "week": _pack_periods(week_periods),
         "month": _pack_periods(month_periods),
         "cost": cost,
+        # 额度燃尽预测（#41）：与 tokens quota 同一口径；静态报告是生成时
+        # 的快照，serve 每次刷新都会重建。没有 Codex/Claude 数据时为 null。
+        "quota": quota_block,
         # 投入产出（只读 git）：金额用看板费用账本同一份官方参考价；
         # 结构由 live_snapshot 白名单校验，#32 的"今日简报"读这里。
         # 与其余块同样先按报告范围过滤，范围外记录不参与窗口与会话统计。

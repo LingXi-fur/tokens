@@ -3024,7 +3024,100 @@ function renderHud(){
   const hudDelta=race?insightDeltaText(race.today.total,race.yesterday.atCutoff):null;
   if(hudDelta){deltaEl.dataset.lead=race.lead;deltaEl.textContent=hudDelta+(en?' vs yesterday, same time':' 较昨日同一时刻');}
   else{delete deltaEl.dataset.lead;deltaEl.textContent=race?insightAlmostNothing(en):'';}
+  renderHudQuota(en);
   setHudCollapsed(hudPrefs.c,false);
+}
+
+/* ---- 额度燃尽预测（#41）：与 tokens quota 同一口径 ---- */
+function quotaTimeLabel(iso,refIso){
+  // Quota timestamps already carry the report-timezone offset; slicing the
+  // ISO string keeps the HUD on the report timezone even for fixed-offset TZs.
+  const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(iso||''));
+  if(!match)return '—';
+  const [,year,month,day,hour,minute]=match;
+  const ref=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(refIso||''));
+  const sameDay=!!ref&&ref[1]===year&&ref[2]===month&&ref[3]===day;
+  return (sameDay?'':month+'-'+day+' ')+hour+':'+minute;
+}
+function quotaProjectionText(row,en,refIso){
+  const projection=row.projection||{},status=projection.status;
+  if(status==='expired')return en?'window reset; waiting for a new snapshot':'窗口已重置，等新快照';
+  if(status==='hit'){
+    if(row.pct!=null&&row.pct>=100)return en?'already at 100%':'已达 100%';
+    return en?('out around '+quotaTimeLabel(projection.projected_at,refIso)):('约 '+quotaTimeLabel(projection.projected_at,refIso)+' 用完');
+  }
+  if(status==='safe')return en?'safe through reset':'重置前用不完';
+  if(status==='flat')return en?'no usage in the last hour':'最近一小时没在用';
+  if(status==='insufficient')return row.windowTooNew?(en?'window just started; not enough data':'窗口刚开始，数据不足'):(en?'not enough recent data':'数据不足');
+  if(status==='past_floor')return en?('past the safe estimate around '+quotaTimeLabel(projection.projected_at,refIso)):('约 '+quotaTimeLabel(projection.projected_at,refIso)+' 超过历史安全用量');
+  if(status==='beyond_estimate')return en?'past the estimate, no limit hit yet':'已超过历史估算，仍未撞线';
+  return en?'no estimate yet':'暂无法估算';
+}
+function quotaHudRows(){
+  const quota=DATA.quota;
+  if(!quota||typeof quota!=='object')return [];
+  const rows=[];
+  (Array.isArray(quota.codex)?quota.codex:[]).forEach(window=>{
+    const name='Codex'+(window.limit&&window.limit!=='codex'?' '+window.limit:'')+(window.window?' '+window.window:'');
+    rows.push({kind:'codex',name,badge:'官方',pct:window.used_percent,reset:window.resets_at,
+      projection:window.projection,plan:window.plan,limit:window.limit,windowTooNew:false});
+  });
+  const claude=quota.claude;
+  if(claude&&typeof claude==='object'){
+    rows.push({kind:'claude',name:'Claude 5h',badge:'估算',pct:claude.used_percent,
+      reset:claude.window_end,projection:claude.projection,
+      safe:claude.safe_windows,start:claude.window_start,end:claude.window_end,
+      windowTooNew:!!claude.window_too_new});
+  }
+  return rows;
+}
+function renderHudQuota(en){
+  const box=document.getElementById('hud-quota');if(!box)return;
+  const rows=quotaHudRows();
+  box.hidden=!rows.length;
+  if(!rows.length){box.innerHTML='';return;}
+  const ref=DATA.quota.generated_at;
+  box.innerHTML=rows.map(row=>{
+    const pct=row.pct==null?null:Math.max(0,Math.min(100,row.pct));
+    const warn=(row.projection&&row.projection.status)==='hit';
+    const badge=row.kind==='codex'?(en?'official':'官方'):(en?'estimate':'估算');
+    const pctText=pct==null?'—':Math.round(pct)+'%';
+    const reset=row.reset?((en?'reset ':'重置 ')+quotaTimeLabel(row.reset,ref)):'';
+    const note=quotaProjectionText(row,en,ref);
+    const tip=row.kind==='codex'
+      ?(en?`Codex official rate_limits snapshot${row.plan?' ('+row.plan+')':''}; velocity uses the last hour.`
+              :`Codex 官方 rate_limits 快照${row.plan?'（'+row.plan+'）':''}；速度按最近一小时计算。`)
+      :(en?`Claude estimate: the capacity floor is the highest historical no-limit window (${row.safe||0} safe windows); velocity uses the last hour. Window ${quotaTimeLabel(row.start,ref)} → ${quotaTimeLabel(row.end,ref)}.`
+              :`Claude 估算：容量下限取历史未撞限窗口中的最高值（${row.safe||0} 个安全窗口）；速度按最近一小时计算。窗口 ${quotaTimeLabel(row.start,ref)} → ${quotaTimeLabel(row.end,ref)}。`);
+    return '<div class=hq-row data-kind="'+row.kind+'" data-warn="'+String(warn)+'" title="'+esc(tip)+'">'
+      +'<div class=hq-top><span class=hq-name>'+esc(row.name)+'</span><span class=hq-badge>'+badge+'</span><span class=hq-pct>'+pctText+'</span></div>'
+      +'<div class=hq-track><i style="width:'+(pct==null?0:pct).toFixed(1)+'%"></i></div>'
+      +'<div class=hq-meta><span>'+esc(reset)+'</span><span class=hq-note>'+esc(note)+'</span></div>'
+      +'</div>';
+  }).join('');
+}
+function briefQuotaTip(en){
+  const quota=DATA.quota;if(!quota||typeof quota!=='object')return null;
+  const reference=quota.generated_at?new Date(quota.generated_at).getTime():Date.now();
+  if(!Number.isFinite(reference))return null;
+  const hits=[];
+  (Array.isArray(quota.codex)?quota.codex:[]).forEach(window=>{
+    if(window.projection&&window.projection.status==='hit'&&window.projection.projected_at)
+      hits.push({label:'Codex'+(window.window?' '+window.window:''),projected:window.projection.projected_at,reset:window.resets_at});
+  });
+  if(quota.claude&&quota.claude.projection&&quota.claude.projection.status==='hit'&&quota.claude.projection.projected_at)
+    hits.push({label:'Claude 5h',projected:quota.claude.projection.projected_at,reset:quota.claude.window_end});
+  for(const hit of hits){
+    const projected=new Date(hit.projected).getTime(),reset=hit.reset?new Date(hit.reset).getTime():null;
+    if(!Number.isFinite(projected)||projected<reference||projected-reference>2*3600*1000)continue;
+    if(reset!==null&&!(projected<reset))continue;
+    const out=quotaTimeLabel(hit.projected,quota.generated_at);
+    const resetText=hit.reset?quotaTimeLabel(hit.reset,quota.generated_at):'—';
+    return en
+      ?`At the last hour's pace, ${hit.label} runs out around ${out} (resets ${resetText}).`
+      :`按最近一小时的速度，${hit.label} 约 ${out} 用完（${resetText} 重置）。`;
+  }
+  return null;
 }
 (function initHud(){
   const hud=document.getElementById('hud'),grip=document.getElementById('hud-grip');if(!hud||!grip)return;
@@ -5895,6 +5988,8 @@ function renderBriefTips(en,o,tot,status){
     }
   }
   tips.sort((a,b)=>Number(b.amount||0)-Number(a.amount||0));
+  const quotaTip=briefQuotaTip(en);
+  if(quotaTip)tips.unshift({amount:null,text:quotaTip});
   const top=tips.slice(0,3);
   box.hidden=!top.length;
   box.innerHTML=top.map(tip=>`<div class="brief-tip"><b class=tip-tag>${tip.amount!==null?(en?'can save ≈ ':'可省约 ')+briefMoney(tip.amount):(en?'watch':'关注')}</b>${esc(tip.text)}</div>`).join('');

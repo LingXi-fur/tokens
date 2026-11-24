@@ -87,6 +87,29 @@ class SnapshotStoreTests(unittest.TestCase):
 
     @unittest.skipUnless(live_snapshot._supported(),
                          'requires POSIX snapshot-store capabilities')
+    def test_quota_block_is_whitelisted_and_persisted(self):
+        payload = copy.deepcopy(self.payload)
+        payload["quota"] = {
+            "generated_at": CHECKED_AT,
+            "timezone": live_snapshot._timezone()["name"],
+            "codex": [],
+            "claude": {
+                "safe_windows": 11, "basis": "safe_floor",
+                "used_percent": 42.5, "capacity_tokens": 1000000,
+                "window_start": CHECKED_AT, "window_end": CHECKED_AT,
+                "velocity_per_hour": 1200, "has_hit": False,
+                "window_too_new": False,
+                "projection": {"status": "safe", "projected_at": CHECKED_AT},
+            },
+        }
+        wire = identify(payload)
+        self.assertTrue(self.store.save(wire, CHECKED_AT))
+        loaded = self.store.load()
+        self.assertIsNotNone(loaded)
+        restored = dashboard_wire.decode_payload(loaded["wire"])
+        self.assertEqual(42.5, restored["quota"]["claude"]["used_percent"])
+        self.assertEqual([], restored["quota"]["codex"])
+
     def test_round_trip_uses_one_private_file_and_returns_original_wire(self):
         self.assertIsNone(self.store.load())
         self.assertFalse(self.directory.exists())

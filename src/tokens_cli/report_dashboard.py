@@ -16,7 +16,8 @@ from . import config, dashboard_payload, dashboard_wire
 from .opener import open_path
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False,
-                  generated_at=None, session_titles=None, collection_report=None):
+                  generated_at=None, session_titles=None, collection_report=None,
+                  include_quota=True):
     return dashboard_payload.build_payload(
         records,
         since=since,
@@ -26,6 +27,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
         generated_at=generated_at,
         session_titles=session_titles,
         collection_report=collection_report,
+        include_quota=include_quota,
     )
 
 
@@ -97,6 +99,8 @@ def build_dashboard_html(records, since=None, until=None, sources=None,
         generated_at=generated_at,
         session_titles=session_titles,
         collection_report=collection_report,
+        # 合成 Demo 不读取本机任何额度快照。
+        include_quota=not demo,
     )
     wire = dashboard_wire.encode_payload(payload)
     return render_dashboard(
