@@ -8,7 +8,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -26,7 +26,7 @@ import sys
 sys.path.insert(0, str(SRC))
 
 import tokens_cli
-from tokens_cli import config, dashboard_payload, dashboard_wire, report_dashboard
+from tokens_cli import config, dashboard_payload, dashboard_wire, live_snapshot, report_dashboard
 
 
 class DashboardTests(unittest.TestCase):
@@ -338,6 +338,45 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("model-a", reuse[0][1])
         self.assertIn("model-b", reuse[1][1])
         self.assertEqual(300, sum(row["total"] for row in payload["day"]))
+
+    def test_payload_quota_block_is_scoped_validated_and_private(self):
+        now = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)
+        scan = {
+            "claude_events": [],
+            "codex_snapshots": [{
+                "observed_at": now.timestamp(), "plan_type": "plus",
+                "limit_id": "codex", "limit_name": None, "window_minutes": 300,
+                "used_percent": 42.0,
+                "resets_at": now.timestamp() + 3600,
+            }],
+            "claude_files": 0, "codex_files": 1, "parsed_files": 1,
+        }
+        with mock.patch.object(dashboard_payload.quota, "scan_rate_limits",
+                               return_value=scan):
+            payload = report_dashboard.build_payload(
+                self.synthetic_records(), since="2026-07-01", until="2026-07-02",
+                sources=["codex"], generated_at=now)
+            none_payload = report_dashboard.build_payload(
+                self.synthetic_records(), since="2026-07-01", until="2026-07-02",
+                sources=["opencode"], generated_at=now)
+            demo_payload = report_dashboard.build_payload(
+                self.synthetic_records(), since="2026-07-01", until="2026-07-02",
+                sources=["codex"], generated_at=now, include_quota=False)
+            anonymized = report_dashboard.build_payload(
+                self.synthetic_records(), since="2026-07-01", until="2026-07-02",
+                sources=["codex"], generated_at=now, anonymize=True)
+        self.assertIsNotNone(payload["quota"])
+        self.assertEqual(1, len(payload["quota"]["codex"]))
+        self.assertEqual("5h", payload["quota"]["codex"][0]["window"])
+        self.assertIsNone(payload["quota"]["claude"])
+        live_snapshot._quota_shape(payload["quota"], ["codex"],
+                                   live_snapshot._timezone())
+        self.assertIsNone(none_payload["quota"])
+        self.assertIsNone(demo_payload["quota"])
+        serialized = json.dumps(anonymized, ensure_ascii=False)
+        self.assertNotIn("/synthetic/long-running-project-alpha", serialized)
+        self.assertNotIn("synthetic-session-a", serialized)
+        self.assertIn("quota", anonymized)
         self.assertEqual(2, len(payload["top_cwds"]))
         self.assertEqual({"model-a": 100}, payload["top_cwds"][1][3])
         day_one = payload["day_details"]["2026-07-01"]

@@ -28,7 +28,8 @@ _DIRFD_CAPABLE = (os.open in os.supports_dir_fd and os.stat in os.supports_dir_f
 _CODE_MAX_BYTES = 8 * 1024 * 1024
 _CODE_FILES = tuple(os.path.join(os.path.dirname(__file__), name) for name in (
     "config.py", "sources.py", "readers.py", "_claude_json.py", "codex_usage.py",
-    "aggregate.py", "dashboard_payload.py", "dashboard_wire.py", "live_snapshot.py",
+    "aggregate.py", "quota.py", "dashboard_payload.py", "dashboard_wire.py",
+    "live_snapshot.py",
 ))
 _ALLOWED_SOURCES = frozenset(source.name for source in source_registry.SOURCES)
 _PAYLOAD_KEYS = frozenset((
@@ -37,7 +38,7 @@ _PAYLOAD_KEYS = frozenset((
     "day_details", "block", "top_cwds", "session_series", "session_context",
     "n_cwds", "n_sessions", "max_turns", "provenance", "achievement_stats",
     "achievement_daily", "reuse", "day", "week", "month", "cost",
-    "request_models", "source_labels", "outcomes",
+    "request_models", "source_labels", "outcomes", "quota",
 ))
 _REF = re.compile(r"(?:0|[1-9a-z][0-9a-z]*)\Z")
 _TOP_SESSION_CONTEXT = frozenset(("p", "pm", "s", "d0", "d1"))
@@ -486,6 +487,79 @@ _OUTCOMES_NO_COMMIT = frozenset((
 _OUTCOMES_NO_REPO = frozenset(_OUTCOMES_NO_COMMIT - {"repo"})
 
 
+_QUOTA_TOP = frozenset(("generated_at", "timezone", "codex", "claude"))
+_QUOTA_CODEX = frozenset((
+    "plan", "limit", "window", "window_minutes", "used_percent", "resets_at",
+    "observed_at", "status", "velocity_per_hour", "projection",
+))
+_QUOTA_CLAUDE = frozenset((
+    "safe_windows", "basis", "used_percent", "capacity_tokens", "window_start",
+    "window_end", "velocity_per_hour", "has_hit", "window_too_new", "projection",
+))
+_QUOTA_PROJECTION = frozenset(("status", "projected_at"))
+_QUOTA_STATUS = frozenset((
+    "hit", "safe", "flat", "insufficient", "expired", "past_floor",
+    "beyond_estimate", "no_estimate",
+))
+
+
+def _optional_number(value):
+    return value is None or (type(value) in (int, float)
+                             and math.isfinite(value) and value >= 0)
+
+
+def _optional_time(value):
+    if value is not None:
+        _checked_at(value)
+
+
+def _quota_projection(value):
+    _require(type(value) is dict and set(value) == _QUOTA_PROJECTION)
+    _require(value["status"] in _QUOTA_STATUS)
+    _optional_time(value["projected_at"])
+
+
+def _quota_shape(quota, sources, tz):
+    """Whitelist the quota HUD block; no paths, ids, or message bodies."""
+    if quota is None:
+        # Null is valid whenever neither source has data (the ordinary case
+        # for an empty/hermetic scan), regardless of which sources are selected.
+        return
+    _require(type(quota) is dict and set(quota) == _QUOTA_TOP)
+    _checked_at(quota["generated_at"])
+    _require(quota["timezone"] == tz["name"])
+    _require(type(quota["codex"]) is list)
+    _require("codex" in sources or not quota["codex"])
+    for row in quota["codex"]:
+        _require(type(row) is dict and set(row) == _QUOTA_CODEX)
+        _require(row["plan"] is None
+                 or (type(row["plan"]) is str and len(row["plan"]) <= 64))
+        _require(type(row["limit"]) is str and 0 < len(row["limit"]) <= 128)
+        _require(type(row["window"]) is str and 0 < len(row["window"]) <= 16)
+        _require(type(row["window_minutes"]) is int and row["window_minutes"] > 0)
+        _require(row["status"] in ("current", "expired"))
+        for key in ("used_percent", "velocity_per_hour"):
+            _require(_optional_number(row[key]))
+        for key in ("resets_at", "observed_at"):
+            _optional_time(row[key])
+        _quota_projection(row["projection"])
+    claude = quota["claude"]
+    _require("claude" in sources or claude is None)
+    if claude is not None:
+        _require(type(claude) is dict and set(claude) == _QUOTA_CLAUDE)
+        _require(type(claude["safe_windows"]) is int and claude["safe_windows"] >= 0)
+        _require(claude["basis"] is None
+                 or (type(claude["basis"]) is str and 0 < len(claude["basis"]) <= 32))
+        for key in ("used_percent", "capacity_tokens", "velocity_per_hour"):
+            _require(_optional_number(claude[key]))
+        for key in ("window_start", "window_end"):
+            _optional_time(claude[key])
+        _require(type(claude["has_hit"]) is bool)
+        _require(type(claude["window_too_new"]) is bool)
+        _quota_projection(claude["projection"])
+    _require(bool(quota["codex"]) or claude is not None)
+
+
 def _outcomes_shape(outcomes):
     """Whitelist the outcomes block; counts and ratios only, no git internals."""
     _require(type(outcomes) is dict and set(outcomes) == _OUTCOMES_TOP)
@@ -602,6 +676,7 @@ def _validate_payload(payload, sources, since, until, tz):
     _require(set(payload["reuse"]) == {"day", "week", "month"})
     _require(set(payload["colors"]) == {"light", "dark"})
     _outcomes_shape(payload["outcomes"])
+    _quota_shape(payload["quota"], sources, tz)
     provenance_sources = payload["provenance"].get("sources")
     achievement_sources = payload["achievement_stats"].get("source_totals")
     _require(type(provenance_sources) is dict and set(provenance_sources) <= set(sources))

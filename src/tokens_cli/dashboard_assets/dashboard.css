@@ -1117,3 +1117,17 @@ section.dig.dig-collapsed .dig-chev{color:var(--faint)}
 .value-foot{margin:8px 0 0;color:var(--faint);font-size:11px;line-height:1.45}
 .value-table td.value-low,.value-table tr.value-low td{color:var(--faint)}
 .value-badge{display:inline-block;margin-left:6px;padding:1px 6px;border:1px solid var(--border-2);border-radius:999px;color:var(--faint);font-size:10px;vertical-align:1px;white-space:nowrap}
+
+/* HUD 额度燃尽预测（#41） */
+.hud-quota{display:grid;gap:8px;margin:10px 0 0;padding-top:10px;border-top:1px solid var(--chrome-brd)}
+.hq-row{display:grid;gap:4px;min-width:0}
+.hq-top{display:flex;align-items:center;gap:6px;min-width:0;font-size:11px}
+.hq-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650;color:var(--ink)}
+.hq-badge{flex:none;padding:0 5px;border:1px solid var(--chrome-brd);border-radius:999px;color:var(--faint);font-size:9.5px;line-height:1.5}
+.hq-pct{margin-left:auto;flex:none;color:var(--muted);font-variant-numeric:tabular-nums}
+.hq-track{height:4px;border-radius:999px;background:var(--chrome-brd);overflow:hidden}
+.hq-track i{display:block;height:100%;border-radius:inherit;background:var(--accent);transition:width .3s ease}
+.hq-meta{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0;color:var(--faint);font-size:10.5px}
+.hq-note{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--muted)}
+.hq-row[data-warn=true] .hq-pct,.hq-row[data-warn=true] .hq-note{color:var(--bad)}
+.hq-row[data-warn=true] .hq-track i{background:var(--bad)}

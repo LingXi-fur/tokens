@@ -353,6 +353,104 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
                               language + " body leaked an unreadable percentage")
         self.assertEqual([], errors)
 
+    # ---- quota HUD (#41) ---------------------------------------------------
+
+    QUOTA_CRAFT = """(projected,reset,kind='claude') => {
+      const base='2026-09-24T12:00:00+08:00';
+      const window={plan:'plus',limit:'codex',window:'5h',window_minutes:300,
+        used_percent:99,resets_at:reset,observed_at:base,status:'current',
+        velocity_per_hour:10,projection:{status:'hit',projected_at:projected}};
+      DATA.quota={generated_at:base,timezone:'Asia/Shanghai',
+        codex:kind==='codex'?[window]:[
+          window,
+          Object.assign({},window,{window:'week',window_minutes:10080,used_percent:30,
+            resets_at:'2026-09-28T12:00:00+08:00',
+            projection:{status:'safe',projected_at:'2026-09-30T12:00:00+08:00'}})],
+        claude:{safe_windows:57,basis:'safe_floor',used_percent:33.4,
+          capacity_tokens:105685096,window_start:'2026-09-24T07:42:00+08:00',
+          window_end:'2026-09-24T12:42:00+08:00',velocity_per_hour:1800000,
+          has_hit:false,window_too_new:false,
+          projection:{status:'flat',projected_at:null}}};
+      renderHud();
+      const rows=[...document.querySelectorAll('#hud-quota .hq-row')];
+      return {hidden:document.getElementById('hud-quota').hidden,
+        rows:rows.map(row=>({text:row.innerText,warn:row.dataset.warn,
+          color:getComputedStyle(row.querySelector('.hq-note')).color}))};
+    }"""
+
+    def test_quota_hud_renders_hit_safe_flat_and_warning_color(self):
+        page, errors = self.open()
+        info = page.evaluate(self.QUOTA_CRAFT,
+                             ['2026-09-24T12:40:00+08:00',
+                              '2026-09-24T13:00:00+08:00'])
+        self.assertFalse(info["hidden"])
+        self.assertEqual(3, len(info["rows"]))
+        hit, safe, flat = info["rows"]
+        self.assertIn("用完", hit["text"])
+        self.assertEqual("true", hit["warn"])
+        self.assertIn("重置前用不完", safe["text"])
+        self.assertEqual("false", safe["warn"])
+        self.assertIn("最近一小时没在用", flat["text"])
+        self.assertNotEqual(hit["color"], safe["color"], "hit uses the warning colour")
+
+    def test_quota_hud_expired_and_missing_quota(self):
+        page, errors = self.open()
+        expired = page.evaluate("""() => {
+          DATA.quota={generated_at:'2026-09-24T12:00:00+08:00',timezone:'Asia/Shanghai',
+            codex:[{plan:'plus',limit:'codex',window:'5h',window_minutes:300,
+              used_percent:null,resets_at:'2026-09-24T11:00:00+08:00',
+              observed_at:'2026-09-24T10:00:00+08:00',status:'expired',
+              velocity_per_hour:null,projection:{status:'expired',projected_at:null}}],
+            claude:null};
+          renderHud();
+          const row=document.querySelector('#hud-quota .hq-row');
+          return {text:row.innerText,warn:row.dataset.warn,
+                  bar:row.querySelector('.hq-track i').style.width};
+        }""")
+        self.assertIn("窗口已重置，等新快照", expired["text"])
+        self.assertEqual("false", expired["warn"])
+        self.assertIn(expired["bar"], {"0%", "0.0%"})
+        hidden = page.evaluate("""() => {DATA.quota=null;renderHud();
+          return document.getElementById('hud-quota').hidden;}""")
+        self.assertTrue(hidden)
+
+    def test_quota_hud_and_brief_are_bilingual(self):
+        page, errors = self.open()
+        page.evaluate("() => applyLanguage('en')")
+        info = page.evaluate(self.QUOTA_CRAFT,
+                             ['2026-09-24T12:40:00+08:00',
+                              '2026-09-24T13:00:00+08:00'])
+        text = " ".join(row["text"] for row in info["rows"])
+        self.assertIn("safe through reset", text)
+        self.assertIn("no usage in the last hour", text)
+        self.assertIsNone(CJK.search(text))
+        self.assertNotIn("亿", text)
+
+    def test_quota_brief_tip_only_within_two_hours_before_reset(self):
+        page, errors = self.open()
+        soon = page.evaluate("""() => {DATA.quota={generated_at:'2026-09-24T12:00:00+08:00',
+          timezone:'Asia/Shanghai',codex:[],claude:{safe_windows:57,basis:'safe_floor',
+          used_percent:80,capacity_tokens:100,window_start:'2026-09-24T07:42:00+08:00',
+          window_end:'2026-09-24T13:00:00+08:00',velocity_per_hour:10,has_hit:false,
+          window_too_new:false,projection:{status:'hit',
+          projected_at:'2026-09-24T12:40:00+08:00'}}};
+          renderBriefTipsNow();return document.getElementById('brief-tips').innerText;}""")
+        self.assertIn("按最近一小时的速度", soon)
+        self.assertIn("Claude 5h", soon)
+        far = page.evaluate("""() => {DATA.quota.claude.projection.projected_at=
+          '2026-09-24T15:00:00+08:00';DATA.quota.claude.window_end='2026-09-24T16:00:00+08:00';
+          renderBriefTipsNow();return document.getElementById('brief-tips').innerText;}""")
+        self.assertNotIn("按最近一小时的速度", far)
+        after = page.evaluate("""() => {DATA.quota.claude.projection.projected_at=
+          '2026-09-24T12:40:00+08:00';DATA.quota.claude.window_end='2026-09-24T12:30:00+08:00';
+          renderBriefTipsNow();return document.getElementById('brief-tips').innerText;}""")
+        self.assertNotIn("按最近一小时的速度", after)
+        english = page.evaluate("""() => {applyLanguage('en',false);
+          DATA.quota.claude.projection.projected_at='2026-09-24T12:40:00+08:00';
+          DATA.quota.claude.window_end='2026-09-24T13:00:00+08:00';
+          renderBriefTipsNow();return document.getElementById('brief-tips').innerText;}""")
+        self.assertIn("At the last hour's pace", english)
+
     # ---- activity calendar -----------------------------------------------
 
     def test_activity_calendar_streaks_click_and_keyboard(self):

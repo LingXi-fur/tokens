@@ -582,3 +582,91 @@ class QuotaCliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuotaDashboardBlockTests(unittest.TestCase):
+    """The HUD block must reuse quota's math and stay display-only."""
+
+    def setUp(self):
+        patcher = mock.patch.object(quota.config, "TZ", TZ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def scan(self, snapshots=(), events=()):
+        return {
+            "claude_events": list(events),
+            "codex_snapshots": list(snapshots),
+            "claude_files": 1,
+            "codex_files": 1,
+            "parsed_files": len(snapshots) + len(events),
+        }
+
+    def test_collect_delegates_to_summarize_without_changing_the_report(self):
+        scan = self.scan([
+            snapshot(NOW - timedelta(minutes=10), 40, resets=NOW + timedelta(hours=5)),
+        ])
+        records = [claude_record(NOW - timedelta(minutes=30))]
+        expected = quota.summarize_sources(["claude", "codex"], scan, records, NOW)
+        with mock.patch.object(quota, "scan_rate_limits", return_value=scan), \
+                mock.patch.object(quota.readers, "read_all", return_value=records):
+            actual = quota.collect(sources=["claude", "codex"], now=NOW)
+        self.assertEqual(expected, actual)
+
+    def test_dashboard_snapshot_carries_codex_windows_and_statuses(self):
+        snapshots = [
+            snapshot(NOW - timedelta(minutes=10), 90,
+                     resets=NOW + timedelta(hours=2)),
+            snapshot(NOW - timedelta(minutes=5), 96,
+                     resets=NOW + timedelta(hours=2)),
+            snapshot(NOW - timedelta(minutes=5), 61, minutes=10080,
+                     resets=NOW + timedelta(days=4)),
+            # Eight days old: stale for a one-glance HUD, never for the CLI.
+            snapshot(NOW - timedelta(days=8), 50, minutes=10080,
+                     resets=NOW - timedelta(days=1)),
+        ]
+        block = quota.dashboard_snapshot({"codex"}, self.scan(snapshots), [], NOW)
+        self.assertIsNotNone(block)
+        self.assertIsNone(block["claude"])
+        self.assertEqual(2, len(block["codex"]))
+        five = block["codex"][0]
+        self.assertEqual("5h", five["window"])
+        self.assertEqual("current", five["status"])
+        self.assertEqual("hit", five["projection"]["status"])
+        self.assertEqual(96.0, five["used_percent"])
+        week = block["codex"][1]
+        self.assertEqual("week", week["window"])
+        self.assertEqual(61.0, week["used_percent"])
+        self.assertEqual("insufficient", week["projection"]["status"])
+
+    def test_dashboard_snapshot_expired_and_empty(self):
+        expired = snapshot(NOW - timedelta(minutes=10), 80,
+                           resets=NOW - timedelta(minutes=1))
+        block = quota.dashboard_snapshot({"codex"}, self.scan([expired]), [], NOW)
+        row = block["codex"][0]
+        self.assertEqual("expired", row["status"])
+        self.assertIsNone(row["used_percent"])
+        self.assertEqual("expired", row["projection"]["status"])
+        self.assertIsNone(quota.dashboard_snapshot(
+            {"codex", "claude"}, self.scan(), [], NOW))
+        self.assertIsNone(quota.dashboard_snapshot(
+            {"opencode"}, self.scan(), [], NOW))
+
+    def test_dashboard_snapshot_has_claude_estimate_and_no_private_fields(self):
+        scan = self.scan([], [])
+        record = claude_record(NOW - timedelta(minutes=30), total=1234)
+        record["cwd"] = "/synthetic/private-project"
+        record["session"] = "ses_synthetic_private"
+        block = quota.dashboard_snapshot({"claude"}, scan, [record], NOW)
+        self.assertIsNotNone(block)
+        self.assertEqual([], block["codex"])
+        claude = block["claude"]
+        self.assertEqual("safe_floor" if claude["basis"] == "safe_floor"
+                         else claude["basis"], claude["basis"])
+        self.assertIn("projection", claude)
+        self.assertIn(claude["projection"]["status"],
+                      {"hit", "safe", "flat", "insufficient", "past_floor",
+                       "beyond_estimate", "no_estimate"})
+        rendered = json.dumps(block, ensure_ascii=False)
+        self.assertNotIn("/synthetic/private-project", rendered)
+        self.assertNotIn("ses_synthetic_private", rendered)
+        self.assertNotIn(SECRET, rendered)

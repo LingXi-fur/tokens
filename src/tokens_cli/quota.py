@@ -227,7 +227,8 @@ def scan_rate_limits(sources, use_cache=True):
                 "items": items,
             }
             sink.extend(items)
-    _save_cache(entries)
+    if entries:
+        _save_cache(entries)
     return {
         "claude_events": claude_events,
         "codex_snapshots": codex_snapshots,
@@ -587,14 +588,15 @@ def summarize_claude(events, direct, now):
 
 # ---------- collection ----------
 
-def collect(sources=None, use_cache=True, now=None):
-    selected = list(sources) if sources is not None else list(DEFAULT_SOURCES)
-    now = now or datetime.now(config.TZ)
-    scan = scan_rate_limits(selected, use_cache=use_cache)
+def summarize_sources(sources, scan, records, now):
+    """Summarise one rate-limit scan; used by the CLI and the dashboard.
 
-    claude_records = (readers.read_all(sources=["claude"], use_cache=use_cache)
-                      if "claude" in selected else [])
-    direct = direct_claude_records(claude_records)
+    ``records`` are the already-collected reader records; only direct
+    Anthropic usage feeds the Claude estimate.  The return shape is the
+    unchanged ``tokens quota`` report (and ``--json``) contract.
+    """
+    selected = list(sources)
+    direct = direct_claude_records(records)
 
     return {
         "generated_at": now.isoformat(),
@@ -627,6 +629,79 @@ def collect(sources=None, use_cache=True, now=None):
             "reason": "no_official_quota_data",
         },
         "parsed_files": scan["parsed_files"],
+    }
+
+
+def collect(sources=None, use_cache=True, now=None):
+    selected = list(sources) if sources is not None else list(DEFAULT_SOURCES)
+    now = now or datetime.now(config.TZ)
+    scan = scan_rate_limits(selected, use_cache=use_cache)
+    claude_records = (readers.read_all(sources=["claude"], use_cache=use_cache)
+                      if "claude" in selected else [])
+    return summarize_sources(selected, scan, claude_records, now)
+
+
+# A Codex limit that has not appeared in any snapshot for this long is stale
+# noise for a one-glance HUD (the terminal keeps showing it in full).
+DASHBOARD_FRESH_SECONDS = 7 * 86400
+
+
+def dashboard_snapshot(sources, scan, records, now):
+    """Compact quota block for the dashboard HUD, or None when empty.
+
+    Reuses summarize_codex/summarize_claude, so statuses and projections are
+    exactly those of ``tokens quota``.  Only display fields are copied; no
+    paths, session ids, or message bodies enter the payload.
+    """
+    selected = set(sources)
+    codex = []
+    if "codex" in selected:
+        now_ts = now.timestamp()
+        for plan in summarize_codex(scan["codex_snapshots"], now):
+            for limit in plan["limits"]:
+                name = limit.get("limit_name") or limit.get("limit_id") or ""
+                for window in limit["windows"]:
+                    observed = _epoch(window.get("observed_at"))
+                    if observed is not None and now_ts - observed > DASHBOARD_FRESH_SECONDS:
+                        continue
+                    codex.append({
+                        "plan": plan.get("plan_type"),
+                        "limit": name,
+                        "window": window["window"],
+                        "window_minutes": window["window_minutes"],
+                        "used_percent": window["used_percent"],
+                        "resets_at": window["resets_at"],
+                        "observed_at": window["observed_at"],
+                        "status": window["status"],
+                        "velocity_per_hour": window["velocity_per_hour"],
+                        "projection": dict(window["projection"]),
+                    })
+    codex.sort(key=lambda row: (row["window_minutes"], row["limit"], row["plan"] or ""))
+    claude = None
+    if "claude" in selected:
+        summary = summarize_claude(scan["claude_events"],
+                                   direct_claude_records(records), now)
+        current = summary.get("current")
+        if current:
+            claude = {
+                "safe_windows": summary["samples"].get("safe_windows", 0),
+                "basis": summary["samples"].get("basis"),
+                "used_percent": current.get("estimated_percent"),
+                "capacity_tokens": current.get("capacity_tokens"),
+                "window_start": current.get("start"),
+                "window_end": current.get("end"),
+                "velocity_per_hour": current.get("velocity_per_hour"),
+                "has_hit": current.get("has_hit"),
+                "window_too_new": current.get("window_too_new"),
+                "projection": dict(current["projection"]),
+            }
+    if not codex and claude is None:
+        return None
+    return {
+        "generated_at": now.isoformat(),
+        "timezone": config.timezone_name(),
+        "codex": codex,
+        "claude": claude,
     }
 
 
