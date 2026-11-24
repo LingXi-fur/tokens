@@ -116,6 +116,33 @@ const dirty=I.paceRace({today:[NaN,-5,'7',Infinity],yesterday:null,hour:3,minute
 assert.equal(dirty.today.total,7);assert.equal(dirty.minute,0);assert.equal(dirty.yesterday.total,0);
 """)
 
+    def test_delta_signal_guards_tiny_denominators_and_uses_multiples(self):
+        run_node(r"""
+// Zero and negative denominators never produce a percentage.
+assert.deepEqual(I.deltaSignal(1000,0),{kind:'none',percent:null,ratio:null});
+assert.equal(I.deltaSignal(1000,-5).kind,'none');
+// Below 1% of today: no percentage.
+assert.equal(I.deltaSignal(600000000,625000).kind,'none','0.1% of today');
+assert.equal(I.deltaSignal(100000,999).kind,'none','0.999% of today');
+assert.equal(I.deltaSignal(100000,1500).kind,'multiple','1.5% of today is a multiple');
+// Above the floor, a normal change stays a percent.
+const normal=I.deltaSignal(3000,2000);
+assert.equal(normal.kind,'percent');close(normal.percent,50);
+// +999% is still a percent; +1000% becomes a multiple. A drop is bounded at
+// -100%, so the multiple form only applies to growth.
+const boundary=I.deltaSignal(21900,2000);
+assert.equal(boundary.kind,'percent');close(boundary.percent,995);
+const multiple=I.deltaSignal(22000,2000);
+assert.equal(multiple.kind,'multiple');close(multiple.ratio,11);
+const strong=I.deltaSignal(200000,5000);
+assert.equal(strong.kind,'multiple');close(strong.ratio,40);
+const drop=I.deltaSignal(2000,40000);
+assert.equal(drop.kind,'percent');close(drop.percent,-95);
+// Non-finite and non-positive inputs are sanitised through num().
+assert.equal(I.deltaSignal(NaN,1000).kind,'percent');close(I.deltaSignal(NaN,1000).percent,-100);
+assert.equal(I.deltaSignal(-5,1000).kind,'percent');close(I.deltaSignal(-5,1000).percent,-100);
+""")
+
     def test_pace_race_baseline_is_the_hourly_average(self):
         run_node(r"""
 const day=v=>{const a=new Array(24).fill(0);a[8]=v;return a;};

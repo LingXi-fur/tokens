@@ -100,7 +100,7 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         self.assertEqual(info["yesterdayTotal"], info["race"]["yesterday"])
         self.assertEqual(12, info["race"]["hour"])
         self.assertIn(info["lead"], {"ahead", "behind", "even", "new", "idle"})
-        self.assertRegex(info["delta"], r"[+−]\d+\.\d%")
+        self.assertRegex(info["delta"], r"[▲▼] \d+\.\d%")
         self.assertGreaterEqual(info["stats"], 4)
         self.assertEqual(2, info["paths"])
         self.assertIn("今日", info["legend"])
@@ -283,6 +283,74 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         self.assertLessEqual(box["x"] + box["width"], 390)
         self.assertGreaterEqual(page.locator("#hud-toggle").bounding_box()["height"], 44)
         self.assertLessEqual(page.evaluate("() => document.documentElement.scrollWidth"), 390)
+        self.assertEqual([], errors)
+
+    def test_today_hud_and_pace_guard_tiny_denominators_in_both_languages(self):
+        page, errors = self.open()
+        craft = """([todayEach,yesterdayEach]) => {
+          const day=generatedDay(),y=addISODays(day,-1),m=DATA.models[0];
+          const arr=v=>{const a=new Array(24).fill(0);for(let i=0;i<12;i++)a[i]=v;return a;};
+          DATA.day_details=Object.assign({},DATA.day_details,{
+            [day]:{hourly_models:{[m]:arr(todayEach)}},
+            [y]:{hourly_models:{[m]:arr(yesterdayEach)}}});
+          state.models=new Set(DATA.models);
+          renderPaceRace();renderHud();
+          return {hud:document.getElementById('hud-delta').textContent,
+                  pace:document.getElementById('pace-delta').textContent,
+                  lead:document.getElementById('pace-lead').textContent,
+                  race:{today:insightState.race&&insightState.race.today.total,
+                        yesterday:insightState.race&&insightState.race.yesterday.atCutoff}};
+        }"""
+        # The real +99203% case: 620M today vs ~625k yesterday (0.1% of today)
+        # is below the 1% floor, so it is described in words, not multiplied.
+        reported = page.evaluate(craft, [51666666, 52083])
+        self.assertAlmostEqual(620000000, reported["race"]["today"], delta=16)
+        self.assertAlmostEqual(624996, reported["race"]["yesterday"], delta=1)
+        self.assertEqual("昨日此时几乎没有用量", reported["hud"])
+        self.assertEqual("", reported["pace"])
+
+        # Above the 1% floor but over +999%: a multiple is readable.
+        extreme = page.evaluate(craft, [51666666, 833334])
+        self.assertAlmostEqual(10000008, extreme["race"]["yesterday"], delta=16)
+        self.assertRegex(extreme["hud"], r"^▲ \d+\.\d× 较昨日同一时刻$")
+        self.assertRegex(extreme["pace"], r"^▲ \d+\.\d×$")
+        self.assertTrue(extreme["lead"].startswith("领先昨日"))
+        self.assertNotIn("%", extreme["hud"] + extreme["pace"])
+
+        # Tiny but non-zero and far below 1% of today: plain words, no percent.
+        tiny = page.evaluate(craft, [51666666, 500])
+        self.assertEqual("昨日此时几乎没有用量", tiny["hud"])
+        self.assertEqual("", tiny["pace"])
+        self.assertEqual("昨日此时几乎没有用量", tiny["lead"])
+        # Exactly zero yesterday takes the same wording.
+        zero = page.evaluate(craft, [51666666, 0])
+        self.assertEqual("昨日此时几乎没有用量", zero["hud"])
+
+        # A normal change keeps the percentage form.
+        normal = page.evaluate(craft, [28333333, 25000000])
+        self.assertRegex(normal["hud"], r"^▲ \d+\.\d% 较昨日同一时刻$")
+        self.assertRegex(normal["pace"], r"^▲ \d+\.\d%$")
+
+        # English uses words for the tiny case and multiples for extremes,
+        # never a Chinese unit in the delta line.
+        page.evaluate("() => applyLanguage('en')")
+        extreme_en = page.evaluate(craft, [51666666, 833334])
+        self.assertRegex(extreme_en["hud"], r"^▲ \d+\.\d× vs yesterday, same time$")
+        tiny_en = page.evaluate(craft, [51666666, 500])
+        self.assertEqual("almost nothing at this time yesterday", tiny_en["hud"])
+        self.assertEqual("almost nothing at this time yesterday", tiny_en["lead"])
+        for text in (extreme_en["hud"], extreme_en["pace"], tiny_en["hud"], tiny_en["lead"]):
+            self.assertIsNone(CJK.search(text), text)
+            self.assertNotIn("亿", text)
+            self.assertNotIn("万", text)
+
+        # No rendered percentage on the page can carry five or more integer digits.
+        for language in ("en", "zh"):
+            page.evaluate("lang => applyLanguage(lang)", language)
+            page.evaluate(craft, [51666666, 833334])
+            body = page.locator("body").inner_text()
+            self.assertIsNone(re.search(r"\d{5,}(?:\.\d+)?%", body),
+                              language + " body leaked an unreadable percentage")
         self.assertEqual([], errors)
 
     # ---- activity calendar -----------------------------------------------

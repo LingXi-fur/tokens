@@ -1916,9 +1916,10 @@ DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw 
             self.fail(f"未找到完整函数: {name}")
 
         helpers = "\n".join(extract_function(name) for name in (
-            "signalCompatibility", "signalComparison",
+            "signalCompatibility", "signalComparison", "insightDeltaText",
         ))
-        node_script = r'''
+        core = (ASSETS / "insight_core.js").read_text(encoding="utf-8")
+        node_script = core + r'''
 const SIGNAL_COMPATIBILITY={model:new Set(['model']),period:new Set(['period']),project:new Set(['project']),session:new Set(['session'])};
 const human=n=>String(Math.round(n));
 const evidence={a:{total:100},b:{total:150},project:{total:300}};
