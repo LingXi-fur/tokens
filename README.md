@@ -78,6 +78,12 @@ Value by model and by tool reuses the same measured commits, but never assigns a
 
 Privacy is unchanged: the outcomes block holds only counts, ratios, and labels — never commit messages, file names, or author emails — and project names follow `--anonymize`. Git is only read, and every call is bounded by a timeout.
 
+#### Task cost (optional, agent-taskboard)
+
+When agent-taskboard is installed, outcomes can join its `export --json` to the same session costs. It is discovered from repositories that already appear in outcomes with a `.taskboard/` directory, plus absolute repositories in `TOKENS_ATB_REPOS` (separated by the OS path separator). The command is `TOKENS_ATB_CMD` (for example `python3 -m agent_taskboard`, parsed with `shlex`) or `atb` on `PATH`; no atb means the block is absent. The export runs as a subprocess with a 120-second timeout — it can take tens of seconds on a large store, so `tokens serve` refreshes it in a background thread (showing the previous cache or “reading atb”), while `tokens dashboard` and `tokens outcomes` wait. Results are cached per repository and `.taskboard/` mtime for at most 10 minutes.
+
+Each atb session segment `(adapter, native id, from, to)` is matched to records of the same tool and native session id, using `[from, to)` — a record exactly at a boundary belongs to the segment that starts there, and only the session's final segment includes its own `to`. Adapter names map to tokens sources (`claude-code` → `claude`, `codex` → `codex`, `gemini-cli` → `gemini`, `opencode` → `opencode`). Segment spend uses the same official reference prices; a segment's own `usage` is only a check (a >5% difference increments `atb_usage_mismatch`). The dashboard adds a collapsed task-cost section with a by-agent table, the five most expensive tasks, and worktree/command/time_window evidence counts (`time_window` is the fallback with the lowest confidence). Task titles are local-only and are removed by `--anonymize`; no session ids or paths enter the payload.
+
 Example (project paths replaced with placeholders):
 
 ```text

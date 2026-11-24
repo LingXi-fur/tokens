@@ -383,7 +383,8 @@ def _snapshot_identity(payload):
 
 def build_payload(records, since=None, until=None, sources=None, anonymize=False,
                   aliases=None, generated_at=None, session_titles=None,
-                  collection_report=None, include_quota=True):
+                  collection_report=None, include_quota=True,
+                  atb_background=False):
     records = tuple(records)
     model_registry, model_slots = _model_registry(records)
     overflow_names = {
@@ -915,6 +916,7 @@ def build_payload(records, since=None, until=None, sources=None, anonymize=False
             model_of=((lambda record: _canonical_model(record, model_registry))
                       if anonymize else None),
             records_key=outcomes.records_fingerprint(since, until),
+            atb_background=atb_background,
         ),
     }
     # 恒形状：day 行总带 request_models（缺省 {}），week/month 不带。

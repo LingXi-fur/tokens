@@ -14,7 +14,7 @@ function emptyLiveShell(){
     reuse:{day:[],week:[],month:[]}, day:[], week:[], month:[],
     request_models:[],
     snapshot:{snapshot_schema:'',metric_schema:'',timezone:'',coverage:{first_day:null,last_day:null},id:''},
-    outcomes:{schema:2,range:{since:null,until:null},status:'unavailable',reasons:{},totals:{sessions:0,tokens:0,cost:0,commits:0,no_session_commits:0,sessions_without_commits:0,no_repo_sessions:0,added:0,deleted:0,files:0,surviving:0,settled_cost:0,rework_tax:0,retained_per_dollar:0,retained_per_dollar_settled:0,cost_per_commit:0},days:[],projects:[],models:[],sources:[],no_commit_sessions:[],no_repo_sessions:[]},
+    outcomes:{schema:3,range:{since:null,until:null},status:'unavailable',reasons:{},totals:{sessions:0,tokens:0,cost:0,commits:0,no_session_commits:0,sessions_without_commits:0,no_repo_sessions:0,added:0,deleted:0,files:0,surviving:0,settled_cost:0,rework_tax:0,retained_per_dollar:0,retained_per_dollar_settled:0,cost_per_commit:0},days:[],projects:[],models:[],sources:[],tasks:null,no_commit_sessions:[],no_repo_sessions:[]},
   };
 }
 function decodeWire(wire){
@@ -63,7 +63,8 @@ let livePrepare = liveConfig.enabled && !liveConfig.hasSnapshot;
 const I18N_EXACT = Object.freeze({
   '模型对比 · 谁最划算':'Model comparison · Best value',
   '花费按会话内各模型的实际用量精确拆分；提交与行数按花费占比分摊；样本少（会话 < 3 或已定案花费 < $1）不参与排名。':'Spend is split exactly by each model’s usage in the session; commits and lines follow that spend share. Low sample (fewer than 3 sessions or under $1 settled spend) is not ranked.',
-  '模型对比':'Model comparison','按模型':'By model','按工具':'By tool',
+  '模型对比':'Model comparison','任务成本':'Task cost','按模型':'By model','按工具':'By tool',
+  '任务成本 · 按 agent':'Task cost · By agent','按 agent 的任务成本，可横向滚动':'Task cost by agent; horizontally scrollable','数据来自 agent-taskboard；会话段按 [from, to) 匹配，价格与费用账本一致。':'From the agent-taskboard export; session segments use [from, to) and the cost ledger\'s reference prices.',
   '按模型或按工具对比':'Compare by model or tool',
   '按模型或工具的价值对比，可横向滚动':'Value comparison by model or tool; horizontally scrollable',
   'Gemini total 以日志报告值为准；通常有 session，但缺少 cwd。':'Gemini totals use the reported log value; session is usually available, but cwd is often missing.',
@@ -2586,7 +2587,7 @@ compareButton.addEventListener('pointerdown',event=>{if(event.button!==0)return;
 function releaseCompareHold(){clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){setCompareHeld(false);compareHoldReached=false;}}
 compareButton.addEventListener('pointerup',event=>{clearTimeout(compareHoldTimer);compareHoldTimer=null;if(compareHoldReached){event.preventDefault();setCompareHeld(false);compareHoldReached=false;return;}togglePinnedCompare();});compareButton.addEventListener('pointercancel',releaseCompareHold);compareButton.addEventListener('pointerleave',releaseCompareHold);compareButton.addEventListener('click',event=>event.preventDefault());compareButton.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!event.repeat){event.preventDefault();togglePinnedCompare();}});
 
-const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,value:renderValueComparison,modes:renderWorkModes,almanac:renderAlmanac,badges:renderBadges,cost:renderCostLedger};
+const LAZY_RENDERERS={project:renderProjectLens,reuse:renderReuseRiver,flow:renderFlow,value:renderValueComparison,tasks:renderTaskCost,modes:renderWorkModes,almanac:renderAlmanac,badges:renderBadges,cost:renderCostLedger};
 const lazyState={};
 function ensureLazyPlaceholder(card){
   let placeholder=card.querySelector(':scope > .lazy-placeholder');
@@ -3209,7 +3210,7 @@ function briefQuotaTip(en){
 function renderCoreViews(){renderRangeUI();renderKPI();renderBrief();renderBar();renderPeakProfile();renderTrendLegend();renderAttribution();renderDonut();renderOtherModelSummary();renderTable();renderDailyModels();renderTop();renderStatusPulse();renderViewCapsule();renderRequestModels();renderRouteMap();renderInsights();}
 function renderTimeViews(){renderProbe();renderRhythm();renderBlock();}
 function renderModelViews(){markLazyDirty();markStaticLazyDirty();}
-function renderDataViews(){renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderFooter();renderDataTrail();applySignalLens();syncViewURL();}
+function renderDataViews(){renderTaskCost();renderCoreViews();renderTimeViews();renderModelViews();renderProvenance();renderFooter();renderDataTrail();applySignalLens();syncViewURL();}
 function renderLanguageViews(){
   renderSnapshotMeta();
   renderCaliberNotes();
@@ -3471,7 +3472,7 @@ document.getElementById('k-total-copy').addEventListener('click',e=>{e.stopPropa
   el.addEventListener('mousemove',e=>{const r=el.getBoundingClientRect();el.style.setProperty('--mx',(e.clientX-r.left)+'px');el.style.setProperty('--my',(e.clientY-r.top)+'px');});
 })();
 /* ---- 模块开关（附加功能可勾选 + 记忆）---- */
-const MODS_KEY='tk-mods', MOD_DEFAULT={cost:true,block:true,rhythm:true,modes:true,provenance:true,project:true,reuse:true,flow:true,value:true,almanac:true,badges:true,top:true};
+const MODS_KEY='tk-mods', MOD_DEFAULT={cost:true,block:true,rhythm:true,modes:true,provenance:true,project:true,reuse:true,flow:true,value:true,tasks:true,almanac:true,badges:true,top:true};
 function loadMods(){ try{ const m=Object.assign({},JSON.parse(localStorage.getItem(MODS_KEY)||'{}'));let legacy;if(Object.prototype.hasOwnProperty.call(m,'orbit'))legacy=m.orbit;else if(Object.prototype.hasOwnProperty.call(m,'city'))legacy=m.city;if(!Object.prototype.hasOwnProperty.call(m,'flow')&&legacy!==undefined)m.flow=legacy;delete m.orbit;delete m.city;localStorage.setItem(MODS_KEY,JSON.stringify(m));return m; }catch(e){ return {}; } }
 function applyMods(){
   const m=Object.assign({},MOD_DEFAULT,loadMods());
@@ -3822,6 +3823,81 @@ function renderValueComparison(){
 document.querySelectorAll('[data-value-mode]').forEach(button=>{
   button.addEventListener('click',()=>{const mode=button.dataset.valueMode;if(mode!==valueMode){valueMode=mode;renderValueComparison();}});
 });
+
+/* ---- Task cost from agent-taskboard (optional, #40) ---- */
+function renderTaskCost(){
+  const section=document.getElementById('section-tasks');
+  if(!section)return;
+  const en=dashboardLanguage==='en';
+  const block=DATA.outcomes&&DATA.outcomes.tasks;
+  section.hidden=!block;
+  if(!block)return;
+  const placeholder=section.querySelector(':scope > .lazy-placeholder');
+  if(placeholder)placeholder.remove();
+  section.classList.remove('lazy-pending');
+  section.setAttribute('aria-busy','false');
+  const loading=!!block.loading;
+  const loadingEl=document.getElementById('task-loading');
+  if(loadingEl){
+    loadingEl.hidden=!loading;
+    loadingEl.textContent=loading
+      ?(block.available?(en?'Refreshing atb in the background…':'正在后台刷新 atb…'):(en?'Reading atb…':'正在读取 atb…'))
+      :'';
+  }
+  const thead=document.getElementById('task-thead'),tbody=document.getElementById('task-tbody');
+  const top=document.getElementById('task-top'),foot=document.getElementById('task-foot');
+  if(!thead||!tbody||!top||!foot)return;
+  const head=en?['Agent','Tasks','Merged','Avg spend','Median','Rework','Avg tokens','No session']
+              :['Agent','任务','已合并','均花费','中位','返工率','均 token','无会话'];
+  thead.innerHTML='<tr>'+head.map((label,index)=>'<th'+(index?' class=num':'')+'>'+esc(label)+'</th>').join('')+'</tr>';
+  if(!block.available||!Array.isArray(block.agents)||!block.agents.length){
+    tbody.innerHTML='<tr><td colspan=8 class=dim>'+(en?'No atb task data in this range.':'该范围没有 atb 任务数据。')+'</td></tr>';
+    top.innerHTML='';foot.textContent='';return;
+  }
+  tbody.innerHTML=block.agents.map(row=>'<tr>'
+    +'<td>'+esc(row.agent)+'</td>'
+    +'<td class=num>'+fmt(row.tasks)+'</td>'
+    +'<td class=num>'+fmt(row.merged_tasks)+'</td>'
+    +'<td class=num>'+valueMoney(row.avg_cost_merged)+'</td>'
+    +'<td class=num>'+valueMoney(row.median_cost_merged)+'</td>'
+    +'<td class=num>'+valueNum(row.rework_rate*100)+'%</td>'
+    +'<td class=num>'+human(row.avg_tokens)+'</td>'
+    +'<td class=num>'+fmt(row.unmatched_tasks)+'</td>'
+    +'</tr>').join('');
+  const tasks=Array.isArray(block.top_tasks)?block.top_tasks:[];
+  top.innerHTML=tasks.length
+    ?'<div class=task-top-head>'+(en?'Top 5 tasks by spend':'花费最高的 5 个任务')+'</div>'
+      +tasks.map((task,index)=>'<div class=task-top-row>'
+        +'<span class=task-rank>'+(index+1)+'</span>'
+        +'<span class=task-name title="'+esc(task.title||task.id)+'">'+esc(task.title||task.id)+'</span>'
+        +'<span class=task-agent>'+esc(task.agent)+'</span>'
+        +'<span class=num>'+valueMoney(task.cost)+'</span>'
+        +'<span class=num>'+human(task.tokens)+' tk</span>'
+        +'<span class=task-flags>'+esc((task.merged?(en?'merged':'已合并'):(en?'unmerged':'未合并'))
+          +(task.rework_count?' · '+esc(en?('rework '+task.rework_count):('返工 '+task.rework_count)):''))+'</span>'
+        +'</div>').join('')
+    :'';
+  const evidence=block.evidence||{};
+  foot.textContent=en
+    ?`From agent-taskboard. Segments by evidence: worktree ${evidence.worktree||0} · command ${evidence.command||0} · time_window ${evidence.time_window||0} (fallback, lowest confidence).`
+    :`数据来自 agent-taskboard。会话段证据：worktree ${evidence.worktree||0} · command ${evidence.command||0} · time_window ${evidence.time_window||0}（兜底，可信度最低）。`;
+}
+function briefTaskTip(en){
+  const block=DATA.outcomes&&DATA.outcomes.tasks;
+  if(!block||!block.available||!Array.isArray(block.agents))return null;
+  const merged=block.agents.reduce((sum,row)=>sum+(Number(row.merged_tasks)||0),0);
+  if(merged<3)return null;
+  const ranked=block.agents.filter(row=>Number(row.merged_tasks)>0)
+    .slice().sort((a,b)=>Number(b.avg_rework)-Number(a.avg_rework)
+      ||Number(b.rework_rate)-Number(a.rework_rate));
+  const worst=ranked[0];
+  if(!worst)return null;
+  const reworks=Number(worst.avg_rework).toFixed(1);
+  const cost=valueMoney(worst.avg_cost_merged);
+  return en
+    ?`Watch: ${worst.agent} tasks average ${reworks} reworks; a merged task averages ${cost}.`
+    :`关注：${worst.agent} 的任务平均返工 ${reworks} 次，单个任务平均 ${cost}。`;
+}
 
 const DEST_PAGE_SIZE=12;
 const destState={sig:null,page:0,model:null,view:'cards'};
@@ -5990,6 +6066,8 @@ function renderBriefTips(en,o,tot,status){
   tips.sort((a,b)=>Number(b.amount||0)-Number(a.amount||0));
   const quotaTip=briefQuotaTip(en);
   if(quotaTip)tips.unshift({amount:null,text:quotaTip});
+  const taskTip=briefTaskTip(en);
+  if(taskTip)tips.unshift({amount:null,text:taskTip});
   const top=tips.slice(0,3);
   box.hidden=!top.length;
   box.innerHTML=top.map(tip=>`<div class="brief-tip"><b class=tip-tag>${tip.amount!==null?(en?'can save ≈ ':'可省约 ')+briefMoney(tip.amount):(en?'watch':'关注')}</b>${esc(tip.text)}</div>`).join('');

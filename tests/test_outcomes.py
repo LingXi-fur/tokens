@@ -541,8 +541,8 @@ class OutcomesTests(unittest.TestCase):
 
     def test_schema_two_adds_sources_without_changing_old_fields(self):
         block = self.build([], since="2026-11-10", until="2026-11-20")
-        self.assertEqual(2, outcomes.OUTCOMES_SCHEMA)
-        self.assertEqual(2, block["schema"])
+        self.assertEqual(3, outcomes.OUTCOMES_SCHEMA)
+        self.assertEqual(3, block["schema"])
         self.assertIn("sources", block)
         for key in ("range", "status", "reasons", "totals", "days", "projects",
                     "models", "no_commit_sessions", "no_repo_sessions"):

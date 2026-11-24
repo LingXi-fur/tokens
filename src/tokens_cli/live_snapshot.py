@@ -15,7 +15,7 @@ import sys
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
-from . import config, dashboard_payload, dashboard_wire, outcomes, readers, sources as source_registry
+from . import config, dashboard_payload, dashboard_wire, outcomes, readers, sources as source_registry, tasks
 
 
 STORAGE_SCHEMA = 1
@@ -458,7 +458,7 @@ def _aggregate_shapes(payload, sources):
 _OUTCOMES_SCHEMA = outcomes.OUTCOMES_SCHEMA
 _OUTCOMES_TOP = frozenset((
     "schema", "range", "status", "reasons", "totals", "days", "projects",
-    "models", "sources", "no_commit_sessions", "no_repo_sessions",
+    "models", "sources", "tasks", "no_commit_sessions", "no_repo_sessions",
 ))
 _OUTCOMES_TOTALS = frozenset((
     "sessions", "tokens", "cost", "commits", "no_session_commits",
@@ -558,6 +558,67 @@ def _quota_shape(quota, sources, tz):
         _require(type(claude["window_too_new"]) is bool)
         _quota_projection(claude["projection"])
     _require(bool(quota["codex"]) or claude is not None)
+
+
+_TASKS_TOP = frozenset((
+    "schema", "available", "loading", "generated_at", "timezone", "repos",
+    "evidence", "agents", "tasks", "top_tasks", "reasons",
+))
+_TASKS_AGENT = frozenset((
+    "agent", "tasks", "merged_tasks", "avg_cost_merged",
+    "median_cost_merged", "rework_rate", "avg_tokens", "avg_rework",
+    "unmatched_tasks",
+))
+_TASKS_TASK = frozenset((
+    "id", "agent", "status", "merged", "rework_count", "cost", "tokens",
+    "segments", "matched_segments",
+))
+_TASKS_TASK_TITLE = _TASKS_TASK | {"title"}
+_TASKS_EVIDENCE = frozenset(("worktree", "command", "time_window"))
+
+
+def _tasks_shape(block):
+    """Whitelist the optional atb task-cost block (titles are local-only)."""
+    if block is None:
+        return
+    _require(type(block) is dict and set(block) == _TASKS_TOP)
+    _require(type(block["schema"]) is int and block["schema"] == tasks.TASKS_SCHEMA)
+    _require(type(block["available"]) is bool)
+    _require(type(block["loading"]) is bool)
+    _checked_at(block["generated_at"])
+    _require(block["timezone"] == config.timezone_name())
+    _require(type(block["repos"]) is int and block["repos"] >= 0)
+    evidence = block["evidence"]
+    _require(type(evidence) is dict and set(evidence) == _TASKS_EVIDENCE)
+    _require(all(type(value) is int and value >= 0 for value in evidence.values()))
+    reasons = block["reasons"]
+    _require(type(reasons) is dict and len(reasons) <= 8)
+    for key, count in reasons.items():
+        _require(type(key) is str and key.startswith("atb_") and len(key) <= 32)
+        _require(type(count) is int and count >= 0)
+    _require(type(block["agents"]) is list)
+    for row in block["agents"]:
+        _require(type(row) is dict and set(row) == _TASKS_AGENT)
+        _require(type(row["agent"]) is str and 0 < len(row["agent"]) <= 128)
+        for key in ("tasks", "merged_tasks", "unmatched_tasks"):
+            _require(type(row[key]) is int and row[key] >= 0)
+        for key in ("avg_cost_merged", "median_cost_merged", "rework_rate",
+                    "avg_tokens", "avg_rework"):
+            _require(_optional_number(row[key]))
+    for key in ("tasks", "top_tasks"):
+        _require(type(block[key]) is list)
+        for row in block[key]:
+            _require(type(row) is dict
+                     and set(row) in (_TASKS_TASK, _TASKS_TASK_TITLE))
+            _require(type(row["id"]) is str and 0 < len(row["id"]) <= 64)
+            _require(type(row["agent"]) is str and 0 < len(row["agent"]) <= 128)
+            _require(type(row["status"]) is str and 0 < len(row["status"]) <= 32)
+            _require(type(row["merged"]) is bool)
+            _require(type(row["rework_count"]) is int and row["rework_count"] >= 0)
+            for key in ("cost", "tokens", "segments", "matched_segments"):
+                _require(_optional_number(row[key]))
+            if "title" in row:
+                _require(type(row["title"]) is str and len(row["title"]) <= 4096)
 
 
 def _outcomes_shape(outcomes):
@@ -676,6 +737,7 @@ def _validate_payload(payload, sources, since, until, tz):
     _require(set(payload["reuse"]) == {"day", "week", "month"})
     _require(set(payload["colors"]) == {"light", "dark"})
     _outcomes_shape(payload["outcomes"])
+    _tasks_shape(payload["outcomes"]["tasks"])
     _quota_shape(payload["quota"], sources, tz)
     provenance_sources = payload["provenance"].get("sources")
     achievement_sources = payload["achievement_stats"].get("source_totals")
