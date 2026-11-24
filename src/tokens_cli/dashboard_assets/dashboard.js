@@ -2974,10 +2974,29 @@ var hudPrefs=(function(){let saved=null;try{saved=JSON.parse(localStorage.getIte
   return {c:ok&&typeof saved.c==='boolean'?saved.c:innerWidth<760,r:ok&&Number.isFinite(saved.r)?saved.r:20,b:ok&&Number.isFinite(saved.b)?saved.b:76};})();
 function saveHudPrefs(){try{localStorage.setItem('tk-hud-v1',JSON.stringify({c:hudPrefs.c,r:Math.round(hudPrefs.r),b:Math.round(hudPrefs.b)}));}catch(e){}}
 function placeHud(){
-  const hud=document.getElementById('hud');if(!hud||hud.hidden)return;
+  const hud=document.getElementById('hud');
+  const rocket=document.getElementById('rocket');
+  if(rocket){rocket.style.removeProperty('right');rocket.style.removeProperty('bottom');}
+  if(!hud||hud.hidden)return;
   const maxR=Math.max(8,innerWidth-hud.offsetWidth-8),maxB=Math.max(8,innerHeight-hud.offsetHeight-8);
   hudPrefs.r=Math.min(Math.max(8,hudPrefs.r),maxR);hudPrefs.b=Math.min(Math.max(8,hudPrefs.b),maxB);
   hud.style.setProperty('--hud-r',hudPrefs.r+'px');hud.style.setProperty('--hud-b',hudPrefs.b+'px');
+  // Keep the return-to-top rocket clear of the expanded HUD.  A saved drag
+  // position (or a tall quota section) can put the last row under the fixed
+  // button; move the button left first, then above when there is no room.
+  if(!rocket||hud.classList.contains('away'))return;
+  const gap=8,hudBox=hud.getBoundingClientRect(),rocketBox=rocket.getBoundingClientRect();
+  if(!rocketBox.width||!rocketBox.height)return;
+  const overlapsX=rocketBox.right+gap>hudBox.left&&rocketBox.left<hudBox.right+gap;
+  const overlapsY=rocketBox.bottom+gap>hudBox.top&&rocketBox.top<hudBox.bottom+gap;
+  if(!overlapsX||!overlapsY)return;
+  const leftRoom=hudBox.left-12-rocketBox.width;
+  if(leftRoom>=8){
+    rocket.style.right=(innerWidth-hudBox.left+12)+'px';
+    return;
+  }
+  const aboveRoom=hudBox.top-12-rocketBox.height;
+  if(aboveRoom>=8)rocket.style.bottom=(innerHeight-hudBox.top+12)+'px';
 }
 function setHudCollapsed(collapsed,persist=true){
   const hud=document.getElementById('hud');if(!hud)return;
@@ -3138,7 +3157,7 @@ function briefQuotaTip(en){
   const brief=document.getElementById('section-brief');
   if('IntersectionObserver' in window){
     const visible=new Map();
-    const apply=()=>{const away=[...visible.values()].some(Boolean);hud.classList.toggle('away',away);if(away){hud.setAttribute('inert','');hud.setAttribute('aria-hidden','true');}else{hud.removeAttribute('inert');hud.removeAttribute('aria-hidden');}};
+    const apply=()=>{const away=[...visible.values()].some(Boolean);hud.classList.toggle('away',away);if(away){hud.setAttribute('inert','');hud.setAttribute('aria-hidden','true');}else{hud.removeAttribute('inert');hud.removeAttribute('aria-hidden');}placeHud();};
     [kpis,brief].filter(Boolean).forEach(target=>{
       visible.set(target,false);
       new IntersectionObserver(entries=>{entries.forEach(entry=>visible.set(target,entry.isIntersecting));apply();},{threshold:0}).observe(target);

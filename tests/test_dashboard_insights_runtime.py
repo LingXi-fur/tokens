@@ -273,6 +273,32 @@ class DashboardInsightsRuntimeTests(unittest.TestCase):
         self.assertTrue(page.evaluate(self.HUD_STATE)["collapsed"])
         self.assertEqual([], errors)
 
+    def test_expanded_hud_keeps_the_rocket_button_clear(self):
+        for scheme in ("light", "dark"):
+            with self.subTest(scheme=scheme):
+                page, errors = self.open(color_scheme=scheme, reduced_motion='no-preference')
+                page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+                page.wait_for_function("() => !document.getElementById('hud').classList.contains('away')")
+                page.evaluate("() => { setHudCollapsed(false); hudPrefs.b=20; hudPrefs.r=20; placeHud(); }")
+                page.wait_for_timeout(80)
+                info = page.evaluate("""() => {
+                  const h=document.getElementById('hud').getBoundingClientRect();
+                  const r=document.getElementById('rocket').getBoundingClientRect();
+                  return {overlap:r.right>h.left&&r.left<h.right&&r.bottom>h.top&&r.top<h.bottom,
+                          rocketRight:document.getElementById('rocket').style.right,
+                          rocketBottom:document.getElementById('rocket').style.bottom};
+                }""")
+                self.assertFalse(info["overlap"], info)
+                self.assertTrue(info["rocketRight"] or info["rocketBottom"])
+                page.evaluate("() => window.scrollTo(0, 0)")
+                page.wait_for_function("() => document.getElementById('hud').classList.contains('away')")
+                cleared = page.evaluate("""() => {
+                  const r=document.getElementById('rocket');
+                  return {right:r.style.right,bottom:r.style.bottom};
+                }""")
+                self.assertEqual({"right": "", "bottom": ""}, cleared)
+                self.assertEqual([], errors)
+
     def test_today_hud_starts_collapsed_on_narrow_screens_without_overflow(self):
         page, errors = self.open(viewport={"width": 390, "height": 844}, has_touch=True)
         page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
