@@ -110,6 +110,8 @@ class SnapshotStoreTests(unittest.TestCase):
         self.assertEqual(42.5, restored["quota"]["claude"]["used_percent"])
         self.assertEqual([], restored["quota"]["codex"])
 
+    @unittest.skipUnless(live_snapshot._supported(),
+                         'requires POSIX snapshot-store capabilities')
     def test_round_trip_uses_one_private_file_and_returns_original_wire(self):
         self.assertIsNone(self.store.load())
         self.assertFalse(self.directory.exists())
