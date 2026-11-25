@@ -156,32 +156,19 @@ tokens serve --open
 
 This installs from your local checkout. No package-registry release is required by these instructions.
 
-### Local 0.3.0 candidate — not a public release
+### Install a release wheel
 
-The 0.3.0 material in this checkout is a **local release candidate**, not a public release. No public release date or PyPI availability of 0.3.0 is claimed. The instructions below are a local installation recipe, **not evidence that the candidate has already been built or tested**. Candidate builds, artifact review, clean-environment smoke tests, and service updates installed from candidate artifacts must pass the candidate release checklist (`docs/release-candidate-checklist.md` in this local checkout) first; an external release requires separate approval. A separately authorized restart of a tested source-checkout service is not a candidate-artifact verification and does not mark those checklist items complete.
-
-If you receive a verified local candidate wheel, install it without contacting an index or resolving dependencies:
+Tagged releases on [GitHub Releases](https://github.com/LingXi-fur/tokens/releases) attach a wheel, an sdist and `SHA256SUMS`. 0.3.0 is not published to PyPI; install the downloaded wheel into a virtual environment:
 
 ```bash
-python3 -m venv /tmp/tokens-030-venv
-/tmp/tokens-030-venv/bin/python -m pip install --no-index --no-deps /ABSOLUTE/PATH/TO/ai_cli_tokens-0.3.0-py3-none-any.whl
-/tmp/tokens-030-venv/bin/tokens --version
-/tmp/tokens-030-venv/bin/tokens demo --output /tmp/tokens-030-demo --open
+shasum -a 256 -c SHA256SUMS --ignore-missing   # in the download folder
+python3 -m venv ~/.venvs/tokens
+~/.venvs/tokens/bin/python -m pip install ./ai_cli_tokens-0.3.0-py3-none-any.whl
+~/.venvs/tokens/bin/tokens --version
+~/.venvs/tokens/bin/tokens demo --output /tmp/tokens-demo --open
 ```
 
-Replace the wheel path with the actual approved artifact; the path is a placeholder, not a download location. Use fresh destination directories (or choose other fresh paths). `--no-deps` deliberately skips dependencies. On Windows, make the venv and use its `Scripts\python.exe` / `Scripts\tokens.exe`; `tzdata` must already be available or be installed separately from a reviewed local wheel with the same offline flags. Missing local tools or dependencies are a blocker, not permission to download them. Platform support is a product requirement, not proof that this candidate has passed that platform's checks.
-
-Alternatively, run the **approved candidate source checkout** directly, without an install or package registry:
-
-```bash
-cd /ABSOLUTE/PATH/TO/APPROVED/CANDIDATE/SOURCE
-./run --version
-./run demo --output /tmp/tokens-030-source-demo --open
-# Portable source launcher (set PYTHONPATH only for this command):
-PYTHONPATH=src python3 -m tokens_cli demo --output /tmp/tokens-030-source-demo --open
-```
-
-That explicit source-run path is separate from the checklist's wheel verification, which clears `PYTHONPATH` and checks that imports originate in the installed venv. The monthly-budget specification (`docs/monthly-budget-design.md` in this local checkout) documents the local monthly-budget tracking in the Cost Ledger (stored in the browser under `tk-budget-v1` only when you save a budget).
+On Windows, use the venv's `Scripts\python.exe` / `Scripts\tokens.exe`. What changed in 0.3.0 is summarized in [docs/release-notes-0.3.0.md](https://github.com/LingXi-fur/tokens/blob/v0.3.0/docs/release-notes-0.3.0.md). The monthly-budget specification (`docs/monthly-budget-design.md`) documents the local monthly budget in the Cost Ledger (stored in the browser under `tk-budget-v1` only when you save a budget).
 
 ## Choose an output
 

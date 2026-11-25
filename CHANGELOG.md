@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-> 本机 0.3.0 候选（未正式发布）。This section collects the local 0.3.0 release-candidate content. It has **not been publicly released**: no public release date exists, and no verified 0.3.0 package-index release is claimed. The candidate wheel, if built, is a local offline artifact only.
+## [0.3.0] - 2026-11-25
 
 ### Added
 
@@ -162,5 +162,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - Documentation states that local-first reports can remain sensitive and that pseudonymization is not guaranteed anonymity.
 - Public preview assets use synthetic data and contain no local identifiers.
 
-[Unreleased]: https://github.com/LingXi-fur/tokens/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/LingXi-fur/tokens/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LingXi-fur/tokens/releases/tag/v0.3.0
 [0.2.0]: https://github.com/LingXi-fur/tokens/releases/tag/v0.2.0

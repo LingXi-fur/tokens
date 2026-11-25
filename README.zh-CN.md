@@ -158,32 +158,19 @@ Windows PowerShell 激活命令为 `.venv\Scripts\Activate.ps1`。
 
 这会从本地源码检出安装，不依赖任何已发布的软件包注册表版本。
 
-### 本机 0.3.0 候选——不是公开发布
+### 安装发布版 wheel
 
-本检出中的 0.3.0 内容是**本机发布候选**，不是公开发布：不存在公开发布日期，也不声称 PyPI 已有 0.3.0。下面只是本地安装示例，**不证明候选已完成构建或测试**。候选构建、产物审查、纯净环境冒烟与基于候选产物安装的服务更新须先通过候选发布核对清单（本机检出的 `docs/release-candidate-checklist.md`）；对外发布需另行授权。对已测试源码检出服务另行授权的重启，不等于候选产物验收，也不将这些清单项标为完成。
-
-如果你拿到的是已通过核验的本地候选 wheel，可离线安装（不访问索引、不解析依赖）：
+[GitHub Releases](https://github.com/LingXi-fur/tokens/releases) 上每个打了 tag 的版本都附带 wheel、sdist 和 `SHA256SUMS`。0.3.0 没有发布到 PyPI，请把下载的 wheel 装进虚拟环境：
 
 ```bash
-python3 -m venv /tmp/tokens-030-venv
-/tmp/tokens-030-venv/bin/python -m pip install --no-index --no-deps /绝对路径/ai_cli_tokens-0.3.0-py3-none-any.whl
-/tmp/tokens-030-venv/bin/tokens --version
-/tmp/tokens-030-venv/bin/tokens demo --output /tmp/tokens-030-demo --open
+shasum -a 256 -c SHA256SUMS --ignore-missing   # 在下载目录里执行
+python3 -m venv ~/.venvs/tokens
+~/.venvs/tokens/bin/python -m pip install ./ai_cli_tokens-0.3.0-py3-none-any.whl
+~/.venvs/tokens/bin/tokens --version
+~/.venvs/tokens/bin/tokens demo --output /tmp/tokens-demo --open
 ```
 
-请把 wheel 路径替换为实际获批产物；上面的路径只是占位符，不是下载地址。请使用全新的输出目录（或自行选择其他全新路径）。`--no-deps` 特意跳过依赖安装。Windows 下请创建 venv 后使用其 `Scripts\python.exe` / `Scripts\tokens.exe`；`tzdata` 需已可用，或用同样的离线参数从已审查的本地 wheel 单独安装。缺少本地工具或依赖时应当视为阻塞，而不是转而联网下载。平台支持是产品目标，不代表本候选已在该平台通过核验。
-
-也可以**直接运行获批的候选源码检出**，无需安装、不经过软件包注册表：
-
-```bash
-cd /绝对路径/获批候选源码
-./run --version
-./run demo --output /tmp/tokens-030-source-demo --open
-# 可移植源码启动方式（仅对该命令设置 PYTHONPATH）：
-PYTHONPATH=src python3 -m tokens_cli demo --output /tmp/tokens-030-source-demo --open
-```
-
-这一显式源码运行路径与核对清单中的 wheel 验证是分开的：wheel 验证会清空 `PYTHONPATH` 并确认 import 来自安装的 venv。月度预算规格（本机检出的 `docs/monthly-budget-design.md`）对应费用账本内的本地月度预算功能（仅在你保存预算时写入当前浏览器的 `tk-budget-v1`）。
+Windows 下使用 venv 里的 `Scripts\python.exe` / `Scripts\tokens.exe`。0.3.0 的改动见 [docs/release-notes-0.3.0.zh-CN.md](https://github.com/LingXi-fur/tokens/blob/v0.3.0/docs/release-notes-0.3.0.zh-CN.md)。月度预算规格（`docs/monthly-budget-design.md`）对应费用账本内的本地月度预算功能（仅在你保存预算时写入当前浏览器的 `tk-budget-v1`）。
 
 ## 选择输出方式
 
