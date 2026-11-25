@@ -40,7 +40,8 @@ const COST_REFERENCE={
     'gpt-5.3-codex':{vendor:'openai',date:'2026-11-15',rates:['1.75','14','0.175','',''],tier:'Standard；官网未单列缓存写'},
     /* Google Gemini：2026-11-19 对照 ai.google.dev/gemini-api/docs/pricing 的 Standard 付费档；
        官网“输出价含思考 token”，故 thoughts=输出价；缓存写官网只列按小时计的存储价，无法折成每百万 token，留空。
-       官网未列出的精确名（gemini-3-pro-preview、gemini-3.8-flash-n、gemini-4-argon-trial 等）不入表、不猜价。 */
+       官网未列出的精确名（gemini-3-pro-preview、gemini-3.8-flash-n、gemini-4-argon-trial 等）不入表、不猜价。
+       2026-11-25 复核：官网列出 gemini-4-argon / gemini-3.8-flash 基础名，但没有 -trial / -n 变体。 */
     'gemini-4-neon':{vendor:'google',date:'2026-11-19',rates:['3','15','0.15','','15'],tier:'Standard Paid；1M 统一上下文不分档；输出价含思考 token；仅隐式缓存（不支持显式缓存）'},
     'gemini-4-hydrogen':{vendor:'google',date:'2026-11-19',rates:['1.50','7.50','0.075','','7.50'],tier:'Standard Paid；1M 统一上下文不分档；输出价含思考 token；仅隐式缓存（不支持显式缓存）'},
     'gemini-2.5-pro':{vendor:'google',date:'2026-11-19',rates:['1.25','10','0.125','','10'],tier:'Standard Paid ≤200K 上下文档（>200K 为输入 $2.50／输出 $15／缓存读 $0.25）；输出价含思考 token；缓存存储 $4.50/百万 token/小时未计；官网标注已弃用，2026-12-01 起改按 gemini-3.8-flash 计价'},
@@ -80,6 +81,15 @@ const COST_REFERENCE={
     'kimi-k3':{vendor:'moonshot',date:'2026-11-06',rates:['3','15','0.30','3',''],tier:'官方价；缓存写取 5 分钟档'}
   }
 };
+/* Antigravity 的 Claude 名称把思考档位拼在版本号后；档位不改变单价。
+   只登记去掉档位后能精确命中既有条目的名字，不做通配或模糊匹配。 */
+const COST_ALIASES={
+  'claude-opus-5-5-low':'claude-opus-5.5',
+  'claude-opus-5-5-medium':'claude-opus-5.5',
+  'claude-opus-5-5-high':'claude-opus-5.5'
+};
+const COST_ALIAS_NOTE='Antigravity 名称，按 Claude Opus 5.5 官方价估算';
+function costCanonicalModel(model){return COST_ALIASES[model]||model;}
 function costCurrencySymbol(currency){return currency==='USD'?'$':'¥';}
 /* 价格：非负十进制字符串，最多 6 位小数，上限 1e9；BigInt 缩放 10^6；''=待定价，0=免费 */
 function costParseRate(value){
@@ -144,8 +154,12 @@ function costExactMoney(scaled){
 }
 function costModelKey(entry){return JSON.stringify([entry.source,entry.model]);}
 function costReferenceFor(model){
-  if(model.hidden||!Object.prototype.hasOwnProperty.call(COST_REFERENCE.prices,model.model))return null;
-  return COST_REFERENCE.prices[model.model];
+  if(model.hidden)return null;
+  const canonical=costCanonicalModel(model.model);
+  if(!Object.prototype.hasOwnProperty.call(COST_REFERENCE.prices,canonical))return null;
+  const reference=COST_REFERENCE.prices[canonical];
+  if(canonical===model.model)return reference;
+  return Object.assign({},reference,{alias:canonical,tier:COST_ALIAS_NOTE});
 }
 function costEffectivePrice(model,config){
   if(model.hidden)return {entry:null,reference:null};

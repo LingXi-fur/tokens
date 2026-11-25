@@ -1219,6 +1219,26 @@ class DashboardCostReferenceTests(unittest.TestCase):
         self.assertNoErrors(page_errors, console_errors)
         context.close()
 
+    def test_antigravity_claude_alias_uses_the_exact_opus_reference(self):
+        context, page, page_errors, console_errors = self.new_page()
+        self.open_ledger(page)
+        info = page.evaluate("""() => {
+          const alias=CostCore.referenceFor({model:'claude-opus-5-5-medium',hidden:false});
+          const unknown=CostCore.referenceFor({model:'claude-opus-5-5-max',hidden:false});
+          return {alias, unknown, tierEn:null};
+        }""")
+        self.assertEqual("claude-opus-5.5", info["alias"]["alias"])
+        self.assertEqual(REFERENCE_EXPECTED_RATES["claude-opus-5.5"], info["alias"]["rates"])
+        self.assertTrue(info["alias"]["tier"].startswith("Antigravity 名称"))
+        self.assertIsNone(info["unknown"])
+        page.evaluate("() => applyLanguage('en')")
+        label = page.evaluate("""() => costReferenceLabel(
+          CostCore.referenceFor({model:'claude-opus-5-5-medium',hidden:false}))""")
+        self.assertIn("Antigravity name", label)
+        self.assertNotRegex(label, r"[\u3400-\u9fff]")
+        self.assertNoErrors(page_errors, console_errors)
+        context.close()
+
     def test_fresh_storage_defaults_to_usd_reference_on_without_autowrite(self):
         context, page, page_errors, console_errors = self.new_page()
         self.open_ledger(page)

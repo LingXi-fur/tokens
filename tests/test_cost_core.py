@@ -151,20 +151,28 @@ CASES = [
           ["2026-11-15", 0, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
           ["2026-11-15", 1, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
           ["2026-11-15", 2, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
-          ["2026-11-15", 3, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
+          ["2026-11-18", 3, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
           ["2026-11-18", 4, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
-          ["2026-11-18", 5, [1000000, 500000, 0, 0, 0], 1500000, 1, False],
-          ["2026-11-18", 6, [1000000, 500000, 0, 0, 500000], 2000000, 1, False],
+          ["2026-11-18", 5, [1000000, 500000, 0, 0, 0], 2000000, 1, False],
       ], [
           model("gemini-4-argon-trial", "argon", "antigravity"),
           model("gemini-3.8-flash-n", "flashn", "antigravity"),
-          model("claude-opus-5-5-medium", "opusm", "antigravity"),
           model("codex-auto-review", "autorev", "codex"),
           model("gpt-reserve", "reserve", "codex"),
           model("codex-unknown", "unknown", "codex"),
           model("gemini-3-pro-preview", "g3pro", "gemini"),
       ]),
-      ["2026-11-15", "2026-11-18"], ["argon", "flashn", "opusm", "autorev", "reserve", "unknown", "g3pro"], USD),
+      ["2026-11-15", "2026-11-18"], ["argon", "flashn", "autorev", "reserve", "unknown", "g3pro"], USD),
+    ("antigravity-claude-alias",
+      cost_block([
+          ["2026-11-19", 0, [1000000, 1000000, 0, 0, 0], 2000000, 1, False],
+      ], [model("claude-opus-5-5-medium", "opusm", "antigravity")]),
+      ["2026-11-19"], ["opusm"], USD),
+    ("antigravity-claude-unknown-tier",
+      cost_block([
+          ["2026-11-19", 0, [1000000, 1000000, 0, 0, 0], 2000000, 1, False],
+      ], [model("claude-opus-5-5-max", "opusx", "antigravity")]),
+      ["2026-11-19"], ["opusx"], USD),
     ("official-pricing-2026-11-18-deepseek-and-gpt62sol",
      cost_block([
          ["2026-11-18", 0, [1000000, 1000000, 1000000, 0, 500000], 3500000, 1, False],
@@ -563,11 +571,29 @@ class CostCoreContractTests(unittest.TestCase):
     def test_unpriced_internal_models_stay_pending(self):
         view = self.result["views"]["unpriced-internal-models-stay-pending"]
         self.assertEqual(0, view["pricedCount"])
-        self.assertEqual(7, view["pendingCount"])
+        self.assertEqual(6, view["pendingCount"])
+        self.assertNotEqual("BigInt:0", view["pendingTokens"])
         self.assertFalse(view["anyPriced"])
         self.assertFalse(view["fullEstimate"])
         for entry in view["entries"]:
             self.assertIsNone(entry["reference"])
+
+    def test_antigravity_claude_alias_is_exact_and_priced(self):
+        view = self.result["views"]["antigravity-claude-alias"]
+        self.assertEqual(1, view["pricedCount"])
+        self.assertEqual(0, view["pendingCount"])
+        entry = view["entries"][0]
+        self.assertEqual("claude-opus-5-5-medium", entry["model"]["model"])
+        self.assertEqual("claude-opus-5.5", entry["reference"]["alias"])
+        self.assertEqual("anthropic", entry["reference"]["vendor"])
+        self.assertEqual("Antigravity 名称，按 Claude Opus 5.5 官方价估算",
+                         entry["reference"]["tier"])
+        # $4/M input + $20/M output = $24.
+        self.assertEqual("BigInt:24000000000000", entry["costScaled"])
+        unknown = self.result["views"]["antigravity-claude-unknown-tier"]
+        self.assertEqual(0, unknown["pricedCount"])
+        self.assertEqual(1, unknown["pendingCount"])
+        self.assertIsNone(unknown["entries"][0]["reference"])
 
     def test_official_pricing_2026_11_18_deepseek_and_gpt62sol(self):
         view = self.result["views"]["official-pricing-2026-11-18-deepseek-and-gpt62sol"]

@@ -72,6 +72,8 @@ _RATE_RE = re.compile(
     r"'([^']+)'\s*:\s*\{vendor:'[^']*',"
     r"(?:date:'[^']*',)?rates:\['([^']*)','([^']*)','([^']*)','([^']*)','([^']*)'\]"
 )
+_ALIAS_BLOCK_RE = re.compile(r"const COST_ALIASES=\{(.*?)\n\};", re.S)
+_ALIAS_RE = re.compile(r"'([^']+)'\s*:\s*'([^']+)'")
 
 
 def _reference_rates():
@@ -99,6 +101,12 @@ def _reference_rates():
                 None if value == "" else Decimal(value)
                 for value in values
             ]
+        alias_block = _ALIAS_BLOCK_RE.search(source)
+        if alias_block:
+            for match in _ALIAS_RE.finditer(alias_block.group(1)):
+                alias, target = match.groups()
+                if target in rates:
+                    rates[alias] = rates[target]
     except OSError:
         pass
     _reference_rates._cache = rates
