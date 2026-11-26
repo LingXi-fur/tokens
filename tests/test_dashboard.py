@@ -1,3 +1,5 @@
+from tests import _hermetic  # noqa: F401
+from tests import _node
 import json
 import os
 import re
@@ -6,7 +8,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -24,7 +26,7 @@ import sys
 sys.path.insert(0, str(SRC))
 
 import tokens_cli
-from tokens_cli import config, dashboard_payload, dashboard_wire, report_dashboard
+from tokens_cli import config, dashboard_payload, dashboard_wire, live_snapshot, report_dashboard
 
 
 class DashboardTests(unittest.TestCase):
@@ -85,6 +87,29 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("__SCRIPT__", (ASSETS / "template.html").read_text(encoding="utf-8"))
         self.assertGreater((ASSETS / "dashboard.css").stat().st_size, 10000)
         self.assertGreater((ASSETS / "dashboard.js").stat().st_size, 50000)
+
+    def test_entrance_choreography_assets_are_present_and_motion_gated(self):
+        css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
+        script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
+        template = (ASSETS / "template.html").read_text(encoding="utf-8")
+        # 扁平设计：主数字为纯墨色，不再使用渐变文字或呼吸动画
+        self.assertIn(".grad{color:var(--ink)}", css)
+        self.assertNotIn("gradFlow", css)
+        self.assertNotIn("background-clip:text", css)
+        # 图表 <rect class="seg"> 与头部 .seg 胶囊同名：胶囊规则不得设置 SVG 几何属性
+        pill = re.search(r"\n\.seg\{([^}]*)\}", css).group(1)
+        properties = {decl.split(":", 1)[0].strip() for decl in pill.split(";") if ":" in decl}
+        self.assertFalse(properties & {"width", "height", "x", "y", "rx", "ry"}, properties)
+        self.assertIn("rect.seg{", css)
+        # 趋势柱错峰生长：JS 按序封顶延迟 + inline animation-delay，不动全局 grow
+        self.assertIn("const barStagger=motionDisabled()||document.documentElement.dataset.motion==='low'?0:Math.min(i*28,260);", script)
+        self.assertIn("style=\"animation-delay:'+barStagger+'ms\"", script)
+        # 标题使用纯墨色
+        self.assertIn("h1{font-size:17px;margin:0;font-weight:650;letter-spacing:-.01em;color:var(--ink)}", css)
+        # motion 档位击杀：off 全局禁、low 关呼吸+错峰归零；reduced-motion 由全局通配击杀覆盖
+        self.assertIn("@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}*,*::before,*::after{animation:none!important", css)
+        # 模板侧：主数字挂渐变类，柱状图容器存在
+        self.assertIn('<span class=grad id=k-total></span>', template)
 
     def test_dashboard_language_is_chinese_first_and_privacy_isolated(self):
         template = report_dashboard._TEMPLATE
@@ -301,10 +326,10 @@ class DashboardTests(unittest.TestCase):
             sources=["claude"],
         )
         for key in (
-            "generated", "snapshot", "source", "range", "models", "colors", "hourly",
+            "generated", "calendar_day", "snapshot", "source", "range", "models", "colors", "hourly",
             "day_details", "top_cwds", "session_series",
             "reuse", "day", "week", "month", "provenance", "achievement_stats",
-            "achievement_daily",
+            "achievement_daily", "request_models",
         ):
             self.assertIn(key, payload)
         self.assertEqual(["claude"], payload["source"])
@@ -313,6 +338,45 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("model-a", reuse[0][1])
         self.assertIn("model-b", reuse[1][1])
         self.assertEqual(300, sum(row["total"] for row in payload["day"]))
+
+    def test_payload_quota_block_is_scoped_validated_and_private(self):
+        now = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)
+        scan = {
+            "claude_events": [],
+            "codex_snapshots": [{
+                "observed_at": now.timestamp(), "plan_type": "plus",
+                "limit_id": "codex", "limit_name": None, "window_minutes": 300,
+                "used_percent": 42.0,
+                "resets_at": now.timestamp() + 3600,
+            }],
+            "claude_files": 0, "codex_files": 1, "parsed_files": 1,
+        }
+        with mock.patch.object(dashboard_payload.quota, "scan_rate_limits",
+                               return_value=scan):
+            payload = report_dashboard.build_payload(
+                self.synthetic_records(), since="2026-07-01", until="2026-07-02",
+                sources=["codex"], generated_at=now)
+            none_payload = report_dashboard.build_payload(
+                self.synthetic_records(), since="2026-07-01", until="2026-07-02",
+                sources=["opencode"], generated_at=now)
+            demo_payload = report_dashboard.build_payload(
+                self.synthetic_records(), since="2026-07-01", until="2026-07-02",
+                sources=["codex"], generated_at=now, include_quota=False)
+            anonymized = report_dashboard.build_payload(
+                self.synthetic_records(), since="2026-07-01", until="2026-07-02",
+                sources=["codex"], generated_at=now, anonymize=True)
+        self.assertIsNotNone(payload["quota"])
+        self.assertEqual(1, len(payload["quota"]["codex"]))
+        self.assertEqual("5h", payload["quota"]["codex"][0]["window"])
+        self.assertIsNone(payload["quota"]["claude"])
+        live_snapshot._quota_shape(payload["quota"], ["codex"],
+                                   live_snapshot._timezone())
+        self.assertIsNone(none_payload["quota"])
+        self.assertIsNone(demo_payload["quota"])
+        serialized = json.dumps(anonymized, ensure_ascii=False)
+        self.assertNotIn("/synthetic/long-running-project-alpha", serialized)
+        self.assertNotIn("synthetic-session-a", serialized)
+        self.assertIn("quota", anonymized)
         self.assertEqual(2, len(payload["top_cwds"]))
         self.assertEqual({"model-a": 100}, payload["top_cwds"][1][3])
         day_one = payload["day_details"]["2026-07-01"]
@@ -379,6 +443,8 @@ class DashboardTests(unittest.TestCase):
             first = report_dashboard.build_payload(records, sources=["claude"])
             second = report_dashboard.build_payload(records, sources=["claude"])
         self.assertNotEqual(first["generated"], second["generated"])
+        self.assertEqual("2026-07-10", first["calendar_day"])
+        self.assertEqual("2026-07-11", second["calendar_day"])
         self.assertEqual(first["snapshot"]["id"], second["snapshot"]["id"])
 
         changed = [dict(item) for item in records]
@@ -441,26 +507,70 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(flow_ids, set(payload["session_series"]))
         self.assertEqual([992], payload["session_series"]["session-8"])
 
+    def test_glass_shell_is_limited_to_chrome_and_degrades(self):
+        css = (Path(report_dashboard.__file__).parent / "dashboard_assets" / "dashboard.css").read_text(encoding="utf-8")
+        css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        template = report_dashboard._TEMPLATE
+        # 默认暗色：无 URL 参数、无保存偏好时首帧即为暗色
+        self.assertIn("(localStorage.getItem('tk-theme')||'dark')", template)
+        self.assertIn("let saved='dark';try{saved=localStorage.getItem('tk-theme')||'dark';}", template)
+        # backdrop-filter 只出现在外壳选择器上（≤5 个元素），图表卡片保持不透明
+        rules = re.findall(r"([^{}]+)\{[^{}]*(?<!-webkit-)backdrop-filter:(?!none)[^{}]*\}", css)
+        selectors = {sel.strip() for rule in rules for sel in rule.split(",")}
+        self.assertLessEqual(selectors, {".section-dock", "#toast", ".popover", ".palette", ".hud"})
+        self.assertIn(".card{background:var(--surface);", css)
+        # 光斑层：固定、置底、不接收指针；只用 transform 动画；减少动效时静止
+        aurora = re.search(r"body::before\{[^}]*\}", css).group(0)
+        for token in ("position:fixed", "z-index:-1", "pointer-events:none"):
+            self.assertIn(token, aurora)
+        keyframes = re.search(r"@keyframes aurora\{.*?\}\}", css).group(0)
+        self.assertNotRegex(keyframes, r"(?:left|top|width|height|background)\s*:")
+        self.assertIn("@media(prefers-reduced-motion:reduce){body::before{animation:none}}", css)
+        # 降低透明度 / 不支持模糊时，外壳退回不透明表面
+        self.assertIn("@media(prefers-reduced-transparency:reduce){", css)
+        self.assertIn("@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){", css)
+        # 渐变只用于描边/装饰，不用于文字
+        self.assertNotIn("background-clip:text", css)
+        self.assertIn("aria-controls=hud-body", template)
+
     def test_template_filters_flow_and_keeps_mobile_targets_and_status_cases(self):
         template = report_dashboard._TEMPLATE
         self.assertIn("state.models.has(x[2])", template)
         self.assertIn("state.models.has(x[0])", template)
-        self.assertIn("Math.min(100,selectedTotal?total/selectedTotal*100:0)", template)
-        self.assertIn('class="flow-hit"', template)
-        self.assertRegex(template, r"\.flow-hit\{[^}]*pointer-events:all")
-        self.assertRegex(template, r"\.flow-map\{[^}]*min-width:900px")
+        self.assertIn("class=dest-usage", template)
+        self.assertIn("class=dest-toolbar", template)
+        self.assertIn('data-dest-view="cards"', template)
+        self.assertIn('data-dest-view="table"', template)
         self.assertIn(".tl-item,.chip,#tabs button{min-height:44px}", template)
         self.assertIn(".trend-legend{flex-wrap:nowrap;overflow-x:auto", template)
-        self.assertIn("--faint:#5f6b7a", template)
-        self.assertIn("--faint:#8b949e", template)
-        self.assertIn("width=\"172\" height=\"48\"", template)
+        # 弱化文字仍需在各自主题表面达到 WCAG AA（≥4.5:1）
+        def luminance(hex_color):
+            channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+        def contrast(a, b):
+            hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+            return (hi + 0.05) / (lo + 0.05)
+        # 柔光亮色：底/表面都不是纯白，峰值亮度明显低于 #fff；暗色为蓝紫调深底
+        self.assertIn("--bg:#e6e4df; --surface:#efede8; --surface-2:#e7e5e0;", template)
+        self.assertIn("--bg:#0b0b12; --surface:#12121b; --surface-2:#191923;", template)
+        self.assertLess(luminance("#efede8"), 0.9)
+        for ink in ("#25252b", "#4b4b54", "#5c5c66", "#2559c9"):
+            for surface in ("#e6e4df", "#efede8", "#e7e5e0"):
+                self.assertGreaterEqual(contrast(ink, surface), 4.5, (ink, surface))
+        for ink in ("#ebebf2", "#a4a4b4", "#8c8c9c", "#6f9cf5"):
+            for surface in ("#0b0b12", "#12121b", "#191923"):
+                self.assertGreaterEqual(contrast(ink, surface), 4.5, (ink, surface))
+        self.assertIn("--faint:#5c5c66", template)
+        self.assertIn("--faint:#8c8c9c", template)
+        self.assertIn("dest-viewswitch", template)
         self.assertIn("project_model", template)
         self.assertIn("model_session", template)
-        self.assertIn("flow-link motion", template)
+        self.assertIn("dest-filter-note", template)
         self.assertIn("signalActions(signal)", template)
         self.assertIn("openReplay(signal.id,signal.label)", template)
         self.assertIn("@media(prefers-reduced-motion:reduce)", template)
-        self.assertIn(":root[data-motion=low] .flow-link.motion{animation:none!important}", template)
+        self.assertIn(":root[data-motion=low] .trail-destination{animation:none!important}", template)
         self.assertIn("[id^=section-]{scroll-margin-top:112px}", template)
         self.assertIn(".probe{position:sticky;top:64px", template)
         self.assertIn("if(avg===0){if(last>0)", template)
@@ -481,11 +591,11 @@ class DashboardTests(unittest.TestCase):
         end = script.index("\nfunction ", start + 1)
         render_flow = script[start:end]
         self.assertEqual(1, script.count("const sumBy="))
-        self.assertIn("selectedTotal=sumBy(selectedRows(),'total')", render_flow)
-        self.assertIn("const groupSum=", render_flow)
+        self.assertIn("computeDestinations()", render_flow)
+        self.assertIn("destModelChip(", render_flow)
+        self.assertIn("destProjectRow(", render_flow)
+        self.assertIn("destSessionCard(", render_flow)
         self.assertNotIn("const sumBy=", render_flow)
-        for call in ("groupSum(pm,2,3)", "groupSum(ms,0,3)", "groupSum(modelPM,1,3)", "groupSum(modelMS,2,3)"):
-            self.assertIn(call, render_flow)
 
     def test_lazy_renderers_fail_visibly_and_can_retry(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
@@ -532,20 +642,21 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn('.lazy-pending::after{content:"进入视野后加载"', css)
         self.assertIn(".lazy-error{", css)
         self.assertIn(".lazy-error-state{", css)
-        self.assertRegex(css, r"\.flow-link\{[^}]*opacity:\.48")
+        self.assertIn(".dest-usage{", css)
 
     def test_flow_region_and_full_titles_are_accessible_and_localized(self):
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
         css = (ASSETS / "dashboard.css").read_text(encoding="utf-8")
         template = (ASSETS / "template.html").read_text(encoding="utf-8")
 
+        self.assertIn("class=dest-grid id=flow-map", template)
         self.assertIn(
-            'class=flow-shell style=margin-top:14px tabindex=0 role=region '
-            'aria-label="Token 流光图，可横向滚动"',
-            template,
+            "class=dest-legend role=group aria-label=\"'+esc('模型图例，点击聚焦会话')+'\"",
+            script,
         )
-        self.assertIn(".flow-shell:focus{outline:2px solid var(--accent-2)", css)
-        self.assertIn("<title>'+esc(label)+' · 悬停 Peek · 点击 Pin 信号</title>", script)
+        self.assertIn("role=group aria-label=\"'+esc('视图切换')+'\"", script)
+        self.assertIn(".dest-usage{", css)
+        self.assertIn("'点击 Pin 到 Signal Dock':'Click to Pin in Signal Dock'", script)
         self.assertIn("'0 条流光链路':'0 flow links'", script)
         self.assertIn(
             "'Token 流光图，可横向滚动':'Token Flow; horizontally scrollable'",
@@ -705,8 +816,8 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("else if(e.key==='?') openHelp()", template)
         self.assertIn("查看快捷键与交互说明", template)
         self.assertIn("function saveFlowSVG()", template)
-        self.assertIn("svg.setAttribute('xmlns','http://www.w3.org/2000/svg')", template)
-        self.assertIn("bg.setAttribute('fill','#0b1120')", template)
+        self.assertIn('<svg xmlns="http://www.w3.org/2000/svg"', template)
+        self.assertIn("'#0f1524':'#ffffff'", template)
         self.assertIn("let barCursor=0", template)
         self.assertIn('role="button" aria-label="\'+esc(aria+', template)
         self.assertIn("e.key==='ArrowRight'||e.key==='ArrowLeft'", template)
@@ -715,7 +826,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("let previousModels=null", template)
         self.assertIn("覆盖 <b>'+pct(selected,all)", template)
         self.assertIn("当前模型筛选构成", template)
-        self.assertIn("dataSignalAttrs('session',it[2]||it[0],it[0],total,'top')", template)
+        self.assertIn("dataSignalAttrs('session',it[2]||it[0],name,total,'top')", template)
         self.assertIn("if(el.matches('select,input,textarea,option'))return", template)
         self.assertIn("document.getElementById('replay-ecg').addEventListener('pointerdown'", template)
         self.assertIn("const days=DATA.day||[],total=sumBy(days,'total'),calls=sumBy(days,'calls')", template)
@@ -748,7 +859,8 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("id=comet-canvas", template)
         self.assertIn("particles=Array.from({length:28}", template)
         self.assertNotIn("d.className='comet'", template)
-        self.assertIn("active=e.target.closest('.card')", template)
+        self.assertNotIn("active=e.target.closest('.card')", template)
+        self.assertNotIn("perspective:1600px", template)
         self.assertIn("document.addEventListener('visibilitychange'", template)
         self.assertNotIn("clearInterval(_stripT)", template)
         self.assertIn("data-lazy=reuse", template)
@@ -778,7 +890,7 @@ class DashboardTests(unittest.TestCase):
             "function deltaWindowInfo(rows)", "function attributionFor(rows)",
             "function renderAttribution()", "renderTrendLegend();renderAttribution();",
             "function achievementStory(b)", "b.story=achievementStory(b)",
-            "<strong class=ach-story data-i18n-skip>", "达成条件：", "achievementStoryText(b)+' '+b.story+' '+b.d",
+            "<strong class=ach-story data-i18n-skip>", "达成条件：", "function achievementSearchText(b)",
             "if(auxView==='achievements')p.set('view','achievements')",
             "tokensAuxView:'achievements'", "function syncAuxViewFromState()",
             "history.pushState({tokensAuxView:'achievements'}",
@@ -822,30 +934,36 @@ class DashboardTests(unittest.TestCase):
         agg_start = script.index("const sumList=")
         agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
         helpers = "\n".join(extract_function(name) for name in (
+            "isoDayValid",
             "selectedDayModelTotals", "selectedDayTotal", "deltaWindowInfo",
-            "periodDelta", "attributionFor",
+            "deltaPercent", "windowModelTotals", "attributionFor", "dominantShift",
         ))
-        node_script = script[agg_start:agg_end] + "\n" + r'''
+        iso_day_re = next(line for line in script.splitlines() if line.startswith("const ISO_DAY_RE="))
+        period_core = (ASSETS / "period_core.js").read_text(encoding="utf-8")
+        node_script = period_core + "\n" + iso_day_re + "\n" + script[agg_start:agg_end] + "\n" + r'''
 const DATA={models:['alpha','beta'],generated:'2026-07-31 12:00',range:{until:'2026-07-31'},day_details:{}};
 const state={gran:'month',models:new Set(DATA.models)};
-function periodDays(){return [];}
+let dashboardLanguage='zh';
 ''' + helpers + r'''
 const rows=[
-  {period:'2026-06',total:100,models:{alpha:80,beta:20}},
-  {period:'2026-07',total:145,models:{alpha:90,beta:55}},
+  {period:'2026-05-01',total:100,models:{alpha:80,beta:20}},
+  {period:'2026-06-01',total:145,models:{alpha:90,beta:55}},
 ];
 const result=attributionFor(rows);
 if(!result)throw new Error('missing attribution');
 const sum=result.parts.reduce((total,part)=>total+part.delta,0);
 if(sum!==result.currTotal-result.prevTotal)throw new Error(`parts ${sum} != net ${result.currTotal-result.prevTotal}`);
-if(periodDelta(rows).value!==45)throw new Error('headline window drift');
+if(Math.abs(deltaPercent(deltaWindowInfo(rows))-45)>1e-9)throw new Error('headline window drift');
+if(dominantShift(rows)!==null)throw new Error('no top-model change expected');
+const swapped=[{period:'2026-05-01',total:100,models:{alpha:80,beta:20}},{period:'2026-06-01',total:100,models:{alpha:30,beta:70}}];
+const shift=dominantShift(swapped);
+if(!shift||shift.from!=='alpha'||shift.to!=='beta'||shift.label!=='环比')throw new Error('dominant shift drift '+JSON.stringify(shift));
 state.models=new Set(['beta']);
 const filtered=attributionFor(rows);
 if(filtered.parts.length!==1||filtered.parts[0].model!=='beta'||filtered.parts[0].delta!==35)throw new Error('model filter drift');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script], capture_output=True, text=True, check=False
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -861,9 +979,8 @@ if(!ladder.includes('1000 Token'))throw new Error('target anchor missing');
 const fallback=achievementStory({n:'未知',category:'未知',tier:'prismatic'});
 if(!fallback.includes('彩钻'))throw new Error('tier fallback missing');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script], capture_output=True, text=True, check=False
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_scrub_probe_contracts_keep_preview_memory_only_and_commit_explicit(self):
@@ -946,9 +1063,8 @@ if(named!=='alpha,zeta,beta')throw new Error(`named tie order changed: ${named}`
 if(topModelOf(tied)?.[0]!=='zeta')throw new Error('default leader changed');
 if(topModelOf(tied,true)?.[0]!=='alpha')throw new Error('named leader changed');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script], capture_output=True, text=True, check=False
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -976,9 +1092,8 @@ const cases=[
 ];
 for(const [x,left,width,count,want] of cases){const got=trendPeriodIndex(x,left,width,count);if(got!==want)throw new Error(`${x}: ${got} !== ${want}`);}
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script], capture_output=True, text=True, check=False
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         script = (ASSETS / "dashboard.js").read_text(encoding="utf-8")
@@ -1028,12 +1143,8 @@ if(rhythmLevel(100,[100])!==4)throw new Error('single peak must be hottest');
 if(rhythmLevel(100,[100,100])!==4)throw new Error('tied peaks must be hottest');
 if(rhythmLevel(4,[1,2,3,4])!==4)throw new Error('maximum must be hottest');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1063,12 +1174,8 @@ if(refreshedReplayState(current,{session_series:{}})!==null)throw new Error('rem
 const closed={sid:null,series:[],i:0,timer:null,label:''};
 if(refreshedReplayState(closed,{session_series:{}})!==closed)throw new Error('closed replay');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("if(rp.sid){", script)
         self.assertIn("else closeReplay();", script)
@@ -1093,7 +1200,7 @@ if(refreshedReplayState(closed,{session_series:{}})!==closed)throw new Error('cl
             "回看这一天",
         ):
             self.assertIn(marker, template)
-        self.assertIn("['project','reuse','flow','modes']", template)
+        self.assertIn("['project','reuse','flow','modes','cost']", template)
         self.assertNotIn("event.key==='Enter'||event.key===' '){event.preventDefault();focusMomentDay", template)
         self.assertNotIn("localStorage.setItem('tk-modes", template)
         self.assertNotIn("p.set('mode'", template)
@@ -1149,12 +1256,8 @@ const serialized=JSON.stringify(all);
 for(const secret of ['private-low','private-explore','private-deep','private-cruise','private-sprint','private-priority','private-filter'])if(serialized.includes(secret))throw new Error('entity identifier leaked: '+secret);
 if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new Error('classification evidence missing');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_reuse_parts_are_exact_and_sum_to_total(self):
@@ -1187,6 +1290,125 @@ if(!all.rows.every(row=>row.evidence&&typeof row.evidence==='string'))throw new 
         self.assertEqual({"model-a": 13}, detail["cache_read_models"])
         self.assertEqual(2, len(detail["cwds"]))
         self.assertEqual(2, len(detail["sessions"]))
+
+    @mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={})
+    @mock.patch("tokens_cli.dashboard_payload.readers.session_title", return_value="")
+    @mock.patch("tokens_cli.dashboard_payload.readers.load_session_summaries", return_value={})
+    def test_payload_reports_request_models_per_day_and_total(self, _summaries, _title, _index):
+        records = [
+            {
+                "source": "claude", "ts": "2026-07-01T01:00:00+08:00",
+                "date": "2026-07-01", "model": "glm-5.3",
+                "request_model": "claude-opus-5-5",
+                "input": 70, "output": 20, "cache_read": 10,
+                "cache_write": 0, "total": 100, "session": "session-a",
+                "cwd": "/synthetic/project-a",
+            },
+            {
+                "source": "claude", "ts": "2026-07-01T02:00:00+08:00",
+                "date": "2026-07-01", "model": "glm-5.3",
+                "request_model": "claude-opus-5-5",
+                "input": 5, "output": 2, "cache_read": 3,
+                "cache_write": 0, "total": 10, "session": "session-c",
+                "cwd": "/tmp/project-c",
+            },
+            {
+                "source": "claude", "ts": "2026-07-02T14:00:00+08:00",
+                "date": "2026-07-02", "model": "glm-5.3",
+                "request_model": "claude-sonnet-5-5",
+                "input": 120, "output": 60, "cache_read": 20,
+                "cache_write": 0, "total": 200, "session": "session-b",
+                "cwd": "/synthetic/project-b",
+            },
+            {
+                # codex 无 request_model：不参与请求名统计。
+                "source": "codex", "ts": "2026-07-02T15:00:00+08:00",
+                "date": "2026-07-02", "model": "gpt-6.1-sol",
+                "input": 1, "output": 1, "cache_read": 0,
+                "cache_write": 0, "total": 2, "session": "session-d",
+                "cwd": "/synthetic/project-b",
+            },
+        ]
+        payload = report_dashboard.build_payload(records)
+        day_one = next(row for row in payload["day"] if row["period"] == "2026-07-01")
+        day_two = next(row for row in payload["day"] if row["period"] == "2026-07-02")
+        self.assertEqual({"glm-5.3": {"claude-opus-5-5": 110}}, day_one["request_models"])
+        self.assertEqual({"glm-5.3": {"claude-sonnet-5-5": 200}}, day_two["request_models"])
+        # week/month 行不带请求名形状。
+        for row in payload["week"] + payload["month"]:
+            self.assertNotIn("request_models", row)
+        top = payload["request_models"]
+        self.assertEqual(
+            [
+                {"request": "claude-opus-5-5", "model": "glm-5.3",
+                 "source": "claude", "total": 110},
+                {"request": "claude-sonnet-5-5", "model": "glm-5.3",
+                 "source": "claude", "total": 200},
+            ],
+            sorted(top, key=lambda item: item["total"]),
+        )
+        self.assertTrue(all(
+            set(item) == {"request", "model", "source", "total"} for item in top))
+
+    def test_request_models_truncated_to_24_entries(self):
+        records = []
+        for index in range(30):
+            records.append({
+                "source": "claude", "ts": f"2026-07-01T{index:02d}:00:00+08:00",
+                "date": "2026-07-01", "model": f"backend-{index}",
+                "request_model": f"alias-{index}",
+                "input": 1, "output": 0, "cache_read": 0,
+                "cache_write": 0, "total": 10 ** index, "session": "s",
+                "cwd": "/p",
+            })
+        payload = report_dashboard.build_payload(records)
+        top = payload["request_models"]
+        self.assertEqual(24, len(top))
+        totals = [item["total"] for item in top]
+        self.assertEqual(sorted(totals, reverse=True), totals)
+        # 截掉的是 total 最小的 6 条。
+        self.assertNotIn("alias-0", {item["request"] for item in top})
+        self.assertIn("alias-29", {item["request"] for item in top})
+
+    def test_anonymized_payload_omits_request_models(self):
+        records = [{
+            "source": "claude", "ts": "2026-07-01T01:00:00+08:00",
+            "date": "2026-07-01", "model": "glm-5.3",
+            "request_model": "claude-opus-5-5",
+            "input": 1, "output": 2, "cache_read": 0,
+            "cache_write": 0, "total": 3, "session": "s",
+            "cwd": "/p",
+        }]
+        payload = report_dashboard.build_payload(records, anonymize=True)
+        self.assertEqual([], payload["request_models"])
+        day = next(row for row in payload["day"] if row["period"] == "2026-07-01")
+        self.assertEqual({}, day["request_models"])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("claude-opus-5-5", serialized)
+
+    def test_request_models_omitted_when_names_match(self):
+        records = [
+            {
+                "source": "claude", "ts": "2026-07-01T01:00:00+08:00",
+                "date": "2026-07-01", "model": "model-a",
+                "request_model": "model-a",
+                "input": 1, "output": 2, "cache_read": 0,
+                "cache_write": 0, "total": 3, "session": "s",
+                "cwd": "/p",
+            },
+            {
+                # 旧快照记录无 request_model 字段：等价于同名，不出现在统计。
+                "source": "claude", "ts": "2026-07-01T02:00:00+08:00",
+                "date": "2026-07-01", "model": "model-a",
+                "input": 1, "output": 2, "cache_read": 0,
+                "cache_write": 0, "total": 3, "session": "s2",
+                "cwd": "/p",
+            },
+        ]
+        payload = report_dashboard.build_payload(records)
+        self.assertEqual([], payload["request_models"])
+        day = next(row for row in payload["day"] if row["period"] == "2026-07-01")
+        self.assertEqual({}, day["request_models"])
 
     @mock.patch("tokens_cli.dashboard_payload.readers.build_session_index", return_value={})
     @mock.patch("tokens_cli.dashboard_payload.readers.session_title", return_value="")
@@ -1276,12 +1498,8 @@ result=almanacTrendMetrics([
 ],historical);
 if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical range');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1302,17 +1520,20 @@ if(result.declineStreak!==1||result.completeDays!==2)throw new Error('historical
             self.fail(name)
 
         helpers = "\n".join(extract_function(name) for name in (
+            "isoDayValid",
             "localISO",
             "periodDays",
             "selectedDayModelTotals",
             "selectedDayTotal",
             "deltaWindowInfo",
-            "periodDelta",
+            "deltaPercent",
         ))
         agg_start = script.index("const sumList=")
         agg_end = script.index("\n", script.index("const nightTokens=", agg_start))
-        node_script = script[agg_start:agg_end] + "\n" + helpers + r'''
-let DATA, state;
+        iso_day_re = next(line for line in script.splitlines() if line.startswith("const ISO_DAY_RE="))
+        period_core = (ASSETS / "period_core.js").read_text(encoding="utf-8")
+        node_script = period_core + "\n" + iso_day_re + "\n" + script[agg_start:agg_end] + "\n" + helpers + r'''
+let DATA, state, dashboardLanguage='zh';
 function detail(total){return {hourly_models:{a:[total,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}};}
 state={gran:'month',models:new Set(['a'])};
 DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
@@ -1322,20 +1543,19 @@ for(let day=1;day<=25;day++){
   DATA.day_details[current]=detail(200);
   DATA.day_details[previous]=detail(100);
 }
-let result=periodDelta([{period:'2026-07',total:3100},{period:'2026-08',total:5050}]);
-if(!result||result.label!=='较上期同期'||Math.abs(result.value-100)>.0001)throw new Error('open month comparison');
+let win=deltaWindowInfo([{period:'2026-07-01',total:3100},{period:'2026-08-01',total:5050}]);
+if(!win||win.label!=='较上期同期'||win.mode!=='same-point'||win.currentDays.length!==25||Math.abs(deltaPercent(win)-100)>.0001)throw new Error('open month comparison');
 DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:'2026-07-31'},day_details:{}};
-result=periodDelta([{period:'2026-06',total:100},{period:'2026-07',total:125}]);
-if(!result||result.label!=='环比'||Math.abs(result.value-25)>.0001)throw new Error('complete period comparison');
+win=deltaWindowInfo([{period:'2026-06-01',total:100},{period:'2026-07-01',total:125}]);
+if(!win||win.label!=='环比'||win.mode!=='whole'||Math.abs(deltaPercent(win)-25)>.0001)throw new Error('complete period comparison');
+dashboardLanguage='en';
+if(deltaWindowInfo([{period:'2026-06-01',total:100},{period:'2026-07-01',total:125}]).label!=='vs prior period')throw new Error('english label');
 state.gran='day';DATA={models:['a'],generated:'2026-08-26 12:00',range:{until:null},day_details:{}};
-if(periodDelta([{period:'2026-08-25',total:100},{period:'2026-08-26',total:50}])!==null)throw new Error('partial day should be hidden');
+if(deltaWindowInfo([{period:'2026-08-25',total:100},{period:'2026-08-26',total:50}])!==null)throw new Error('partial day should be hidden');
+if(deltaPercent(null)!==null)throw new Error('null window percent');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1353,12 +1573,8 @@ if(previousHigher.value-previousHigher.delta<12)throw new Error('previous-high c
 const equal=barAnnotationLayout(60,60);
 if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
 '''
-        result = subprocess.run(
-            ["node", "-e", node_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _node.run_node(node_script, capture_output=True, text=True,
+                                check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         template = report_dashboard._TEMPLATE
@@ -1368,13 +1584,13 @@ if(equal.peak-equal.delta<12)throw new Error('equal comparison overlaps');
             "function trapModalFocus(e,modal)",
             "function activeModal()",
             "openModal(document.getElementById('share-modal')",
-            "openModal(modal,document.getElementById('ach-search'),document.getElementById('ach-open'))",
+            "openModal(modal,document.getElementById('ach-search'),returnFocus||document.getElementById('ach-open'))",
             "openModal(modal,document.getElementById('help-close'))",
             "openModal(modal,document.getElementById('replay-x'))",
             "role=dialog aria-modal=true aria-label=\"Token 分享卡\"",
             "role=dialog aria-modal=true aria-labelledby=ach-title",
             "class=table-scroll tabindex=0 role=region aria-label=\"Token 明细，可横向滚动\"",
-            ".head-tools{display:flex;width:100%;min-width:0;flex-wrap:wrap}",
+            ".head-tools{display:flex;width:100%;min-width:0;flex-wrap:wrap;justify-content:flex-start}",
             ".passport{padding:22px;min-height:0}",
             ".ach-bar{flex-wrap:wrap;min-width:0}",
         ):
@@ -1524,7 +1740,7 @@ DATA.snapshot.id='snap-b';DATA.generated='2026-07-29 12:00';const newerRows=[...
 memory.value='{bad';if(readAlmanacStore(memory).v!==1)throw new Error('malformed storage');
 if(almanacScopeKey({...DATA,anonymized:true})===almanacScopeKey(DATA))throw new Error('raw anon scope');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         template = report_dashboard._TEMPLATE
@@ -1591,6 +1807,10 @@ if(almanacScopeKey({...DATA,anonymized:true})===almanacScopeKey(DATA))throw new 
         self.assertEqual("2026-07-01", provenance["first_day"])
         self.assertEqual("2026-07-03", provenance["last_day"])
         self.assertEqual(1, provenance["sources"]["codex"]["records"])
+        self.assertEqual("2026-07-03", provenance["sources"]["codex"]["first_day"])
+        self.assertEqual("2026-07-03", provenance["sources"]["codex"]["last_day"])
+        self.assertEqual("2026-07-01", provenance["sources"]["claude"]["first_day"])
+        self.assertEqual("2026-07-02", provenance["sources"]["claude"]["last_day"])
         self.assertEqual(provenance, anonymized["provenance"])
         serialized = json.dumps(provenance, ensure_ascii=False)
         self.assertNotIn("/synthetic/project-a", serialized)
@@ -1679,7 +1899,7 @@ if(capabilityInfo().find(x=>x.key==='reuse').status!=='off')throw new Error('cac
 DATA.range.until='2026-07-20';if(freshnessInfo().key!=='range')throw new Error('range freshness');
 DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw new Error('empty health');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
     def test_signal_lens_data_moments_and_contextual_empty_contracts(self):
         template = report_dashboard._TEMPLATE
@@ -1735,9 +1955,10 @@ DATA.provenance={records:0,sources:{}};if(provenanceHealth().key!=='base')throw 
             self.fail(f"未找到完整函数: {name}")
 
         helpers = "\n".join(extract_function(name) for name in (
-            "signalCompatibility", "signalComparison",
+            "signalCompatibility", "signalComparison", "insightDeltaText",
         ))
-        node_script = r'''
+        core = (ASSETS / "insight_core.js").read_text(encoding="utf-8")
+        node_script = core + r'''
 const SIGNAL_COMPATIBILITY={model:new Set(['model']),period:new Set(['period']),project:new Set(['project']),session:new Set(['session'])};
 const human=n=>String(Math.round(n));
 const evidence={a:{total:100},b:{total:150},project:{total:300}};
@@ -1750,7 +1971,7 @@ if(mixed.compatible||!mixed.mixed||!mixed.label.includes('混合类型'))throw n
 const missing=signalComparison({pin:{type:'model',id:'a'},peek:null});
 if(missing.compatible||!missing.label.includes('Peek'))throw new Error('missing peek');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1761,7 +1982,7 @@ if(missing.compatible||!missing.label.includes('Peek'))throw new Error('missing 
             "const signalState = {peek:null,peekSource:null,pinnedSignal:null",
             "id=signal-pin-summary", "id=signal-peek-summary", "id=signal-delta-summary",
             "scope==='filters'", "canDim=!!root", "pair.pin.type===pair.peek.type",
-            "function currentFlow()", "fd||Object.keys(DATA.day_details||{})",
+            "function focusDays()", "focusDays()||Object.keys(DATA.day_details||{})",
             "if(!state.models.has(x[2]))return", "if(!state.models.has(x[0]))return",
             "scopedEntities('project')", "scopedEntities('session')",
         ):
@@ -1805,7 +2026,7 @@ const gapRelay=latestModelRelay([rows[0],rows[2]]);if(gapRelay)throw new Error('
 const tieRelay=latestModelRelay([{period:'2026-07-01',total:10,models:{a:10}},{period:'2026-07-02',total:20,models:{a:10,b:10}}]);if(tieRelay)throw new Error('tie relay');
 state.models.clear();if(trailingQuietDays(rows,'2026-07-06').kind!=='no-observation')throw new Error('empty filter');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
     @requires_node
     def test_trend_annotation_rail_maps_merges_and_supports_keyboard(self):
@@ -1849,7 +2070,7 @@ if(events.length!==1||events[0].events.length!==3)throw new Error('monthly merge
 state.gran='day';rows=[{period:'2026-07-01'},{period:'2026-07-02'},{period:'2026-07-08'}];events=momentEventsForRows(rows);
 if(events.length!==3)throw new Error('daily mapping');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         keyboard_helpers = "\n".join(extract_function(name) for name in (
@@ -1880,7 +2101,7 @@ e=event('Enter');if(!handleMomentKey(e,markers,1)||activated!=='2026-07-02'||!e.
 activated=null;e=event(' ');if(!handleMomentKey(e,markers,0)||activated!=='2026-07-01'||!e.prevented)throw new Error('Space');
 e=event('Tab');if(handleMomentKey(e,markers,1)||e.prevented)throw new Error('unhandled key');
 '''
-        result = subprocess.run(["node", "-e", keyboard_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(keyboard_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -1913,7 +2134,7 @@ if(sessions.length!==2||sessions[0][2]!=='sg'||sessions[0][1]!==75||sessions[1][
 state.models=new Set(['b']);projects=aggregateEntities(Object.keys(DATA.day_details),'project');
 if(projects.length!==2||projects[0][2]!=='beta'||projects[0][1]!==90||projects[1][2]!=='alpha'||projects[1][1]!==50)throw new Error('model switch ranking');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_data_trail_structure_accessibility_and_motion_contracts(self):
@@ -1986,6 +2207,7 @@ if(projects.length!==2||projects[0][2]!=='beta'||projects[0][1]!==90||projects[1
             "trailScope", "trailDeltaText", "trailModelPrevious",
             "trailEntityEvidence", "trailReuseEvidence",
         ))
+        helpers = (ASSETS / "period_core.js").read_text(encoding="utf-8") + "\n" + helpers
         node_script = r'''
 let stateRevision=0,derivedRevision=-1,derivedCache={};
 const state={gran:'day',models:new Set(['a','b']),focusPeriod:'2026-07-02'};
@@ -2032,7 +2254,7 @@ if(reuse.parts[4]!==15)throw new Error('Other hidden');
 state.focusPeriod=null;derivedCache={};derivedRevision=-1;const allScope=trailScope(),allReuse=trailReuseEvidence('a',allScope);
 if(allScope.total!==410||allScope.calls!==13||allReuse.total!==350||allReuse.parts.join(',')!=='117,78,64,60,31')throw new Error('full-range aggregation');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
     @requires_node
@@ -2094,7 +2316,7 @@ const event={target,key:'End',prevented:false,preventDefault(){this.prevented=tr
 if(!trailRoving(event)||focused!==items[2]||!event.prevented||items[2].tabIndex!==0)throw new Error('roving End');
 if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!editableTarget({tagName:'DIV',isContentEditable:true})||editableTarget({tagName:'BUTTON'}))throw new Error('editable guard');
 '''
-        result = subprocess.run(["node", "-e", node_script], capture_output=True, text=True, check=False)
+        result = _node.run_node(node_script, capture_output=True, text=True, check=False)
         self.assertEqual(0, result.returncode, result.stderr)
 
         view_start = script.index("function viewParams()")
@@ -2105,9 +2327,10 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
         storage_keys = set(re.findall(r"tk-[a-z0-9-]+", report_dashboard._TEMPLATE))
         storage_keys.discard("tk-motion-change")
         self.assertEqual(
-            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang"},
+            {"tk-theme", "tk-motion", "tk-mods", "tk-achievements-v2", "tk-almanac-v1", "tk-lang", "tk-cost-v1", "tk-budget-v1", "tk-hud-v1", "tk-dig-v1", "tk-sub-v1"},
             storage_keys,
         )
+        self.assertIn("JSON.stringify({c:hudPrefs.c,r:Math.round(hudPrefs.r),b:Math.round(hudPrefs.b)})", script)
         self.assertNotIn("localStorage.setItem('tk-trail", script)
         self.assertNotIn("localStorage.getItem('tk-trail", script)
         self.assertIn("项目和会话是平行聚合，不是已证明的关联", script)
@@ -2135,3 +2358,162 @@ if(!editableTarget({tagName:'INPUT'})||!editableTarget({tagName:'select'})||!edi
             "synthetic-session-sensitive",
         ):
             self.assertNotIn(sensitive, html)
+
+
+class SessionContextTests(unittest.TestCase):
+    def _records(self):
+        def rec(day, ts, sid, cwd, source, total, model="model-a"):
+            return {
+                "source": source,
+                "ts": ts,
+                "date": day,
+                "model": model,
+                "input": total,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total": total,
+                "session": sid,
+                "cwd": cwd,
+            }
+        return [
+            rec("2026-07-01", "2026-07-01T01:00:00+08:00", "s1", "/syn/proj-a", "claude", 100),
+            rec("2026-07-02", "2026-07-02T01:00:00+08:00", "s1", "/syn/proj-b", "claude", 40),
+            rec("2026-07-03", "2026-07-03T01:00:00+08:00", "s1", "/syn/proj-a", "codex", 10),
+            rec("2026-07-02", "2026-07-02T02:00:00+08:00", "s2", "/syn/proj-b", "claude", 50, model="model-b"),
+        ]
+
+    def test_session_context_dominant_multi_source_and_dates(self):
+        payload = dashboard_payload.build_payload(self._records())
+        ctx = payload["session_context"]["s1"]
+        self.assertEqual("syn/proj-a", ctx["p"])
+        self.assertTrue(ctx["pm"])
+        self.assertEqual(["claude", "codex"], ctx["s"])
+        self.assertEqual("2026-07-01", ctx["d0"])
+        self.assertEqual("2026-07-03", ctx["d1"])
+        s2 = payload["session_context"]["s2"]
+        self.assertFalse(s2["pm"])
+        self.assertEqual("syn/proj-b", s2["p"])
+
+    def test_report_sources_are_not_overwritten_by_session_context(self):
+        claude = self._records()[0]
+        codex = dict(claude, source="codex", session="", cwd="")
+        for records in ([claude, codex], [codex, claude]):
+            for sources in (None, ["claude"], ["claude", "codex"]):
+                with self.subTest(sources=sources, first_source=records[0]["source"]):
+                    payload = dashboard_payload.build_payload(
+                        records, sources=sources, session_titles={},
+                    )
+                    self.assertEqual(sources or [], payload["source"])
+                    self.assertEqual(["claude"], payload["session_context"]["s1"]["s"])
+                    self.assertEqual({"claude": 100, "codex": 100}, payload["achievement_stats"]["source_totals"])
+
+    def test_dominant_project_tie_is_stable(self):
+        records = [
+            {"source": "claude", "ts": "2026-07-01T01:00:00+08:00", "date": "2026-07-01",
+             "model": "model-a", "input": 50, "output": 0, "cache_read": 0, "cache_write": 0,
+             "total": 50, "session": "tie", "cwd": "/syn/zeta"},
+            {"source": "claude", "ts": "2026-07-01T02:00:00+08:00", "date": "2026-07-01",
+             "model": "model-a", "input": 50, "output": 0, "cache_read": 0, "cache_write": 0,
+             "total": 50, "session": "tie", "cwd": "/syn/alpha"},
+        ]
+        first = dashboard_payload.build_payload(records)["session_context"]["tie"]
+        second = dashboard_payload.build_payload(list(reversed(records)))["session_context"]["tie"]
+        self.assertEqual("syn/alpha", first["p"])
+        self.assertEqual(first, second)
+
+    def test_session_context_respects_range(self):
+        payload = dashboard_payload.build_payload(
+            self._records(), since="2026-07-02", until="2026-07-03",
+        )
+        ctx = payload["session_context"]["s1"]
+        self.assertEqual("2026-07-02", ctx["d0"])
+        self.assertEqual("2026-07-03", ctx["d1"])
+        s2 = payload["session_context"]["s2"]
+        self.assertEqual("2026-07-02", s2["d0"])
+
+    def test_session_context_anonymized_has_no_raw_identifiers(self):
+        payload = dashboard_payload.build_payload(self._records(), anonymize=True)
+        for ctx in payload["session_context"].values():
+            self.assertTrue(ctx["p"].startswith("Project-") or ctx["p"] == "")
+            self.assertNotIn("/syn/", ctx["p"])
+        for key in payload["session_context"]:
+            self.assertTrue(key.startswith("Session-"))
+
+    def test_empty_label_instead_of_short_uuid(self):
+        payload = dashboard_payload.build_payload(self._records(), session_titles={})
+        day = payload["day_details"]["2026-07-01"]
+        for row in day["sessions"]:
+            self.assertEqual("", row[0])
+        for row in day["top_sessions"]:
+            self.assertEqual("", row[0])
+        self.assertEqual("", day["flow"]["model_session"][0][1])
+
+    def test_injected_titles_are_sanitized(self):
+        payload = dashboard_payload.build_payload(
+            self._records(),
+            session_titles={
+                "s1": "This session is being continued from a previous conversation",
+                "s2": "优化导入向导",
+            },
+        )
+        labels = {
+            row[2]: row[0]
+            for row in payload["day_details"]["2026-07-02"]["sessions"]
+        }
+        self.assertEqual("", labels["s1"])
+        self.assertEqual("优化导入向导", labels["s2"])
+
+    def test_injected_titles_do_not_read_logs(self):
+        def boom(*args, **kwargs):
+            raise AssertionError("log read")
+        with mock.patch.object(dashboard_payload.readers, "session_title", boom), \
+                mock.patch.object(dashboard_payload.readers, "load_session_summaries", boom), \
+                mock.patch.object(dashboard_payload.readers, "build_session_index", boom):
+            payload = dashboard_payload.build_payload(
+                self._records(), session_titles={"s1": "修复登录"},
+            )
+        labels = {
+            row[2]: row[0]
+            for row in payload["day_details"]["2026-07-02"]["sessions"]
+        }
+        self.assertEqual("修复登录", labels["s1"])
+
+    def test_bad_sidecar_non_string_falls_back_without_crash(self):
+        with mock.patch.object(dashboard_payload.readers, "load_session_summaries",
+                               return_value={"s1": 42}), \
+                mock.patch.object(dashboard_payload.readers, "build_session_index",
+                                  return_value={}), \
+                mock.patch.object(dashboard_payload.readers, "session_title",
+                                  return_value=""):
+            payload = dashboard_payload.build_payload(self._records())
+        labels = {
+            row[2]: row[0]
+            for row in payload["day_details"]["2026-07-02"]["sessions"]
+        }
+        self.assertEqual("", labels["s1"])
+
+    def test_anonymize_priority_ignores_injected_titles(self):
+        records = [
+            {"source": "claude", "ts": "2026-07-01T01:00:00+08:00", "date": "2026-07-01",
+             "model": "model-a", "input": 10, "output": 0, "cache_read": 0, "cache_write": 0,
+             "total": 10, "session": "s1", "cwd": "/syn/private-project"},
+        ]
+        payload = dashboard_payload.build_payload(
+            records, anonymize=True, session_titles={"s1": "真实敏感标题"},
+        )
+        row = payload["day_details"]["2026-07-01"]["sessions"][0]
+        self.assertNotEqual("真实敏感标题", row[0])
+        self.assertTrue(row[0].startswith("Session-"))
+
+    def test_session_context_wire_roundtrip(self):
+        payload = dashboard_payload.build_payload(self._records())
+        wire = dashboard_wire.encode_payload(payload)
+        decoded = dashboard_wire.decode_payload(wire)
+        self.assertEqual(payload["session_context"], decoded["session_context"])
+
+    def test_legacy_payload_without_session_context_still_decodes(self):
+        legacy = {"v": 1, "s": [], "d": {"range": {}}}
+        wire = dashboard_wire.encode_payload(legacy)
+        decoded = dashboard_wire.decode_payload(wire)
+        self.assertNotIn("session_context", decoded)

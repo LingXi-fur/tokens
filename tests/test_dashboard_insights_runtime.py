@@ -1,0 +1,575 @@
+"""Browser runtime checks for the overview insights.
+
+Covers the today-vs-yesterday pace race, the model share stream and the
+activity calendar on a deterministic synthetic demo payload: numbers agree with
+the embedded payload, interactions drive the shared date range, both languages
+render without leftovers, motion is gated, and narrow viewports neither overflow
+nor shrink touch targets.
+"""
+from tests import _hermetic  # noqa: F401
+
+import json
+import re
+import sys
+import tempfile
+import unittest
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+sys.path.insert(0, str(SRC))
+
+from tokens_cli import demo, report_dashboard  # noqa: E402
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:  # pragma: no cover - depends on optional browser tooling
+    sync_playwright = None
+
+CJK = re.compile(r"[㐀-鿿]")
+TODAY = date(2026, 9, 24)
+
+
+@unittest.skipIf(sync_playwright is None, "Playwright is not installed")
+class DashboardInsightsRuntimeTests(unittest.TestCase):
+    BROWSER = "chromium"
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        bundle = demo.build_demo(today=TODAY)
+        common = dict(sources=bundle["sources"], session_titles=bundle["session_titles"], demo=True)
+        cls._path = Path(cls._tmp.name) / "insights-demo.html"
+        cls._path.write_text(report_dashboard.build_dashboard_html(
+            bundle["records"], since=bundle["since"], until=bundle["until"],
+            generated_at=bundle["generated_at"], **common), encoding="utf-8")
+        # A historical report generated well after its range: "today" is not in it.
+        cls._stale_path = Path(cls._tmp.name) / "insights-stale.html"
+        cls._stale_path.write_text(report_dashboard.build_dashboard_html(
+            bundle["records"], since=bundle["since"], until=bundle["until"],
+            generated_at=datetime.combine(TODAY + timedelta(days=5), datetime.min.time().replace(hour=9)),
+            **common), encoding="utf-8")
+        cls._playwright = sync_playwright().start()
+        try:
+            cls._browser = getattr(cls._playwright, cls.BROWSER).launch(headless=True)
+        except Exception as exc:
+            cls._playwright.stop()
+            cls._tmp.cleanup()
+            raise unittest.SkipTest(f"{cls.BROWSER} is unavailable: {exc}")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._browser.close()
+        cls._playwright.stop()
+        cls._tmp.cleanup()
+
+    def open(self, *, path=None, viewport=None, color_scheme="light", reduced_motion="reduce",
+             has_touch=False, language=None, theme=None):
+        context = self._browser.new_context(
+            viewport=viewport or {"width": 1280, "height": 900},
+            color_scheme=color_scheme, reduced_motion=reduced_motion, has_touch=has_touch,
+        )
+        page = context.new_page()
+        errors = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+        page.goto((path or self._path).as_uri() + (f"?t={theme}" if theme else ""))
+        page.evaluate("() => { if (typeof setDigAll === 'function') setDigAll(true); }")
+        page.wait_for_function("() => document.getElementById('share-stream') && !document.getElementById('share-stream').hidden")
+        if language:
+            page.evaluate("lang => applyLanguage(lang)", language)
+        self.addCleanup(context.close)
+        return page, errors
+
+    # ---- pace race -------------------------------------------------------
+
+    def test_pace_race_matches_payload_and_follows_model_filter(self):
+        page, errors = self.open()
+        info = page.evaluate("""() => {
+          const day=generatedDay(),d=DATA.day.find(r=>r.period===day),y=DATA.day.find(r=>r.period===addISODays(day,-1));
+          return {visible:!document.getElementById('pace-race').hidden,day,todayTotal:d.total,yesterdayTotal:y.total,
+                  race:{today:insightState.race.today.total,yesterday:insightState.race.yesterday.total,hour:insightState.race.hour},
+                  delta:document.getElementById('pace-delta').textContent,lead:document.getElementById('pace-delta').dataset.lead,
+                  stats:document.querySelectorAll('#pace-stats dt').length,paths:document.querySelectorAll('#pace-chart .pace-today,#pace-chart .pace-yesterday').length,
+                  legend:document.getElementById('pace-legend').textContent};
+        }""")
+        self.assertTrue(info["visible"])
+        self.assertEqual(TODAY.isoformat(), info["day"])
+        self.assertEqual(info["todayTotal"], info["race"]["today"])
+        self.assertEqual(info["yesterdayTotal"], info["race"]["yesterday"])
+        self.assertEqual(12, info["race"]["hour"])
+        self.assertIn(info["lead"], {"ahead", "behind", "even", "new", "idle"})
+        self.assertRegex(info["delta"], r"[▲▼] \d+\.\d%")
+        self.assertGreaterEqual(info["stats"], 4)
+        self.assertEqual(2, info["paths"])
+        self.assertIn("今日", info["legend"])
+
+        # Isolate one model through the real filter chips: the race narrows to that model only.
+        model = page.evaluate("() => Object.keys(DATA.day.find(r=>r.period===generatedDay()).models).find(m=>m!=='other')")
+        for other in page.evaluate("m => DATA.models.filter(x=>x!==m)", model):
+            if other == "other" and page.locator("#more-models-dropdown").count():
+                page.locator("#more-models-dropdown summary").click()
+                for cb in page.locator('#more-models-dropdown input[data-other-filter]').all():
+                    if cb.is_checked():
+                        cb.uncheck()
+            else:
+                page.locator("#filters label.chip", has=page.locator(f'input[value="{other}"]')).click()
+        narrowed = page.evaluate("""m => ({race:insightState.race&&insightState.race.today.total,
+            expected:DATA.day.find(r=>r.period===generatedDay()).models[m]||0})""", model)
+        self.assertEqual(narrowed["expected"], narrowed["race"])
+
+        # Hovering the chart shows an hourly tooltip.
+        page.locator("#pace-chart").scroll_into_view_if_needed()
+        box = page.locator("#pace-chart").bounding_box()
+        page.mouse.move(box["x"] + box["width"] * 0.2, box["y"] + box["height"] / 2)
+        tip = page.locator("#pace-tip")
+        self.assertTrue(tip.is_visible())
+        self.assertRegex(tip.inner_text(), r"\d{2}:00")
+        self.assertEqual([], errors)
+
+    def test_pace_race_hidden_when_generation_day_is_outside_report(self):
+        page, errors = self.open(path=self._stale_path)
+        state = page.evaluate("""() => ({pace:document.getElementById('pace-race').hidden,
+            stream:document.getElementById('share-stream').hidden,cal:document.getElementById('activity-cal').hidden})""")
+        self.assertEqual({"pace": True, "stream": False, "cal": False}, state)
+        self.assertEqual([], errors)
+
+    # ---- share stream ----------------------------------------------------
+
+    def test_share_stream_layers_hover_and_click_sets_range(self):
+        page, errors = self.open()
+        info = page.evaluate("""() => {
+          const layers=[...document.querySelectorAll('#share-stream-svg .ss-layer')];
+          const present=DATA.models.filter(m=>DATA.day.some(r=>(r.models[m]||0)>0));
+          return {models:layers.map(l=>l.dataset.model),present,
+                  colorsOk:layers.every(l=>l.style.fill&&getComputedStyle(l).fill!=='none'),
+                  days:insightState.stream.days.length,span:InsightCore.continuousDays(DATA.range.since,DATA.range.until).length,
+                  seg:document.querySelectorAll('#share-stream .seg,#activity-cal .seg,#pace-race .seg').length};
+        }""")
+        self.assertEqual(info["present"], info["models"])
+        self.assertTrue(info["colorsOk"])
+        self.assertEqual(info["span"], info["days"])
+        self.assertEqual(0, info["seg"], "new charts must not reuse the .seg class")
+
+        svg = page.locator("#share-stream-svg")
+        svg.scroll_into_view_if_needed()
+        box = svg.bounding_box()
+        page.mouse.move(box["x"] + box["width"] - 3, box["y"] + box["height"] / 2)
+        tip = page.locator("#share-stream-tip")
+        self.assertTrue(tip.is_visible())
+        self.assertIn(TODAY.isoformat(), tip.inner_text())
+        tip_box, plot_box = tip.bounding_box(), page.locator("#share-stream-plot").bounding_box()
+        self.assertGreaterEqual(tip_box["x"], plot_box["x"] - 1)
+        self.assertLessEqual(tip_box["x"] + tip_box["width"], plot_box["x"] + plot_box["width"] + 1)
+
+        page.mouse.click(box["x"] + box["width"] - 3, box["y"] + box["height"] / 2)
+        rng = page.evaluate("() => ({range:state.range,date:state.rangeDate})")
+        self.assertEqual({"range": "custom", "date": TODAY.isoformat()}, rng)
+        dims = page.locator("#share-stream-svg .ss-dim").count()
+        self.assertGreaterEqual(dims, 1, "days outside the selected range are dimmed")
+        self.assertEqual(1, page.locator("#share-stream-svg .ss-range").count())
+        self.assertEqual([], errors)
+
+    def test_share_stream_keyboard_and_mode_toggle(self):
+        page, errors = self.open()
+        svg = page.locator("#share-stream-svg")
+        svg.focus()
+        self.assertTrue(page.locator("#share-stream-tip").is_visible())
+        page.keyboard.press("ArrowLeft")
+        page.keyboard.press("ArrowLeft")
+        expected = (TODAY - timedelta(days=2)).isoformat()
+        self.assertIn(expected, page.locator("#share-stream-readout").inner_text())
+        page.keyboard.press("Home")
+        first = page.evaluate("() => insightState.stream.days[0]")
+        self.assertIn(first, page.locator("#share-stream-readout").inner_text())
+        page.keyboard.press("End")
+        page.keyboard.press("ArrowLeft")
+        page.keyboard.press("Enter")
+        self.assertEqual((TODAY - timedelta(days=1)).isoformat(), page.evaluate("() => state.rangeDate"))
+
+        share = page.locator('#share-stream-modes [data-stream-mode="share"]')
+        volume = page.locator('#share-stream-modes [data-stream-mode="volume"]')
+        self.assertEqual("true", share.get_attribute("aria-pressed"))
+        volume.click()
+        self.assertEqual("true", volume.get_attribute("aria-pressed"))
+        self.assertEqual("false", share.get_attribute("aria-pressed"))
+        mode = page.evaluate("""() => {
+          const s=insightState.stream,i=Math.floor(s.days.length/2),sum=s.layers.reduce((a,l)=>a+(l.y1[i]-l.y0[i]),0);
+          return {mode:s.mode,centre:s.layers[0].y0[i]+s.layers[s.layers.length-1].y1[i],sum,ticks:document.querySelectorAll('#share-stream-svg .ss-grid').length};
+        }""")
+        self.assertEqual("volume", mode["mode"])
+        self.assertAlmostEqual(0, mode["centre"], places=6)
+        self.assertGreater(mode["sum"], 1)
+        self.assertEqual(0, mode["ticks"], "percentage gridlines only belong to share mode")
+        self.assertEqual([], errors)
+
+    def test_share_stream_touch_first_tap_previews_second_tap_commits(self):
+        page, errors = self.open(viewport={"width": 390, "height": 844}, has_touch=True)
+        svg = page.locator("#share-stream-svg")
+        svg.scroll_into_view_if_needed()
+        box = svg.bounding_box()
+        point = {"x": box["x"] + box["width"] - 2, "y": box["y"] + box["height"] / 2}
+        page.touchscreen.tap(point["x"], point["y"])
+        self.assertEqual("all", page.evaluate("() => state.range"), "first tap only previews")
+        self.assertTrue(page.locator("#share-stream-tip").is_visible())
+        page.touchscreen.tap(point["x"], point["y"])
+        self.assertEqual({"range": "custom", "date": TODAY.isoformat()},
+                         page.evaluate("() => ({range:state.range,date:state.rangeDate})"))
+        self.assertEqual([], errors)
+
+    PALETTE_MISMATCH = """() => [...document.querySelectorAll('#share-stream-svg .ss-layer')].filter(layer => {
+      const probe=document.createElement('i');probe.style.color=modelColor(layer.dataset.model);document.body.appendChild(probe);
+      const want=getComputedStyle(probe).color;probe.remove();return getComputedStyle(layer).fill!==want;
+    }).map(layer=>layer.dataset.model)"""
+
+    def test_share_stream_follows_theme_palette(self):
+        for scheme in ("light", "dark"):
+            with self.subTest(scheme=scheme):
+                # 默认主题是暗色；显式 ?t=auto 时才跟随系统配色
+                page, errors = self.open(color_scheme=scheme, theme="auto")
+                self.assertEqual(scheme, page.evaluate("() => effectiveTheme()"))
+                self.assertEqual([], page.evaluate(self.PALETTE_MISMATCH))
+                self.assertEqual([], errors)
+        page, errors = self.open(color_scheme="light", theme="auto")
+        fills = "() => [...document.querySelectorAll('#share-stream-svg .ss-layer')].map(l=>getComputedStyle(l).fill)"
+        before = page.evaluate(fills)
+        page.evaluate("() => applyTheme('dark')")
+        self.assertNotEqual(before, page.evaluate(fills), "theme switch repaints the stream")
+        self.assertEqual([], page.evaluate(self.PALETTE_MISMATCH))
+        self.assertEqual([], errors)
+
+    # ---- today HUD ---------------------------------------------------------
+
+    HUD_STATE = """() => {const h=document.getElementById('hud');return {hidden:h.hidden,away:h.classList.contains('away'),
+      inert:h.hasAttribute('inert'),collapsed:h.classList.contains('collapsed'),
+      expanded:document.getElementById('hud-toggle').getAttribute('aria-expanded'),
+      saved:localStorage.getItem('tk-hud-v1')}}"""
+
+    def test_today_hud_yields_to_overview_collapses_and_persists_layout_only(self):
+        page, errors = self.open()
+        state = page.evaluate(self.HUD_STATE)
+        self.assertFalse(state["hidden"])
+        self.assertTrue(state["away"] and state["inert"], "HUD 让位于可见的总览 KPI")
+        page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+        page.wait_for_function("() => !document.getElementById('hud').classList.contains('away')")
+        self.assertFalse(page.evaluate(self.HUD_STATE)["inert"])
+        # 口径复用：与按模型筛选后的今日合计一致
+        page.wait_for_function("() => document.getElementById('hud-total').textContent===human(selectedDayTotal(generatedDay()))")
+        page.focus("#hud-toggle")
+        page.keyboard.press("Escape")
+        state = page.evaluate(self.HUD_STATE)
+        self.assertTrue(state["collapsed"])
+        self.assertEqual("false", state["expanded"])
+        self.assertEqual(["b", "c", "r"], sorted(json.loads(state["saved"])))
+        page.evaluate("() => setHudCollapsed(false)")
+        page.focus("#hud-grip")
+        before = page.evaluate("() => hudPrefs.r")
+        page.keyboard.press("ArrowLeft")
+        self.assertEqual(before + 16, page.evaluate("() => hudPrefs.r"))
+        page.evaluate("() => setHudCollapsed(true)")
+        page.reload()
+        page.wait_for_function("() => document.getElementById('share-stream') && !document.getElementById('share-stream').hidden")
+        self.assertTrue(page.evaluate(self.HUD_STATE)["collapsed"])
+        self.assertEqual([], errors)
+
+    def test_today_hud_starts_collapsed_on_narrow_screens_without_overflow(self):
+        page, errors = self.open(viewport={"width": 390, "height": 844}, has_touch=True)
+        page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+        page.wait_for_function("() => !document.getElementById('hud').classList.contains('away')")
+        state = page.evaluate(self.HUD_STATE)
+        self.assertTrue(state["collapsed"])
+        box = page.locator("#hud").bounding_box()
+        self.assertLessEqual(box["x"] + box["width"], 390)
+        self.assertGreaterEqual(page.locator("#hud-toggle").bounding_box()["height"], 44)
+        self.assertLessEqual(page.evaluate("() => document.documentElement.scrollWidth"), 390)
+        self.assertEqual([], errors)
+
+    def test_today_hud_and_pace_guard_tiny_denominators_in_both_languages(self):
+        page, errors = self.open()
+        craft = """([todayEach,yesterdayEach]) => {
+          const day=generatedDay(),y=addISODays(day,-1),m=DATA.models[0];
+          const arr=v=>{const a=new Array(24).fill(0);for(let i=0;i<12;i++)a[i]=v;return a;};
+          DATA.day_details=Object.assign({},DATA.day_details,{
+            [day]:{hourly_models:{[m]:arr(todayEach)}},
+            [y]:{hourly_models:{[m]:arr(yesterdayEach)}}});
+          state.models=new Set(DATA.models);
+          renderPaceRace();renderHud();
+          return {hud:document.getElementById('hud-delta').textContent,
+                  pace:document.getElementById('pace-delta').textContent,
+                  lead:document.getElementById('pace-lead').textContent,
+                  race:{today:insightState.race&&insightState.race.today.total,
+                        yesterday:insightState.race&&insightState.race.yesterday.atCutoff}};
+        }"""
+        # The real +99203% case: 620M today vs ~625k yesterday (0.1% of today)
+        # is below the 1% floor, so it is described in words, not multiplied.
+        reported = page.evaluate(craft, [51666666, 52083])
+        self.assertAlmostEqual(620000000, reported["race"]["today"], delta=16)
+        self.assertAlmostEqual(624996, reported["race"]["yesterday"], delta=1)
+        self.assertEqual("昨日此时几乎没有用量", reported["hud"])
+        self.assertEqual("", reported["pace"])
+
+        # Above the 1% floor but over +999%: a multiple is readable.
+        extreme = page.evaluate(craft, [51666666, 833334])
+        self.assertAlmostEqual(10000008, extreme["race"]["yesterday"], delta=16)
+        self.assertRegex(extreme["hud"], r"^▲ \d+\.\d× 较昨日同一时刻$")
+        self.assertRegex(extreme["pace"], r"^▲ \d+\.\d×$")
+        self.assertTrue(extreme["lead"].startswith("领先昨日"))
+        self.assertNotIn("%", extreme["hud"] + extreme["pace"])
+
+        # Tiny but non-zero and far below 1% of today: plain words, no percent.
+        tiny = page.evaluate(craft, [51666666, 500])
+        self.assertEqual("昨日此时几乎没有用量", tiny["hud"])
+        self.assertEqual("", tiny["pace"])
+        self.assertEqual("昨日此时几乎没有用量", tiny["lead"])
+        # Exactly zero yesterday takes the same wording.
+        zero = page.evaluate(craft, [51666666, 0])
+        self.assertEqual("昨日此时几乎没有用量", zero["hud"])
+
+        # A normal change keeps the percentage form.
+        normal = page.evaluate(craft, [28333333, 25000000])
+        self.assertRegex(normal["hud"], r"^▲ \d+\.\d% 较昨日同一时刻$")
+        self.assertRegex(normal["pace"], r"^▲ \d+\.\d%$")
+
+        # English uses words for the tiny case and multiples for extremes,
+        # never a Chinese unit in the delta line.
+        page.evaluate("() => applyLanguage('en')")
+        extreme_en = page.evaluate(craft, [51666666, 833334])
+        self.assertRegex(extreme_en["hud"], r"^▲ \d+\.\d× vs yesterday, same time$")
+        tiny_en = page.evaluate(craft, [51666666, 500])
+        self.assertEqual("almost nothing at this time yesterday", tiny_en["hud"])
+        self.assertEqual("almost nothing at this time yesterday", tiny_en["lead"])
+        for text in (extreme_en["hud"], extreme_en["pace"], tiny_en["hud"], tiny_en["lead"]):
+            self.assertIsNone(CJK.search(text), text)
+            self.assertNotIn("亿", text)
+            self.assertNotIn("万", text)
+
+        # No rendered percentage on the page can carry five or more integer digits.
+        for language in ("en", "zh"):
+            page.evaluate("lang => applyLanguage(lang)", language)
+            page.evaluate(craft, [51666666, 833334])
+            body = page.locator("body").inner_text()
+            self.assertIsNone(re.search(r"\d{5,}(?:\.\d+)?%", body),
+                              language + " body leaked an unreadable percentage")
+        self.assertEqual([], errors)
+
+    # ---- quota HUD (#41) ---------------------------------------------------
+
+    QUOTA_CRAFT = """(projected,reset,kind='claude') => {
+      const base='2026-09-24T12:00:00+08:00';
+      const window={plan:'plus',limit:'codex',window:'5h',window_minutes:300,
+        used_percent:99,resets_at:reset,observed_at:base,status:'current',
+        velocity_per_hour:10,projection:{status:'hit',projected_at:projected}};
+      DATA.quota={generated_at:base,timezone:'Asia/Shanghai',
+        codex:kind==='codex'?[window]:[
+          window,
+          Object.assign({},window,{window:'week',window_minutes:10080,used_percent:30,
+            resets_at:'2026-09-28T12:00:00+08:00',
+            projection:{status:'safe',projected_at:'2026-09-30T12:00:00+08:00'}})],
+        claude:{safe_windows:57,basis:'safe_floor',used_percent:33.4,
+          capacity_tokens:105685096,window_start:'2026-09-24T07:42:00+08:00',
+          window_end:'2026-09-24T12:42:00+08:00',velocity_per_hour:1800000,
+          has_hit:false,window_too_new:false,
+          projection:{status:'flat',projected_at:null}}};
+      renderHud();
+      const rows=[...document.querySelectorAll('#hud-quota .hq-row')];
+      return {hidden:document.getElementById('hud-quota').hidden,
+        rows:rows.map(row=>({text:row.innerText,warn:row.dataset.warn,
+          color:getComputedStyle(row.querySelector('.hq-note')).color}))};
+    }"""
+
+    def test_quota_hud_renders_hit_safe_flat_and_warning_color(self):
+        page, errors = self.open()
+        info = page.evaluate(self.QUOTA_CRAFT,
+                             ['2026-09-24T12:40:00+08:00',
+                              '2026-09-24T13:00:00+08:00'])
+        self.assertFalse(info["hidden"])
+        self.assertEqual(3, len(info["rows"]))
+        hit, safe, flat = info["rows"]
+        self.assertIn("用完", hit["text"])
+        self.assertEqual("true", hit["warn"])
+        self.assertIn("重置前用不完", safe["text"])
+        self.assertEqual("false", safe["warn"])
+        self.assertIn("最近一小时没在用", flat["text"])
+        self.assertNotEqual(hit["color"], safe["color"], "hit uses the warning colour")
+
+    def test_quota_hud_expired_and_missing_quota(self):
+        page, errors = self.open()
+        expired = page.evaluate("""() => {
+          DATA.quota={generated_at:'2026-09-24T12:00:00+08:00',timezone:'Asia/Shanghai',
+            codex:[{plan:'plus',limit:'codex',window:'5h',window_minutes:300,
+              used_percent:null,resets_at:'2026-09-24T11:00:00+08:00',
+              observed_at:'2026-09-24T10:00:00+08:00',status:'expired',
+              velocity_per_hour:null,projection:{status:'expired',projected_at:null}}],
+            claude:null};
+          renderHud();
+          const row=document.querySelector('#hud-quota .hq-row');
+          return {text:row.innerText,warn:row.dataset.warn,
+                  bar:row.querySelector('.hq-track i').style.width};
+        }""")
+        self.assertIn("窗口已重置，等新快照", expired["text"])
+        self.assertEqual("false", expired["warn"])
+        self.assertIn(expired["bar"], {"0%", "0.0%"})
+        hidden = page.evaluate("""() => {DATA.quota=null;renderHud();
+          return document.getElementById('hud-quota').hidden;}""")
+        self.assertTrue(hidden)
+
+    def test_quota_hud_and_brief_are_bilingual(self):
+        page, errors = self.open()
+        page.evaluate("() => applyLanguage('en')")
+        info = page.evaluate(self.QUOTA_CRAFT,
+                             ['2026-09-24T12:40:00+08:00',
+                              '2026-09-24T13:00:00+08:00'])
+        text = " ".join(row["text"] for row in info["rows"])
+        self.assertIn("safe through reset", text)
+        self.assertIn("no usage in the last hour", text)
+        self.assertIsNone(CJK.search(text))
+        self.assertNotIn("亿", text)
+
+    def test_quota_brief_tip_only_within_two_hours_before_reset(self):
+        page, errors = self.open()
+        soon = page.evaluate("""() => {DATA.quota={generated_at:'2026-09-24T12:00:00+08:00',
+          timezone:'Asia/Shanghai',codex:[],claude:{safe_windows:57,basis:'safe_floor',
+          used_percent:80,capacity_tokens:100,window_start:'2026-09-24T07:42:00+08:00',
+          window_end:'2026-09-24T13:00:00+08:00',velocity_per_hour:10,has_hit:false,
+          window_too_new:false,projection:{status:'hit',
+          projected_at:'2026-09-24T12:40:00+08:00'}}};
+          renderBriefTipsNow();return document.getElementById('brief-tips').innerText;}""")
+        self.assertIn("按最近一小时的速度", soon)
+        self.assertIn("Claude 5h", soon)
+        far = page.evaluate("""() => {DATA.quota.claude.projection.projected_at=
+          '2026-09-24T15:00:00+08:00';DATA.quota.claude.window_end='2026-09-24T16:00:00+08:00';
+          renderBriefTipsNow();return document.getElementById('brief-tips').innerText;}""")
+        self.assertNotIn("按最近一小时的速度", far)
+        after = page.evaluate("""() => {DATA.quota.claude.projection.projected_at=
+          '2026-09-24T12:40:00+08:00';DATA.quota.claude.window_end='2026-09-24T12:30:00+08:00';
+          renderBriefTipsNow();return document.getElementById('brief-tips').innerText;}""")
+        self.assertNotIn("按最近一小时的速度", after)
+        english = page.evaluate("""() => {applyLanguage('en',false);
+          DATA.quota.claude.projection.projected_at='2026-09-24T12:40:00+08:00';
+          DATA.quota.claude.window_end='2026-09-24T13:00:00+08:00';
+          renderBriefTipsNow();return document.getElementById('brief-tips').innerText;}""")
+        self.assertIn("At the last hour's pace", english)
+
+    # ---- activity calendar -----------------------------------------------
+
+    def test_activity_calendar_streaks_click_and_keyboard(self):
+        page, errors = self.open()
+        info = page.evaluate("""() => {
+          const cells=[...document.querySelectorAll('#activity-svg .ac-cell')];
+          const totals=insightDayTotals(),active=Object.keys(totals).filter(d=>totals[d]>0).sort();
+          let best=null;active.forEach(d=>{if(!best||totals[d]>totals[best])best=d;});
+          return {last:cells.at(-1).dataset.day,count:cells.length,weeks:insightState.cal.weeks,active:active.length,
+                  activeTile:document.querySelector('[data-stat=active] b').textContent,best,
+                  busiest:document.querySelector('[data-stat=busiest]').dataset.day,
+                  levels:[...new Set(cells.map(c=>c.getAttribute('class').match(/\\bl(\\d)\\b/)[1]))].sort()};
+        }""")
+        self.assertEqual(TODAY.isoformat(), info["last"])
+        self.assertGreaterEqual(info["weeks"], 13)
+        self.assertTrue(info["activeTile"].startswith(str(info["active"])))
+        self.assertEqual(info["best"], info["busiest"])
+        self.assertTrue({"1", "2", "3", "4"} <= set(info["levels"]))
+
+        target = (TODAY - timedelta(days=10)).isoformat()
+        page.locator(f'#activity-svg rect[data-day="{target}"]').click()
+        self.assertEqual({"range": "custom", "date": target},
+                         page.evaluate("() => ({range:state.range,date:state.rangeDate})"))
+        self.assertIn("is-range", page.locator(f'#activity-svg rect[data-day="{target}"]').get_attribute("class"))
+        self.assertIn(target, page.locator("#activity-readout").inner_text())
+
+        page.locator("#activity-svg").focus()
+        page.keyboard.press("ArrowRight")  # +7 days
+        page.keyboard.press("ArrowUp")     # -1 day
+        moved = (TODAY - timedelta(days=4)).isoformat()
+        self.assertIn(moved, page.locator("#activity-readout").inner_text())
+        self.assertEqual("1", page.evaluate("() => getComputedStyle(document.getElementById('ac-cursor')).opacity"))
+        page.keyboard.press("End")
+        page.keyboard.press("ArrowRight")  # clamped at the report end
+        page.keyboard.press("Enter")
+        self.assertEqual(TODAY.isoformat(), page.evaluate("() => state.rangeDate"))
+
+        page.locator('[data-stat=busiest]').click()
+        self.assertEqual(info["busiest"], page.evaluate("() => state.rangeDate"))
+        self.assertEqual([], errors)
+
+    # ---- cross-cutting ---------------------------------------------------
+
+    def test_insights_localize_to_english_without_cjk(self):
+        page, errors = self.open(language="en")
+        page.locator("#share-stream-svg").focus()
+        page.locator("#activity-svg").focus()
+        texts = page.evaluate("""() => ['pace-race','share-stream','activity-cal'].map(id=>{
+          const el=document.getElementById(id);
+          const attrs=[...el.querySelectorAll('[aria-label]')].map(n=>n.getAttribute('aria-label')).join(' ');
+          return id+': '+el.textContent+' '+el.innerText+' '+attrs+' '+el.querySelector('svg').getAttribute('aria-label');
+        })""")
+        for text in texts:
+            with self.subTest(block=text.split(":", 1)[0]):
+                self.assertIsNone(CJK.search(text), text)
+        self.assertIn("Today vs yesterday", texts[0])
+        self.assertIn("Model share stream", texts[1])
+        self.assertIn("Activity calendar", texts[2])
+        page.evaluate("() => applyLanguage('zh')")
+        self.assertIn("模型份额流", page.locator("#share-stream-title").inner_text())
+        self.assertIn("活跃日历", page.locator("#activity-title").inner_text())
+        self.assertEqual([], errors)
+
+    def test_insight_motion_is_gated(self):
+        probe = """() => ({pace:getComputedStyle(document.querySelector('#pace-chart .pace-today')).animationName,
+                         stream:getComputedStyle(document.querySelector('#share-stream-svg .ss-layer')).animationName})"""
+        page, errors = self.open(reduced_motion="reduce")
+        self.assertEqual("off", page.evaluate("() => document.documentElement.dataset.motion"))
+        self.assertEqual({"pace": "none", "stream": "none"}, page.evaluate(probe))
+        # Full motion needs a page that does not prefer reduced motion.
+        page, errors2 = self.open(reduced_motion="no-preference")
+        page.evaluate("() => applyMotion('full')")
+        page.evaluate("() => renderInsights()")
+        self.assertEqual({"pace": "paceDraw", "stream": "streamGrow"}, page.evaluate(probe))
+        for level in ("low", "off"):
+            page.evaluate("level => applyMotion(level)", level)
+            page.evaluate("() => renderInsights()")
+            self.assertEqual({"pace": "none", "stream": "none"}, page.evaluate(probe), level)
+        self.assertEqual([], errors + errors2)
+
+    def test_insights_mobile_no_overflow_and_touch_targets(self):
+        for width in (320, 390):
+            for scheme, language in (("light", "zh"), ("dark", "en")):
+                with self.subTest(width=width, scheme=scheme, language=language):
+                    page, errors = self.open(viewport={"width": width, "height": 844}, color_scheme=scheme,
+                                             language=language)
+                    metrics = page.evaluate("""() => {
+                      const box=id=>document.getElementById(id).getBoundingClientRect();
+                      const blocks=['pace-race','share-stream','activity-cal'].map(id=>({id,right:box(id).right,left:box(id).left}));
+                      const svgs=['pace-chart','share-stream-svg'].map(id=>({id,right:box(id).right}));
+                      const targets=[...document.querySelectorAll('#share-stream-modes button,#activity-stats button')]
+                        .map(el=>{const r=el.getBoundingClientRect();return {h:r.height,w:r.width};});
+                      const scroll=document.getElementById('activity-scroll');
+                      return {scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth,blocks,svgs,targets,
+                              calScrolledToEnd:scroll.scrollWidth<=scroll.clientWidth||scroll.scrollLeft+scroll.clientWidth>=scroll.scrollWidth-2};
+                    }""")
+                    self.assertLessEqual(metrics["scroll"], metrics["client"])
+                    for block in metrics["blocks"] + metrics["svgs"]:
+                        self.assertLessEqual(block["right"], metrics["client"] + 0.5, block)
+                    self.assertTrue(metrics["targets"])
+                    for target in metrics["targets"]:
+                        self.assertGreaterEqual(target["h"], 44, target)
+                        self.assertGreaterEqual(target["w"], 44, target)
+                    self.assertTrue(metrics["calScrolledToEnd"], "latest weeks are visible first")
+                    self.assertEqual([], errors)
+
+    def test_section_order_is_unchanged(self):
+        page, errors = self.open()
+        first = page.evaluate("() => document.querySelector('main section.card, section.card').id")
+        # The top briefing is the first card by design; the rest keeps order.
+        self.assertEqual("section-brief", first)
+        second = page.evaluate("() => [...document.querySelectorAll('section.card')][1].id")
+        self.assertEqual("section-scope", second)
+        parents = page.evaluate("""() => ({pace:document.getElementById('pace-race').closest('section').id,
+            stream:document.getElementById('share-stream').closest('section').id,
+            cal:document.getElementById('activity-cal').closest('section').id})""")
+        self.assertEqual({"pace": "section-overview", "stream": "section-daily-models", "cal": "section-rhythm"}, parents)
+        self.assertEqual([], errors)
+
+
+if __name__ == "__main__":
+    unittest.main()

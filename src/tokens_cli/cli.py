@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Command-line interface for local AI CLI token analytics."""
 import argparse
+import json
 import sys
 from datetime import date, datetime, timedelta
 
 from . import (__version__, aggregate, config, demo, doctor, lang as lang_module, live_dashboard,
-               readers, report_dashboard, report_html, report_term)
+               outcomes, quota, readers, report_dashboard, report_html, report_term,
+               sources as source_registry)
 from .opener import open_url
 
-RANGES = ["day", "week", "month", "all", "dashboard", "demo", "serve", "doctor"]
+RANGES = ["day", "week", "month", "all", "dashboard", "demo", "serve", "doctor", "quota",
+            "outcomes"]
 
 
 def compute_window(mode, now, days, weeks, months):
@@ -36,7 +39,7 @@ def compute_window(mode, now, days, weeks, months):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="tokens",
-        description="Local-first token usage analytics for Claude Code, Gemini CLI, and Codex.",
+        description="Local-first token usage analytics for Claude Code, Gemini CLI, Codex, OpenCode, and Antigravity.",
     )
     parser.add_argument("range", nargs="?", default="day", choices=RANGES,
                         help="report range or command (default: day)")
@@ -45,8 +48,9 @@ def build_parser():
     parser.add_argument("--days", type=_positive_int, default=14, help="days shown in day mode")
     parser.add_argument("--weeks", type=_positive_int, default=8, help="weeks shown in week mode")
     parser.add_argument("--months", type=_positive_int, default=6, help="months shown in month mode")
-    parser.add_argument("--source", action="append", choices=sorted(readers.SOURCES),
-                        help="log source; repeat to combine sources (default: claude)")
+    parser.add_argument("--source", action="append",
+                        choices=sorted(source_registry.NAMES) + ["auto"],
+                        help="log source; repeat to combine sources (default: auto)")
     parser.add_argument("--html", action="store_true", help="write a static HTML report")
     parser.add_argument("--dashboard", action="store_true", help="write the interactive offline dashboard")
     parser.add_argument("--anonymize", action="store_true",
@@ -57,6 +61,10 @@ def build_parser():
     parser.add_argument("--lang", choices=lang_module.SUPPORTED,
                         help="terminal and static HTML language (en or zh; default: system locale)")
     parser.add_argument("--no-cache", action="store_true", help="ignore the file cache and re-read logs")
+    parser.add_argument("--models", action="store_true",
+                        help="with doctor, show how Claude request names map to models")
+    parser.add_argument("--json", action="store_true",
+                        help="with doctor --models, quota, or outcomes, print machine-readable JSON")
     parser.add_argument("--interval", type=_positive_float, default=300.0,
                         help="live Dashboard check interval in seconds (default: 300)")
     parser.add_argument("--port", type=_port, default=8765,
@@ -115,6 +123,11 @@ def _configure(args, parser):
         args.dashboard or args.range in ("dashboard", "demo", "serve")
     ):
         parser.error("--anonymize requires dashboard, demo, or serve mode")
+    if args.models and args.range != "doctor":
+        parser.error("--models requires doctor mode")
+    if args.json and not ((args.range == "doctor" and args.models)
+                          or args.range in ("quota", "outcomes")):
+        parser.error("--json requires doctor --models, quota, or outcomes")
 
 
 def _open_generated(path):
@@ -128,14 +141,11 @@ def _open_generated(path):
 
 
 def _no_records_message(sources):
-    roots = {
-        "claude": config.CLAUDE_PROJECTS,
-        "gemini": config.GEMINI_TMP,
-        "codex": config.CODEX_SESSIONS,
-    }
     print("No supported token logs were found.", file=sys.stderr)
     for source in sources:
-        print(f"  {source}: {roots[source]}", file=sys.stderr)
+        registered = source_registry.BY_NAME.get(source)
+        print(f"  {source}: {registered.root() if registered else 'unknown source'}",
+              file=sys.stderr)
     print(
         "Run `tokens doctor` (or `./run doctor` in a source checkout) "
         "for a source-by-source check.",
@@ -152,17 +162,73 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     _configure(args, parser)
-    sources = args.source or config.DEFAULT_SOURCES
+    selected_sources, detected, skipped, auto_used = source_registry.resolve(
+        args.source or config.DEFAULT_SOURCES)
+    discovery_text = (source_registry.format_detection(detected, skipped, args.lang)
+                      if auto_used else None)
+    if discovery_text and not args.json and args.range != "demo":
+        print(discovery_text, flush=True)
 
     if args.range == "doctor":
-        doctor.print_report(doctor.collect(sources=args.source))
+        if not args.models:
+            doctor.print_report(doctor.collect(sources=selected_sources))
+            return 0
+        try:
+            report = doctor.collect_models(
+                sources=selected_sources,
+                since=args.since,
+                until=args.until,
+                use_cache=not args.no_cache,
+            )
+        except readers.CollectionIncompleteError:
+            print(
+                "Local log collection is incomplete; no model attribution was produced. "
+                "Check log readability and collection limits, then retry.",
+                file=sys.stderr,
+            )
+            return 1
+        if auto_used:
+            report["sources_detected"] = [source.name for source in detected]
+            report["sources_skipped"] = skipped
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            doctor.print_models(report, lang=args.lang)
+        return 0
+
+    if args.range == "quota":
+        if not selected_sources:
+            _no_records_message(selected_sources)
+            return 1
+        try:
+            report = quota.collect(
+                sources=selected_sources,
+                use_cache=not args.no_cache,
+            )
+        except readers.CollectionIncompleteError:
+            print(
+                "Local log collection is incomplete; no quota report was produced. "
+                "Check log readability and collection limits, then retry.",
+                file=sys.stderr,
+            )
+            return 1
+        if auto_used:
+            report["sources_detected"] = [source.name for source in detected]
+            report["sources_skipped"] = skipped
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            quota.print_report(report, lang=args.lang)
         return 0
 
     if args.range == "serve":
+        if not selected_sources:
+            _no_records_message(selected_sources)
+            return 1
         try:
             server = live_dashboard.create_server(
                 args.port,
-                sources,
+                selected_sources,
                 since=args.since,
                 until=args.until,
                 anonymize=args.anonymize,
@@ -174,8 +240,9 @@ def main(argv=None):
             return 1
         host, port = server.server_address
         url = f"http://{host}:{port}/"
-        print(f"Live Dashboard: {url}")
-        print(f"Checking local logs every {args.interval:g} seconds. Press Ctrl+C to stop.")
+        print(f"Live Dashboard: {url}", flush=True)
+        print(f"Checking local logs every {args.interval:g} seconds. Press Ctrl+C to stop.",
+              flush=True)
         if args.open:
             try:
                 opened = open_url(url)
@@ -192,9 +259,39 @@ def main(argv=None):
             server.server_close()
         return 0
 
+    if args.range == "outcomes":
+        if not selected_sources:
+            _no_records_message(selected_sources)
+            return 1
+        try:
+            records = readers.read_all(sources=selected_sources,
+                                       use_cache=not args.no_cache)
+        except readers.CollectionIncompleteError:
+            print(
+                "Local log collection is incomplete; no outcomes report was produced. "
+                "Check log readability and collection limits, then retry.",
+                file=sys.stderr,
+            )
+            return 1
+        if not records:
+            _no_records_message(selected_sources)
+            return 1
+        records_key = (outcomes.records_fingerprint(args.since, args.until)
+                       if not args.no_cache else None)
+        report = outcomes.build_outcomes(records, since=args.since,
+                                         until=args.until,
+                                         records_key=records_key)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            outcomes.print_report(report, lang=args.lang)
+        return 0
+
     if args.range == "demo":
         today = datetime.now(config.TZ).date()
-        bundle = demo.build_demo(today=today, sources=args.source)
+        demo_sources = ([name for name in (args.source or []) if name != "auto"]
+                        or list(demo.DEMO_SOURCES))
+        bundle = demo.build_demo(today=today, sources=demo_sources)
         path = report_dashboard.write_dashboard(
             bundle["records"],
             since=args.since or bundle["since"],
@@ -214,18 +311,37 @@ def main(argv=None):
 
     now = datetime.now(config.TZ).date()
     mode = args.range
-    records = readers.read_all(sources=sources, use_cache=not args.no_cache)
-    if not records:
-        _no_records_message(sources)
+    if not selected_sources:
+        _no_records_message(selected_sources)
         return 1
+    collection_report = {}
+    try:
+        records = readers.read_all(sources=selected_sources,
+                                   use_cache=not args.no_cache,
+                                   collection_report=collection_report)
+    except readers.CollectionIncompleteError:
+        print(
+            "Local log collection is incomplete; no report was written. "
+            "Check log readability and collection limits, then retry.",
+            file=sys.stderr,
+        )
+        return 1
+    if not records:
+        # A skipped file is not "no logs": keep the dashboard so data health
+        # can explain what was omitted. Other modes still point to doctor.
+        if not ((args.dashboard or mode == "dashboard")
+                and collection_report.get("skipped")):
+            _no_records_message(selected_sources)
+            return 1
 
     if args.dashboard or mode == "dashboard":
         path = report_dashboard.write_dashboard(
             records,
             since=args.since,
             until=args.until,
-            sources=sources,
+            sources=selected_sources,
             anonymize=args.anonymize,
+            collection_report=collection_report,
         )
         print(f"Dashboard: {path}")
         if args.open:
@@ -252,7 +368,8 @@ def main(argv=None):
     report_term.print_report(mode, rows, focus, label, lang=args.lang)
 
     if args.html:
-        path = report_html.write_report(mode, rows, focus, label, all_sources, lang=args.lang)
+        path = report_html.write_report(mode, rows, focus, label, all_sources,
+                                        lang=args.lang, discovery=discovery_text)
         print(f"HTML report: {path}")
         if args.open:
             _open_generated(path)
