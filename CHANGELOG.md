@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Task cost from agent-taskboard: when an outcomes repository (or a path in `TOKENS_ATB_REPOS`) has a `.taskboard/`, `tokens outcomes` and the dashboard read `atb export --json` through a subprocess (`TOKENS_ATB_CMD` or `atb` on `PATH`, 120-second timeout) and price each task's session segments with the same reference rates as the cost ledger. Segments match by adapter, native session id and half-open `[from, to)` time ranges (only a session's last segment includes its own end), so a long session split across tasks is never averaged. The terminal adds a "By agent" table (merged tasks, average and median spend, rework rate, average tokens, tasks without a session); the dashboard adds a collapsed "Task cost" card with the five costliest tasks. Usage that differs from atb's own segment usage by more than 5% is reported as `atb_usage_mismatch` without changing the data; missing, failing or incompatible atb exports disable the block with a reason. Exports are cached per repository by `.taskboard` mtime for at most 10 minutes, and `tokens serve` refreshes them in a background thread. Task titles stay local and are dropped by `--anonymize`. Codex records now keep their native rollout id for this join, so the reader cache version moves to 24 and existing caches rebuild once. (#40)
+
+### Changed
+
+- Antigravity's Claude names `claude-opus-5-5-low` / `-medium` / `-high` are explicit aliases of the official `claude-opus-5.5` reference rate (thinking tiers do not change the price) in both the dashboard and `tokens outcomes`; the original name stays visible and the estimate is labelled. `gemini-4-argon-trial` and `gemini-3.8-flash-n` were re-checked against Google's pricing page, which lists only the base names, so they stay pending instead of guessed. A check on real data confirmed Antigravity thinking tokens are already included in output. (#42)
+- The documentation site (English and Chinese) now covers 0.3.0: installing the GitHub Release wheel, `tokens outcomes`, the daily briefing, model comparison, the HUD quota rows, and what outcomes reads locally. (#43)
+
 ## [0.3.0] - 2026-11-25
 
 ### Added
