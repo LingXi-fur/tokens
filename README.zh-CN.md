@@ -78,6 +78,12 @@ Claude 没有官方百分比，因此该区块明确标注为估算。对每个�
 
 隐私口径不变：outcomes 块只含计数、比率和标签——绝不含提交信息、文件名或作者邮箱——项目名遵循 `--anonymize`。git 只被读取，每次调用都有超时上限。
 
+#### 任务成本（可选，agent-taskboard）
+
+安装 agent-taskboard 后，outcomes 可以把它的 `export --json` 接到同一份会话花费上。发现范围：outcomes 里出现且根目录有 `.taskboard/` 的仓库，加上 `TOKENS_ATB_REPOS`（用系统路径分隔符）列出的绝对路径仓库。命令优先取 `TOKENS_ATB_CMD`（例如 `python3 -m agent_taskboard`，用 `shlex` 拆分），否则用 `PATH` 里的 `atb`；找不到就整块不显示。导出以子进程运行，超时 120 秒——大日志库可能要几十秒，所以 `tokens serve` 在后台线程刷新（先显示上一次缓存或“正在读取 atb”），`tokens dashboard`/`tokens outcomes` 同步等待。结果按仓库路径和 `.taskboard/` 修改时间缓存，最多 10 分钟过期。
+
+atb 的每个会话段 `(adapter, 原生 ID, from, to)` 按同一工具、同一原生会话 ID 和 `[from, to)` 匹配记录：正好落在边界的记录归后一段，只有会话最后一段才包含自己的 `to`。适配器名映射到 tokens 来源（`claude-code` → `claude`、`codex` → `codex`、`gemini-cli` → `gemini`、`opencode` → `opencode`）。会话段花费使用同一套官方参考价；段自带的 `usage` 只用来核对（差异超过 5% 时累计 `atb_usage_mismatch`）。看板新增默认折叠的“任务成本”区块，含按 agent 表、花费最高的 5 个任务，以及 worktree/command/time_window 三种证据计数（`time_window` 是兜底、可信度最低）。任务标题只在本地看板显示，`--anonymize` 会去掉；payload 不含会话 ID 或路径。
+
 示例（项目路径已替换为占位符）：
 
 ```text

@@ -318,7 +318,8 @@ def parse_state(path, *, _change=None):
                     "model": model or "codex-unknown", "input": inp,
                     "output": outp, "cache_read": cached, "cache_write": 0,
                     "total": total,
-                    "session": None, "billing": readers._codex_billing(usage),
+                    "session": None, "native_session": session,
+                    "billing": readers._codex_billing(usage),
                 }
                 readers._sanitize_token_record(record, "codex")
                 signature = _signature(usage)

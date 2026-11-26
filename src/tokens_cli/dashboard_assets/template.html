@@ -46,6 +46,7 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
         <div class=mrow><label><input type=checkbox data-mod=reuse checked>复用之河</label><span class="switch on" aria-hidden=true data-sw=reuse></span></div>
         <div class=mrow><label><input type=checkbox data-mod=flow checked>用量去向</label><span class="switch on" aria-hidden=true data-sw=flow></span></div>
         <div class=mrow><label><input type=checkbox data-mod=value checked>模型对比</label><span class="switch on" aria-hidden=true data-sw=value></span></div>
+        <div class=mrow><label><input type=checkbox data-mod=tasks checked>任务成本</label><span class="switch on" aria-hidden=true data-sw=tasks></span></div>
         <div class=mrow><label><input type=checkbox data-mod=almanac checked>Token 年鉴</label><span class="switch on" aria-hidden=true data-sw=almanac></span></div>
         <div class=mrow><label><input type=checkbox data-mod=badges checked>成就徽章</label><span class="switch on" aria-hidden=true data-sw=badges></span></div>
         <div class=mrow><label><input type=checkbox data-mod=top checked>Top 榜</label><span class="switch on" aria-hidden=true data-sw=top></span></div>
@@ -361,6 +362,19 @@ try{var __l=__LIVE__;var __p=!!(__l&&__l.enabled)&&Object.prototype.hasOwnProper
   <table class="detail-table value-table"><thead id=value-thead></thead><tbody id=value-tbody></tbody></table>
  </div>
  <p class=value-foot id=value-foot></p>
+</section>
+
+<section class="card task-cost" data-module=tasks data-lazy=tasks id=section-tasks>
+ <div class=row-between>
+  <div><div class=mode-k>ATB · TASK COST</div><h2 style=margin:0>任务成本 · 按 agent</h2><p class=sub style="margin:6px 0 0;color:var(--faint)">数据来自 agent-taskboard；会话段按 [from, to) 匹配，价格与费用账本一致。</p></div>
+  <span class=sub id=task-scope style="margin:0;color:var(--faint)"></span>
+ </div>
+ <div class=sub id=task-loading hidden style="margin-top:10px;color:var(--faint)"></div>
+ <div class=table-scroll id=task-region tabindex=0 role=region aria-label="按 agent 的任务成本，可横向滚动">
+  <table class=detail-table><thead id=task-thead></thead><tbody id=task-tbody></tbody></table>
+ </div>
+ <div class=task-top id=task-top></div>
+ <p class=value-foot id=task-foot></p>
 </section>
 
 <section class=card data-module=top id=section-top>

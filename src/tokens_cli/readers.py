@@ -70,7 +70,7 @@ from . import sources as _source_registry
 #         记为路由后端；原生 ID 归一为点号版本（claude-opus-5-5 → claude-opus-5.5）
 #   v22 = Gemini/OpenCode/Antigravity 的缓存条目记录 partial（局部损坏消息数），
 #         整文件损坏不再写空缓存；升级后首次读取会重算健康计数
-CACHE_VERSION = 23
+CACHE_VERSION = 24
 
 # ---------- Billing evidence (schema 1) ----------
 # 独立计费证据：只读源头分量、字段是否实际存在及口径异常原因，绝不改写既有
@@ -1731,6 +1731,8 @@ def _cached_records_valid(records, source):
     fields = _RECORD_FIELDS | {"cwd"} if source in ("claude", "opencode") else _RECORD_FIELDS
     if source == "claude":
         fields = fields | {"request_model"}
+    if source == "codex":
+        fields = fields | {"native_session"}
     for record in records:
         if (not isinstance(record, dict) or set(record) != fields
                 or record.get("source") != source

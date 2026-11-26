@@ -1131,3 +1131,13 @@ section.dig.dig-collapsed .dig-chev{color:var(--faint)}
 .hq-note{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--muted)}
 .hq-row[data-warn=true] .hq-pct,.hq-row[data-warn=true] .hq-note{color:var(--bad)}
 .hq-row[data-warn=true] .hq-track i{background:var(--bad)}
+
+/* atb 任务成本（#40） */
+.task-cost .task-top{display:grid;gap:6px;margin-top:14px}
+.task-top-head{color:var(--faint);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.task-top-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto auto auto auto;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--border);font-size:12px;min-width:0}
+.task-rank{color:var(--faint);font-variant-numeric:tabular-nums}
+.task-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.task-agent{color:var(--muted);white-space:nowrap}
+.task-flags{color:var(--faint);font-size:11px;white-space:nowrap}
+@media(max-width:620px){.task-top-row{grid-template-columns:22px minmax(0,1fr);gap:4px 8px}.task-top-row .num,.task-top-row .task-agent,.task-top-row .task-flags{grid-column:2}}

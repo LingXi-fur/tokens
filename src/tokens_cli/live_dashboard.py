@@ -140,8 +140,8 @@ class LiveDashboard:
                 aliases=self._aliases,
                 session_titles={},
                 # Shell before the first scan: no usage HUD, and no reason to
-                # pay a quota scan in the constructor.
-                include_quota=False,
+                # pay a quota scan or an atb export in the constructor.
+                include_quota=False, atb_background=True,
             )
         )
         if self._snapshot_store is not None:
@@ -308,6 +308,9 @@ class LiveDashboard:
                     anonymize=self.anonymize,
                     aliases=self._aliases,
                     collection_report=collection_report,
+                    # atb export can take tens of seconds; never block the
+                    # live scan thread waiting for it.
+                    atb_background=True,
                 )
                 stage = "encoding"
                 progress.transition(stage)

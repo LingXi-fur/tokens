@@ -610,6 +610,86 @@ class DashboardRuntimeTests(unittest.TestCase):
         finally:
             context.close()
 
+    TASK_BLOCK = """() => {
+      const task={id:'T1',agent:'opencode',status:'done',merged:true,
+        rework_count:1,cost:8.5,tokens:1000000,segments:2,matched_segments:2,title:'Build thing'};
+      DATA.outcomes.tasks={schema:1,available:true,loading:false,
+        generated_at:'2026-09-24T12:00:00+08:00',timezone:'Asia/Shanghai',repos:1,
+        evidence:{worktree:3,command:1,time_window:2},
+        agents:[{agent:'opencode',tasks:5,merged_tasks:4,avg_cost_merged:8.5,
+          median_cost_merged:2.1,rework_rate:0.2,avg_tokens:1000000,
+          avg_rework:0.4,unmatched_tasks:1}],
+        tasks:[task],top_tasks:[task],reasons:{}};
+      renderTaskCost();
+      return {hidden:document.getElementById('section-tasks').hidden,
+        loading:document.getElementById('task-loading').innerText,
+        table:document.getElementById('task-tbody').innerText,
+        top:document.getElementById('task-top').innerText,
+        foot:document.getElementById('task-foot').innerText};
+    }"""
+
+    def test_task_cost_section_renders_agent_top_and_evidence(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            info = page.evaluate(self.TASK_BLOCK)
+            self.assertFalse(info["hidden"])
+            self.assertEqual("", info["loading"])
+            self.assertIn("opencode", info["table"])
+            self.assertIn("8.5", info["table"])
+            self.assertIn("Build thing", info["top"])
+            self.assertIn("worktree 3", info["foot"])
+            self.assertIn("time_window 2", info["foot"])
+            loading = page.evaluate("""() => {DATA.outcomes.tasks.available=false;
+              DATA.outcomes.tasks.loading=true;renderTaskCost();
+              return {hidden:document.getElementById('section-tasks').hidden,
+                      loading:document.getElementById('task-loading').innerText};}""")
+            self.assertTrue(loading["hidden"] is False)
+            self.assertIn("atb", loading["loading"])
+            page.evaluate("() => applyLanguage('en')")
+            page.evaluate("""() => {DATA.outcomes.tasks.available=true;
+              DATA.outcomes.tasks.loading=false;renderTaskCost();}""")
+            text = page.locator("#task-tbody").inner_text()
+            self.assertIn("Merged", page.locator("#task-thead").inner_text())
+            self.assertIn("Avg spend", page.locator("#task-thead").inner_text())
+            self.assertIn("From agent-taskboard", page.locator("#task-foot").inner_text())
+            anon = page.evaluate("""() => {delete DATA.outcomes.tasks.tasks[0].title;
+              delete DATA.outcomes.tasks.top_tasks[0].title;renderTaskCost();
+              return {top:document.getElementById('task-top').innerText};}""")
+            self.assertNotIn("Build thing", anon["top"])
+            self.assertIn("T1", anon["top"])
+            empty = page.evaluate("() => {DATA.outcomes.tasks=null;renderTaskCost();return document.getElementById('section-tasks').hidden;}")
+            self.assertTrue(empty)
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
+    def test_task_brief_tip_needs_three_merged_tasks(self):
+        context, page, page_errors, console_errors = self.new_page()
+        try:
+            phrase = page.evaluate("""() => {
+              const base={schema:1,available:true,loading:false,
+                generated_at:'2026-09-24T12:00:00+08:00',timezone:'Asia/Shanghai',repos:1,
+                evidence:{worktree:3,command:0,time_window:0},tasks:[],top_tasks:[],reasons:{}};
+              DATA.outcomes.tasks=Object.assign({},base,{agents:[
+                {agent:'alpha',tasks:3,merged_tasks:2,avg_cost_merged:3,median_cost_merged:3,
+                 rework_rate:0.3,avg_tokens:1,avg_rework:0.9,unmatched_tasks:0},
+                {agent:'beta',tasks:2,merged_tasks:1,avg_cost_merged:5,median_cost_merged:5,
+                 rework_rate:0.5,avg_tokens:1,avg_rework:1.2,unmatched_tasks:0}]});
+              const ok=briefTaskTip(true);
+              DATA.outcomes.tasks.agents[0].merged_tasks=1;
+              DATA.outcomes.tasks.agents[1].merged_tasks=0;
+              return {ok,no:briefTaskTip(true)};
+            }""")
+            self.assertIn("Watch: beta", phrase["ok"])
+            self.assertIn("average 1.2 reworks", phrase["ok"])
+            self.assertIsNone(phrase["no"])
+            zh = page.evaluate("""() => {DATA.outcomes.tasks.agents[0].merged_tasks=2;
+              DATA.outcomes.tasks.agents[1].merged_tasks=1;return briefTaskTip(false);}""")
+            self.assertIn("关注：beta", zh)
+            self.assertEqual([], page_errors + console_errors)
+        finally:
+            context.close()
+
     def test_source_states_distinguish_configured_from_observed_and_legacy_dates(self):
         context, page, page_errors, console_errors = self.new_page()
         try:

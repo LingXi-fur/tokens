@@ -27,7 +27,7 @@ from shutil import which
 
 from . import config, readers
 
-OUTCOMES_SCHEMA = 2
+OUTCOMES_SCHEMA = 3
 SURVIVAL_DAYS = 7
 SESSION_GRACE_SECONDS = 30 * 60
 GIT_TIMEOUT_SECONDS = 15.0
@@ -61,7 +61,9 @@ _STATUS_REASONS = (
     "git_missing", "repo_unavailable", "blame_timeout", "blame_skipped",
     "bad_session_ts", "blame_cache_reset",
 )
-_INFO_REASONS = ("no_repo", "binary_commit", "unestimated_cost")
+_INFO_REASONS = ("no_repo", "binary_commit", "unestimated_cost",
+                  "atb_missing", "atb_failed", "atb_schema",
+                  "atb_usage_mismatch")
 
 _REPO_CACHE = {}
 
@@ -705,7 +707,8 @@ def _session_windows(records, rates_table, reasons, model_of=None):
 # ---------- main builder -------------------------------------------------------
 
 def build_outcomes(records, since=None, until=None, anonymize=False,
-                   aliases=None, now=None, model_of=None, records_key=None):
+                   aliases=None, now=None, model_of=None, records_key=None,
+                   atb_background=False):
     """Compute the outcomes block for the report range.
 
     since/until are ISO days in the reporting timezone; the git window covers
@@ -738,6 +741,7 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
         "reasons": {},
         "totals": _empty_totals(),
         "days": [], "projects": [], "models": [], "sources": [],
+        "tasks": None,
         "no_commit_sessions": [], "no_repo_sessions": [],
     }
     cache = _load_outcomes_cache(reasons)
@@ -769,6 +773,17 @@ def build_outcomes(records, since=None, until=None, anonymize=False,
                 reasons["no_repo"] += 1
         else:
             repos.setdefault(repo, []).append(sid)
+
+    # Optional atb join: only repositories with .taskboard/ (plus
+    # TOKENS_ATB_REPOS).  Static reports wait; serve starts a worker and
+    # returns the previous cache/loading marker immediately.
+    from . import tasks as tasks_module
+    task_block, task_reasons = tasks_module.build_tasks(
+        records=records, repos=repos, rates_table=rates_table, now=generated,
+        anonymize=anonymize, background=atb_background)
+    for key, count in task_reasons.items():
+        reasons[key] += count
+    block["tasks"] = _decimals_to_floats(task_block) if task_block else None
 
     commits_by_repo = {}
     attributed = {}
@@ -1214,6 +1229,15 @@ _STATUS_TEXT = {
         "value_low_sample": "* 样本少（少于 3 个会话或已定案花费低于 $1），不参与排名",
         "value_alloc": "提交与行数按会话内花费占比分摊；手工提交不计入；同一会话可出现在多行。",
         "value_empty": "该范围没有可统计的模型或工具产出。",
+        "tasks_title": "按 agent（来自 atb）",
+        "tasks_agent": "Agent",
+        "tasks_merged": "已合并",
+        "tasks_avg": "均花费",
+        "tasks_median": "中位花费",
+        "tasks_rework": "返工率",
+        "tasks_tokens": "均 token",
+        "tasks_unmatched": "无会话",
+        "tasks_note": "任务成本来自 agent-taskboard 导出；会话段按 [from, to) 取记录，价格与费用账本相同。",
         "yes": "是",
         "no": "否",
         "no_repo": "非 git 目录",
@@ -1261,6 +1285,15 @@ _STATUS_TEXT = {
         "value_low_sample": "* low sample (fewer than 3 sessions or under $1 settled spend); not ranked",
         "value_alloc": "Commits and lines are allocated by spend share inside each session; manual commits are excluded; one session can appear in several rows.",
         "value_empty": "No measurable models or tools in this range.",
+        "tasks_title": "By agent (from atb)",
+        "tasks_agent": "Agent",
+        "tasks_merged": "Merged",
+        "tasks_avg": "Avg spend",
+        "tasks_median": "Median",
+        "tasks_rework": "Rework",
+        "tasks_tokens": "Avg tokens",
+        "tasks_unmatched": "No session",
+        "tasks_note": "Task costs come from the agent-taskboard export; session segments use [from, to) and the same reference prices as the cost ledger.",
         "yes": "yes",
         "no": "no",
         "no_repo": "not a git repo",
@@ -1280,6 +1313,28 @@ def _fmt_money(value):
 def _fmt_ratio(value):
     """Terminal-only formatting: one decimal, thousands separators."""
     return f"{value:,.1f}"
+
+
+def _print_task_table(block, text):
+    """One small by-agent table; task detail/top 5 stay in the dashboard."""
+    rows = block.get("agents") or []
+    print()
+    print(text["tasks_title"])
+    print(f"{text['tasks_agent']:22} {text['tasks_merged']:>8} "
+          f"{text['tasks_avg']:>10} {text['tasks_median']:>10} "
+          f"{text['tasks_rework']:>8} {text['tasks_tokens']:>12} "
+          f"{text['tasks_unmatched']:>10}")
+    if not rows:
+        print(text["empty"])
+        return
+    for row in rows:
+        print(f"{str(row['agent'])[:21]:22} {row['merged_tasks']:>8} "
+              f"{_fmt_money(row['avg_cost_merged']):>10} "
+              f"{_fmt_money(row['median_cost_merged']):>10} "
+              f"{_fmt_ratio(row['rework_rate'] * 100):>7}% "
+              f"{_fmt_ratio(row['avg_tokens']):>12} "
+              f"{row['unmatched_tasks']:>10}")
+    print(text["tasks_note"])
 
 
 def _print_value_table(rows, title, text, key):
@@ -1378,6 +1433,9 @@ def print_report(report, lang="zh"):
                        text, "model")
     _print_value_table(report.get("sources", []), text["value_by_source"],
                        text, "source")
+    tasks_block = report.get("tasks")
+    if isinstance(tasks_block, dict) and tasks_block.get("available"):
+        _print_task_table(tasks_block, text)
 
 
 def _decimals_to_floats(value):
