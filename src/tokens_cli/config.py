@@ -93,7 +93,7 @@ def _system_timezone():
 
 
 CACHE_DIR = os.path.join(_cache_root(), "ai-cli-tokens")
-# records-v8：文件名沿用 v8 结构；records 内 _v 独立演进（当前 23），旧文件不删除。
+# records-v8：文件名沿用 v8 结构；records 内 _v 独立演进（当前 24），旧文件不删除。
 CACHE_FILE = os.path.join(CACHE_DIR, "records-v8.json")
 OUT_DIR = os.path.abspath(os.path.join(os.getcwd(), "out"))
 SESSION_SUMMARY_FILE = os.path.join(OUT_DIR, "session_summaries.json")
