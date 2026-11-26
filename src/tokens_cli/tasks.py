@@ -82,11 +82,30 @@ def _epoch(value):
     return stamp.timestamp()
 
 
+def _split_command(raw, windows=None):
+    """Split ``TOKENS_ATB_CMD`` into argv.
+
+    POSIX shell rules would treat the backslashes of a Windows path such as
+    ``C:\\Python\\python.exe`` as escapes and drop them, so on Windows split
+    without escapes and strip one pair of surrounding quotes per argument.
+    """
+    if windows is None:
+        windows = os.name == "nt"
+    if not windows:
+        return shlex.split(raw)
+    parts = []
+    for part in shlex.split(raw, posix=False):
+        if len(part) >= 2 and part[0] == part[-1] and part[0] in "\"'":
+            part = part[1:-1]
+        parts.append(part)
+    return parts
+
+
 def _command():
     raw = os.environ.get("TOKENS_ATB_CMD", "").strip()
     if raw:
         try:
-            parts = shlex.split(raw)
+            parts = _split_command(raw)
         except ValueError:
             return None
         return parts or None

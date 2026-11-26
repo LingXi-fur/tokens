@@ -153,6 +153,15 @@ class TasksTests(unittest.TestCase):
         self.assertEqual(50, rows["T2"]["tokens"], "boundary goes to the next segment; final includes to")
         self.assertEqual(1, reasons["atb_usage_mismatch"])
 
+    def test_command_keeps_windows_backslashes(self):
+        windows = tasks._split_command(
+            r'"C:\Program Files\Python\python.exe" "D:\a\fake atb.py" --x', windows=True)
+        self.assertEqual(
+            [r"C:\Program Files\Python\python.exe", r"D:\a\fake atb.py", "--x"], windows)
+        self.assertEqual(
+            ["/usr/bin/python3", "/tmp/fake atb.py"],
+            tasks._split_command('/usr/bin/python3 "/tmp/fake atb.py"', windows=False))
+
     def test_missing_schema_and_failure_reasons(self):
         self.fake_command(export([], schema=2))
         block, reasons = self.build([])
