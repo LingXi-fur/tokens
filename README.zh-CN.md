@@ -227,6 +227,8 @@ Token 增减只描述用量变化，不代表生产力或代码质量。Cache Re
 | OpenCode | `~/.local/share/opencode/opencode.db`（SQLite，遵循 `XDG_DATA_HOME`） | 有 | 有 | 总量为 input + output + reasoning + cache read + cache write；OpenCode 的 input 不含缓存、output 不含 reasoning。只读打开，只查询 token、模型与时间字段，从不读取消息正文。 |
 | Antigravity | `~/.gemini/antigravity/conversations/*.db`（SQLite，可通过 `TOKENS_ANTIGRAVITY_DIR` 覆盖） | 无 | 有 | 总量为 input + output + cache read。只读打开，只取 token、模型与时间字段，从不读取对话正文或摘要库。基于未公开的私有格式，应用升级后可能需要同步更新读取器。 |
 
+Antigravity 的 `claude-opus-5-5-low` / `-medium` / `-high` 通过显式别名按 Claude Opus 5.5 官方价估算（思考档位不改变单价）；看板和终端仍显示原始名称并标注估算来源。Google 官网没有精确列出的名字（例如 `gemini-4-argon-trial`、`gemini-3.8-flash-n`）保持待定价，不猜价。Antigravity 记录目前没有工作目录，outcomes 无法归到仓库；对话摘要库的 `workspace_uris`/FTS workspace 列、annotations、state 与 brain 元数据均为空或没有可靠路径。
+
 默认按 `--source auto` 自动启用 `sources.py` 注册表内所有存在且可读的来源；可重复传入 `--source` 限定或组合指定来源（例如 `--source antigravity`）：
 
 Codex 的 `.jsonl.zst` 压缩归档要求采集进程能通过 `PATH` 找到 `zstd`；普通日志不需要此依赖。后台服务与交互终端的环境可能不同，`./run doctor --source codex` 仅反映运行该命令的进程环境，不代表常驻服务。出现 `collection · codex · decompressor_unavailable` 时应检查服务环境，不要跳过压缩归档；修改服务配置后须重新加载其环境才会生效。启用来源不等于已有用量，仍须核对成功快照及来源实际记录。

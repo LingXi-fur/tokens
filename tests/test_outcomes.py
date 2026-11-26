@@ -548,6 +548,33 @@ class OutcomesTests(unittest.TestCase):
                     "models", "no_commit_sessions", "no_repo_sessions"):
             self.assertIn(key, block)
 
+    def test_antigravity_claude_alias_rates_match_the_dashboard_table(self):
+        rates = outcomes._reference_rates()
+        self.assertEqual(rates["claude-opus-5.5"],
+                         rates["claude-opus-5-5-medium"])
+        for unknown in ("claude-opus-5-5-max", "claude-opus-5-6-medium"):
+            self.assertNotIn(unknown, rates)
+        records = [{
+            "source": "antigravity", "ts": "2026-11-19T10:00:00Z",
+            "date": "2026-11-19", "model": "claude-opus-5-5-medium",
+            "input": 1_000_000, "output": 1_000_000, "cache_read": 0,
+            "cache_write": 0, "total": 2_000_000, "session": "synthetic-ag",
+            "cwd": None,
+            "billing": {
+                "v": 1,
+                "present": {"input": True, "output": True, "cache_read": True,
+                            "cache_write": True, "thoughts": True},
+                "raw": {"input": 1_000_000, "output": 1_000_000,
+                        "cache_read": 0, "cache_write": 0, "thoughts": 0},
+                "parts": [1_000_000, 1_000_000, 0, 0, 0],
+                "uncertain": False, "reasons": [],
+            },
+        }]
+        block = self.build(records, since="2026-11-19", until="2026-11-19")
+        row = block["models"][0]
+        self.assertEqual("claude-opus-5-5-medium", row["model"])
+        self.assertAlmostEqual(24.0, row["cost"], places=2)
+
     def test_two_models_in_one_session_split_cost_and_output_by_spend(self):
         repo = _init_repo(self.root / "proj")
         _commit(repo, {"app.py": "a = 1\nb = 2\n"},
